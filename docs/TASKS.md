@@ -1624,10 +1624,8 @@ These are in the order we would take them. Each lands alone.
 
 - [ ] **P15. Scroll Details sideways.** Columns past the space's width are cut off
   (`scene.rs` `details_columns`), and W30 makes that easy to reach: every column on
-  takes 560 px at 96 DPI. The design is ROADMAP D24. P15a-P15d are in the junior
-  list, so these are the parts that remain:
-  - [ ] **P15e.** After: P15b. The tilt wheel: `WM_MOUSEHWHEEL` in the space window
-    (`win32/space_window.rs`, or `mouse.rs` after K8).
+  takes 560 px at 96 DPI. The design is ROADMAP D24. P15d is in the junior list,
+  and P15f is the part that remains here:
   - [ ] **P15f.** After: P15b. Go through what holds an x and may not read those
     rects: the rename box, the marquee, the drag drop index, and paint clipping cells
     at the content's edge. Fix each or show it needs nothing, and scroll Name into
@@ -1999,6 +1997,7 @@ for a machine that has it.
 | P25 (space cap) | Drop items on a space until it reaches the bottom of the monitor: it stops and scrolls. Ctrl+Z puts it back. |
 | P20 (lens rename undo) | Rename an item in a lens, Ctrl+Z: it stays selected. Ctrl+Y: still selected. |
 | P15c (Details sideways) | Shift+wheel over a Details space with every column on, at 100 % and 150 %: the columns scroll sideways and the header stays with them. |
+| P15e (Details sideways) | On a mouse with a tilt wheel, over a Details space with every column on at 100 % and 150 %: tilting right scrolls the columns right and tilting left scrolls them left, with the header following. In other views the tilt does nothing. |
 | P22 | Open "From installed apps…" from a space's Shortcuts page and from the custom shortcut dialog: it lists apps with icons. Close it, wait for the background refresh (with `--debug`, "cached the installed apps"), and open it again: the apps and icons still show, with no failure or stall. Do it twice in a row. |
 | P21 | In a debug build with `--debug` open, preview Bounce repeatedly on a space: the animation stays smooth (no hitch once a second), and the debug panel updates again once it stops. |
 | P10 | U5's and U7's rows still pass: undo and redo of deletes, pastes, moves, and renames behave as before. The rollback itself is test-carried, because the gap between the check and the failing step is too short to hit by hand. |

@@ -1,5 +1,5 @@
-//! The mouse wheel: Ctrl zooms, Shift scrolls a Details header sideways, and
-//! every other notch scrolls the view's own axis (D24).
+//! The mouse wheel: Ctrl zooms, Shift or the tilt wheel scrolls a Details
+//! header sideways, and every other notch scrolls the view's own axis (D24).
 
 use deskspace_core::geometry::Point;
 use deskspace_core::{SpaceId, ViewMode};
@@ -18,44 +18,56 @@ enum WheelAction {
     Ignore,
 }
 
+/// One wheel event: where the pointer is, its notch, and the keys and axis it
+/// came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct WheelInput {
+    pub(super) point: Point,
+    pub(super) delta: i32,
+    pub(super) ctrl: bool,
+    pub(super) shift: bool,
+    pub(super) tilt: bool,
+}
+
 /// The wheel's action, from plain data so a test can decide it without a `Ui`.
-/// Ctrl always zooms; Shift reaches Details' second axis only there, and the
-/// desktop layer ignores a plain notch.
-fn wheel_action(mode: Option<ViewMode>, ctrl: bool, shift: bool) -> WheelAction {
+/// Ctrl always zooms; Shift, or a tilt wheel, reaches Details' second axis only
+/// there. The desktop layer and a tilt outside Details are ignored.
+fn wheel_action(mode: Option<ViewMode>, ctrl: bool, shift: bool, tilt: bool) -> WheelAction {
     if ctrl {
         return WheelAction::Zoom;
     }
     match mode {
         None => WheelAction::Ignore,
-        Some(ViewMode::Details) if shift => WheelAction::Sideways,
+        Some(ViewMode::Details) if shift || tilt => WheelAction::Sideways,
+        Some(_) if tilt => WheelAction::Ignore,
         Some(_) => WheelAction::Vertical,
     }
 }
 
 impl App {
-    pub(super) fn on_wheel(
-        &mut self,
-        ui: &mut Ui,
-        surface: Surface,
-        point: Point,
-        delta: i32,
-        ctrl: bool,
-        shift: bool,
-    ) {
+    pub(super) fn on_wheel(&mut self, ui: &mut Ui, surface: Surface, input: WheelInput) {
         let mode = match surface {
             Surface::Space(id) => self.config.desktop.space(id).map(|space| space.view().mode),
             Surface::Desktop => None,
         };
-        match wheel_action(mode, ctrl, shift) {
-            WheelAction::Zoom => self.adjust_icon_size(ui, surface, delta),
+        match wheel_action(mode, input.ctrl, input.shift, input.tilt) {
+            WheelAction::Zoom => self.adjust_icon_size(ui, surface, input.delta),
             WheelAction::Sideways => {
                 if let Surface::Space(id) = surface {
-                    self.scroll_by_x(ui, id, point, delta);
+                    // A tilt's positive delta is to the right, and
+                    // `scroll_by_x` subtracts its delta like the vertical
+                    // wheel, so turn it around.
+                    let delta = if input.tilt {
+                        -input.delta
+                    } else {
+                        input.delta
+                    };
+                    self.scroll_by_x(ui, id, input.point, delta);
                 }
             }
             WheelAction::Vertical => {
                 if let Surface::Space(id) = surface {
-                    self.scroll_by(ui, id, point, delta);
+                    self.scroll_by(ui, id, input.point, input.delta);
                 }
             }
             WheelAction::Ignore => {}
@@ -115,15 +127,31 @@ mod tests {
     #[test]
     fn the_wheel_zooms_scrolls_sideways_or_scrolls_the_view() {
         let details = Some(ViewMode::Details);
-        assert_eq!(wheel_action(details, true, false), WheelAction::Zoom);
-        assert_eq!(wheel_action(details, false, true), WheelAction::Sideways);
-        assert_eq!(wheel_action(details, false, false), WheelAction::Vertical);
+        assert_eq!(wheel_action(details, true, false, false), WheelAction::Zoom);
         assert_eq!(
-            wheel_action(Some(ViewMode::List), false, true),
+            wheel_action(details, false, true, false),
+            WheelAction::Sideways
+        );
+        assert_eq!(
+            wheel_action(details, false, false, true),
+            WheelAction::Sideways,
+            "the tilt wheel scrolls Details sideways"
+        );
+        assert_eq!(
+            wheel_action(details, false, false, false),
+            WheelAction::Vertical
+        );
+        assert_eq!(
+            wheel_action(Some(ViewMode::List), false, true, false),
             WheelAction::Vertical,
             "only Details has a second axis"
         );
-        assert_eq!(wheel_action(None, false, false), WheelAction::Ignore);
-        assert_eq!(wheel_action(None, true, false), WheelAction::Zoom);
+        assert_eq!(
+            wheel_action(Some(ViewMode::List), false, false, true),
+            WheelAction::Ignore,
+            "a tilt outside Details has no axis"
+        );
+        assert_eq!(wheel_action(None, false, false, false), WheelAction::Ignore);
+        assert_eq!(wheel_action(None, true, false, false), WheelAction::Zoom);
     }
 }

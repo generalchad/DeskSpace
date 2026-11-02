@@ -121,15 +121,18 @@ pub enum SpaceEvent {
     },
     MouseLeave,
     /// Mouse wheel over the space. `delta` is in `WHEEL_DELTA` (120) units
-    /// per notch; positive means the wheel was rotated away from the user.
-    /// `ctrl` is true while Ctrl is held (Ctrl+wheel changes the icon size),
-    /// and `shift` while Shift is held (Shift+wheel scrolls Details sideways).
+    /// per notch; positive means the wheel was rotated away from the user, and
+    /// for a tilt wheel positive is to the right. `ctrl` is true while Ctrl is
+    /// held (Ctrl+wheel changes the icon size), `shift` while Shift is held
+    /// (Shift+wheel scrolls Details sideways), and `tilt` for the horizontal
+    /// wheel.
     Wheel {
         x: i32,
         y: i32,
         delta: i32,
         ctrl: bool,
         shift: bool,
+        tilt: bool,
     },
     /// Files or folders dragged from Explorer or the desktop were dropped on
     /// the space.

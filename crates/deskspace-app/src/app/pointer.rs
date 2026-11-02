@@ -172,8 +172,19 @@ impl App {
                 delta,
                 ctrl,
                 shift,
+                tilt,
             } => {
-                self.on_wheel(ui, surface, Point::new(x, y), delta, ctrl, shift);
+                self.on_wheel(
+                    ui,
+                    surface,
+                    super::wheel::WheelInput {
+                        point: Point::new(x, y),
+                        delta,
+                        ctrl,
+                        shift,
+                        tilt,
+                    },
+                );
             }
             SpaceEvent::MouseUp {
                 button: MouseButton::Left,

@@ -32,10 +32,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetCursor,
     SetLayeredWindowAttributes, SetTimer, SetWindowPos, ShowWindow, WINDOW_EX_STYLE, WINDOWPOS,
     WM_CAPTURECHANGED, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
-    WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL,
-    WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP,
-    WM_SETCURSOR, WM_SIZE, WM_SYSCOMMAND, WM_TIMER, WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING,
-    WM_XBUTTONUP, WS_CHILD, WS_CLIPSIBLINGS, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+    WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEHWHEEL, WM_MOUSEMOVE,
+    WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN,
+    WM_RBUTTONUP, WM_SETCURSOR, WM_SIZE, WM_SYSCOMMAND, WM_TIMER, WM_WINDOWPOSCHANGED,
+    WM_WINDOWPOSCHANGING, WM_XBUTTONUP, WS_CHILD, WS_CLIPSIBLINGS, WS_EX_LAYERED, WS_EX_NOACTIVATE,
     WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
     XBUTTON1,
 };
@@ -798,7 +798,7 @@ struct Modifiers {
 }
 
 /// Reads the `MK_*` flags that every mouse message carries in the low word of
-/// wParam (for `WM_MOUSEWHEEL`, GET_KEYSTATE_WPARAM).
+/// wParam (for the wheel messages, GET_KEYSTATE_WPARAM).
 ///
 /// `GetKeyState` cannot be used here: it reports the key state as of the last
 /// keyboard message this thread read, and a space is never activated, so its
@@ -987,11 +987,12 @@ unsafe fn on_mouse_leave(window: HWND) {
     }
 }
 
-unsafe fn on_mouse_wheel(window: HWND, wparam: WPARAM, lparam: LPARAM) {
+unsafe fn on_mouse_wheel(window: HWND, wparam: WPARAM, lparam: LPARAM, tilt: bool) {
     // Unlike other mouse messages, the wheel position is in screen
     // coordinates, and the delta is the signed high word of wParam
-    // (GET_WHEEL_DELTA_WPARAM).
+    // (GET_WHEEL_DELTA_WPARAM). A tilt wheel's positive delta is to the right.
     // https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-mousewheel
+    // https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-mousehwheel
     let delta = hiword(wparam.0 as isize);
     let mut point = [POINT {
         x: loword(lparam.0),
@@ -1012,6 +1013,7 @@ unsafe fn on_mouse_wheel(window: HWND, wparam: WPARAM, lparam: LPARAM) {
                 delta,
                 ctrl,
                 shift,
+                tilt,
             },
         );
     }
@@ -1139,8 +1141,8 @@ unsafe extern "system" fn wndproc(
                 apply_cursor(shape);
                 LRESULT(1)
             }
-            WM_MOUSEWHEEL => {
-                on_mouse_wheel(window, wparam, lparam);
+            WM_MOUSEWHEEL | WM_MOUSEHWHEEL => {
+                on_mouse_wheel(window, wparam, lparam, message == WM_MOUSEHWHEEL);
                 LRESULT(0)
             }
             WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN | WM_RBUTTONDBLCLK => {

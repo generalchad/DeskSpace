@@ -951,9 +951,10 @@ exact steps, ranges, edge cases, and the code behind them.
 **Spaces**
 
 - Moving snaps to the grid; resizing follows the view's cells (ROADMAP D22).
-- Shift+wheel on a Details space scrolls its columns sideways, within
-  `details_max_scroll`; every other view keeps the plain wheel for its own
-  axis. Only Details has a second offset (D24).
+- Shift+wheel, or tilting the wheel, on a Details space scrolls its columns
+  sideways, within `details_max_scroll`; every other view keeps the plain wheel
+  for its own axis, and a tilt outside Details does nothing. Only Details has a
+  second offset (D24).
 - Ctrl+wheel: under the default "Match Explorer's display" preset it sets
   the desktop's own icon size, 8 px a notch between 16 and 256, and matching
   spaces follow (ROADMAP D9); under Custom it changes the global size 10 % a

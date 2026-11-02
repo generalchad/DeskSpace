@@ -5795,3 +5795,6 @@ until I5-I6 all land, so no partial build hides the desktop.
     the model.
   - The gap between the check and the step is too short to hit by hand, so the
     tests carry this. **[needs human]** check: U5's and U7's rows still pass.
+
+- [x] **P15e. After: P15b. The tilt wheel: `WM_MOUSEHWHEEL` in the space window
+  (`win32/space_window.rs`, or `mouse.rs` after K8).**
