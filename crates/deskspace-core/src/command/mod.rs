@@ -221,6 +221,16 @@ pub enum Command {
         path: PathBuf,
         label: String,
     },
+    /// Updates the file facts of a space's existing items from a fresh read,
+    /// without adding or removing any. Only `size`, `modified`, `created`,
+    /// `compressed`, and `encrypted` change; an id the space no longer holds
+    /// is skipped. A kept-sorted space sorts again and re-places its items,
+    /// and any other keeps its order and positions. A lens is `Rejected`,
+    /// because its listing owns its facts.
+    RefreshItemFacts {
+        space: SpaceId,
+        facts: Vec<(ItemId, ItemFacts)>,
+    },
     /// Lays a space's items out on the grid again, fitting the space to them
     /// unless it is user-sized.
     AutoArrange {
@@ -357,6 +367,9 @@ impl Desktop {
             Command::ReorderItems { ids, index } => self.apply_reorder_items(&ids, index, layout),
             Command::RenameItem { id, path, label } => {
                 self.apply_rename_item(id, path, label, layout)
+            }
+            Command::RefreshItemFacts { space, facts } => {
+                self.apply_refresh_item_facts(space, &facts, layout)
             }
             Command::SyncDesktop { items } => self.apply_sync_desktop(items),
             Command::MoveToDesktop { item } => self.apply_move_to_desktop(item, layout),
@@ -2065,6 +2078,197 @@ mod tests {
             desktop.apply(Command::Reflow { id: SpaceId(999) }, bounds()),
             CommandOutcome::NotFound
         );
+    }
+
+    #[test]
+    fn refresh_item_facts_sets_only_the_five_facts() {
+        let (mut desktop, id) = space_with_items(vec![item(1, "a", ItemKind::File, 1, 1)]);
+        let before = desktop.item(ItemId(1)).unwrap().to_owned();
+        let facts = ItemFacts {
+            is_folder: true,
+            size: Some(42),
+            modified: Some(7),
+            created: Some(5),
+            compressed: true,
+            encrypted: true,
+        };
+        assert_eq!(
+            desktop.apply(
+                Command::RefreshItemFacts {
+                    space: id,
+                    facts: vec![(ItemId(1), facts)],
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        let item = desktop.item(ItemId(1)).unwrap();
+        assert_eq!(item.size, Some(42));
+        assert_eq!(item.modified, Some(7));
+        assert_eq!(item.created, Some(5));
+        assert!(item.compressed);
+        assert!(item.encrypted);
+        assert_eq!(item.kind, before.kind, "is_folder does not change the kind");
+        assert_eq!(item.path, before.path);
+        assert_eq!(item.label, before.label);
+        assert_eq!(item.position, before.position);
+    }
+
+    #[test]
+    fn refresh_item_facts_is_rejected_when_nothing_differs() {
+        let (mut desktop, id) = space_with_items(vec![item(1, "a", ItemKind::File, 1, 1)]);
+        let facts = ItemFacts {
+            size: Some(1),
+            modified: Some(1),
+            ..ItemFacts::default()
+        };
+        for batch in [
+            vec![(ItemId(1), facts)],
+            vec![(ItemId(999), facts)],
+            Vec::new(),
+        ] {
+            assert_eq!(
+                desktop.apply(
+                    Command::RefreshItemFacts {
+                        space: id,
+                        facts: batch,
+                    },
+                    bounds()
+                ),
+                CommandOutcome::Rejected
+            );
+        }
+    }
+
+    #[test]
+    fn refresh_item_facts_missing_space_is_not_found() {
+        let mut desktop = Desktop::new();
+        assert_eq!(
+            desktop.apply(
+                Command::RefreshItemFacts {
+                    space: SpaceId(999),
+                    facts: Vec::new(),
+                },
+                bounds()
+            ),
+            CommandOutcome::NotFound
+        );
+    }
+
+    #[test]
+    fn refresh_item_facts_rejects_a_lens() {
+        let mut desktop = Desktop::new();
+        let id = desktop.next_space_id();
+        assert!(
+            desktop
+                .apply(
+                    Command::CreateLens {
+                        title: "L".into(),
+                        at: Point::new(200, 0),
+                        size: Size::new(100, 100),
+                        path: "C:/missing".into(),
+                        locked: false,
+                        view: crate::SpaceView::default(),
+                    },
+                    bounds()
+                )
+                .is_applied()
+        );
+        assert_eq!(
+            desktop.apply(
+                Command::RefreshItemFacts {
+                    space: id,
+                    facts: Vec::new(),
+                },
+                bounds()
+            ),
+            CommandOutcome::Rejected
+        );
+    }
+
+    #[test]
+    fn refresh_item_facts_re_sorts_and_re_places_a_kept_sorted_space() {
+        let (mut desktop, id) = space_with_items(vec![
+            item(1, "a", ItemKind::File, 10, 1),
+            item(2, "b", ItemKind::File, 20, 1),
+        ]);
+        keep_sorted(
+            &mut desktop,
+            id,
+            SortRule {
+                key: SortKey::Size,
+                ..SortRule::default()
+            },
+        );
+        desktop.apply(Command::AutoArrange { id }, bounds());
+        let first_slot = desktop.item(ItemId(1)).unwrap().position;
+
+        assert_eq!(
+            desktop.apply(
+                Command::RefreshItemFacts {
+                    space: id,
+                    facts: vec![(
+                        ItemId(1),
+                        ItemFacts {
+                            size: Some(30),
+                            modified: Some(1),
+                            ..ItemFacts::default()
+                        }
+                    )],
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        assert_eq!(labels(&desktop, id), ["b", "a"]);
+        assert_eq!(
+            desktop.item(ItemId(2)).unwrap().position,
+            first_slot,
+            "the new first item takes the first slot"
+        );
+    }
+
+    #[test]
+    fn refresh_item_facts_keeps_a_hand_ordered_space_as_it_was() {
+        let (mut desktop, id) = space_with_items(vec![
+            item(1, "a", ItemKind::File, 10, 1),
+            item(2, "b", ItemKind::File, 20, 1),
+        ]);
+        desktop.apply(Command::AutoArrange { id }, bounds());
+        let positions: Vec<_> = desktop
+            .space(id)
+            .unwrap()
+            .items
+            .iter()
+            .map(|item| item.position)
+            .collect();
+
+        assert_eq!(
+            desktop.apply(
+                Command::RefreshItemFacts {
+                    space: id,
+                    facts: vec![(
+                        ItemId(1),
+                        ItemFacts {
+                            size: Some(30),
+                            modified: Some(1),
+                            ..ItemFacts::default()
+                        }
+                    )],
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        assert_eq!(labels(&desktop, id), ["a", "b"]);
+        let after: Vec<_> = desktop
+            .space(id)
+            .unwrap()
+            .items
+            .iter()
+            .map(|item| item.position)
+            .collect();
+        assert_eq!(after, positions, "order and positions stay");
     }
 
     #[test]

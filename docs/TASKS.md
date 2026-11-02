@@ -1628,13 +1628,6 @@ Small first. Each lands alone unless it says "After".
   - Tests: `follow_moved_folder` for browsed with a root, browsed without, and not
     browsed.
 
-- [ ] **P13b. `Command::RefreshItemFacts` (feature, core only).** After: P13a. Part
-  of P13. The Command recipe's steps 1, 2, and 4, with `{ space, facts: Vec<(ItemId,
-  ItemFacts)> }`. Sets only the five facts above and no other field. `Applied` only if
-  one differed, else `Rejected`. A kept-sorted space re-sorts and re-positions; any
-  other keeps order and positions. A lens is `Rejected`, because its listing owns
-  its facts. Nothing dispatches it yet; P13d does, as C10a landed before C10c.
-
 - [ ] **P10a. Pull `reverse_step` out of `reverse_files` (refactor).** Part of P10.
   Split the loop body into `reverse_step(ui, files, index, undo) -> bool` in
   `app/undo.rs`. A pure move with no change in order or logic. It sits in code that

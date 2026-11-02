@@ -5627,3 +5627,10 @@ until I5-I6 all land, so no partial build hides the desktop.
   Reset it to 0 where `set_scroll(id, 0)` runs on a view change. Nothing sets it yet
   but tests. Test: a stored offset clamps after the space narrows, and grows back
   no further than it was stored.
+
+- [x] **P13b. `Command::RefreshItemFacts` (feature, core only).** After: P13a. Part
+  of P13. The Command recipe's steps 1, 2, and 4, with `{ space, facts: Vec<(ItemId,
+  ItemFacts)> }`. Sets only the five facts above and no other field. `Applied` only if
+  one differed, else `Rejected`. A kept-sorted space re-sorts and re-positions; any
+  other keeps order and positions. A lens is `Rejected`, because its listing owns
+  its facts. Nothing dispatches it yet; P13d does, as C10a landed before C10c.

@@ -68,6 +68,7 @@ impl Desktop {
             | Command::AutoArrange { id } => Touched::spaces([*id]),
             Command::RestoreSpaces { spaces } => Touched::spaces(spaces.iter().map(|(id, _)| *id)),
             Command::AddItem { space, .. } => Touched::spaces([*space]),
+            Command::RefreshItemFacts { space, .. } => Touched::spaces([*space]),
             Command::RemoveItem { id }
             | Command::ReorderItem { id, .. }
             | Command::RenameItem { id, .. } => Touched::spaces(holder(*id)),

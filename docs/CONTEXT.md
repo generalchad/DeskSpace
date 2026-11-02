@@ -388,6 +388,11 @@ ones a variant's doc cannot show.
 - `SortSpace { id, rule: SortRule }` sorts by the rule's key (name, type,
   size, or modified), direction, and folders-first, and keeps the rule as the
   space's own; a lens uses the same rule in `SyncLens`.
+- `RefreshItemFacts { space, facts }` writes only an item's `size`,
+  `modified`, `created`, `compressed`, and `encrypted`, skips an id the space
+  no longer holds, and is `Rejected` when no fact differed. A kept-sorted
+  space sorts and re-places its items; any other keeps its order and
+  positions. A lens is `Rejected`, because its listing owns its facts.
 - `CreateLens { title, at, size, path, locked, view }` clamps like
   `CreateSpace` and starts the lens with a default `FolderView` whose title
   mode is `FolderName`. `SetLensFolder { id, path, title }` rebinds it, sets

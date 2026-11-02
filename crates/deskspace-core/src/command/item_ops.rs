@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use super::CommandOutcome;
+use super::{CommandOutcome, hold_kept_order};
 use crate::desktop::Desktop;
 use crate::id::{ItemId, SpaceId};
 use crate::item::{Item, ItemFacts};
@@ -148,6 +148,52 @@ impl Desktop {
             // A rename can change where a kept sort puts the item.
             if space.keeps_sorted() {
                 space.view.sort.move_into_order(&mut space.items, index);
+                position_items(space, layout);
+            }
+            CommandOutcome::Applied
+        })
+    }
+
+    /// Writes the facts that changed without a new item, then restores a kept
+    /// sort. Any other space keeps its order and positions.
+    pub(super) fn apply_refresh_item_facts(
+        &mut self,
+        space: SpaceId,
+        facts: &[(ItemId, ItemFacts)],
+        layout: GridSpec,
+    ) -> CommandOutcome {
+        match self.space(space) {
+            None => return CommandOutcome::NotFound,
+            // A lens's listing owns its facts; a refresh here would fight it.
+            Some(target) if target.is_lens() => return CommandOutcome::Rejected,
+            Some(_) => {}
+        }
+        self.with_space(space, |space| {
+            let mut changed = false;
+            for &(id, facts) in facts {
+                // A batch can name an item that has since gone; skip it.
+                let Some(item) = space.items.iter_mut().find(|item| item.id == id) else {
+                    continue;
+                };
+                if item.size == facts.size
+                    && item.modified == facts.modified
+                    && item.created == facts.created
+                    && item.compressed == facts.compressed
+                    && item.encrypted == facts.encrypted
+                {
+                    continue;
+                }
+                item.size = facts.size;
+                item.modified = facts.modified;
+                item.created = facts.created;
+                item.compressed = facts.compressed;
+                item.encrypted = facts.encrypted;
+                changed = true;
+            }
+            if !changed {
+                return CommandOutcome::Rejected;
+            }
+            if hold_kept_order(space) {
                 position_items(space, layout);
             }
             CommandOutcome::Applied
