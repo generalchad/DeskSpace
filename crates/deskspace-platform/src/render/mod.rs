@@ -127,6 +127,8 @@ struct IconImage {
 impl Icon {
     /// `pixels` holds `width * height` premultiplied BGRA pixels, top-down.
     pub(crate) fn new(width: u32, height: u32, pixels: Box<[u8]>) -> Self {
+        // Process state: the next icon id. Every `IconImage` needs a unique id
+        // without an owner to hold the counter, and it only ever increments.
         static NEXT_ID: AtomicU64 = AtomicU64::new(1);
         debug_assert_eq!(pixels.len(), width as usize * height as usize * 4);
         Self(Arc::new(IconImage {

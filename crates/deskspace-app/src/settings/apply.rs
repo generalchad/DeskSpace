@@ -453,7 +453,7 @@ fn lens_edit(
             session.filter_texts.insert((space.id, id), text.clone());
             (
                 Command::SetLensView { id: space.id, view },
-                FieldEffect::Refilter,
+                FieldEffect::Lens,
             )
         }
         (field::LENS_TITLE_MODE, FieldValue::Choice(index)) => {
@@ -1268,7 +1268,7 @@ mod tests {
         )
         .expect("the filter field has a command");
         assert_eq!(id, lens);
-        assert_eq!(effect, FieldEffect::Refilter, "no new listing");
+        assert_eq!(effect, FieldEffect::Lens);
         let Command::SetLensView { view, .. } = command else {
             panic!("expected SetLensView, got {command:?}");
         };

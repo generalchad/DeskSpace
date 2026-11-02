@@ -6,6 +6,8 @@
 //! `EFFECTS` says which options each effect uses, and `KINDS` says which
 //! effects and options each kind offers.
 
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
 
 /// How a space appears or goes away. Every effect has an "in" and an "out",
@@ -30,6 +32,8 @@ pub enum Effect {
     Crt,
     /// A dissolve whose edge glows as it burns.
     Burn,
+    /// Drops in from beyond an edge and settles in shrinking bounces.
+    Bounce,
 }
 
 /// An option an effect can use, beyond the duration every effect has.
@@ -61,6 +65,9 @@ pub struct EffectSpec {
     /// Where "Automatic" goes, for an effect that uses `Direction`: the top
     /// unless the row says otherwise.
     pub auto_edge: AutoEdge,
+    /// How long it plays, in percent of the chosen duration, so an effect
+    /// that needs more time takes it without a special case.
+    pub stretch_percent: u16,
 }
 
 use EffectOption::{Detail, Direction};
@@ -76,6 +83,7 @@ pub const EFFECTS: &[EffectSpec] = &[
     effect(Effect::Fly, "fly", &[Direction]).auto_edge(AutoEdge::Nearest),
     effect(Effect::Crt, "crt", &[]),
     effect(Effect::Burn, "burn", &[Detail]),
+    effect(Effect::Bounce, "bounce", &[Direction]).stretch_percent(200),
 ];
 
 const fn effect(effect: Effect, key: &'static str, options: &'static [EffectOption]) -> EffectSpec {
@@ -84,12 +92,25 @@ const fn effect(effect: Effect, key: &'static str, options: &'static [EffectOpti
         key,
         options,
         auto_edge: AutoEdge::Top,
+        stretch_percent: 100,
     }
 }
 
 impl EffectSpec {
     const fn auto_edge(self, auto_edge: AutoEdge) -> Self {
         Self { auto_edge, ..self }
+    }
+
+    const fn stretch_percent(self, stretch_percent: u16) -> Self {
+        Self {
+            stretch_percent,
+            ..self
+        }
+    }
+
+    /// How long the effect plays when `chosen` is the chosen duration.
+    pub fn stretched(&self, chosen: Duration) -> Duration {
+        chosen * u32::from(self.stretch_percent) / 100
     }
 }
 
@@ -433,14 +454,15 @@ mod tests {
 
     /// Every effect. The match makes a new `Effect` a compile error here, so
     /// it cannot miss its `EFFECTS` row.
-    fn every_effect() -> [Effect; 9] {
+    fn every_effect() -> [Effect; 10] {
         use Effect::*;
         let effects = [
-            None, Roll, Fade, Pixelate, Gradient, Dissolve, Fly, Crt, Burn,
+            None, Roll, Fade, Pixelate, Gradient, Dissolve, Fly, Crt, Burn, Bounce,
         ];
         for effect in effects {
             match effect {
-                None | Roll | Fade | Pixelate | Gradient | Dissolve | Fly | Crt | Burn => {}
+                None | Roll | Fade | Pixelate | Gradient | Dissolve => {}
+                Fly | Crt | Burn | Bounce => {}
             }
         }
         effects
@@ -458,7 +480,7 @@ mod tests {
     #[test]
     fn effects_use_the_options_d12_gives_them() {
         let detail = [Effect::Pixelate, Effect::Dissolve, Effect::Burn];
-        let direction = [Effect::Roll, Effect::Gradient, Effect::Fly];
+        let direction = [Effect::Roll, Effect::Gradient, Effect::Fly, Effect::Bounce];
         for spec in EFFECTS {
             assert_eq!(spec.effect.uses(Detail), detail.contains(&spec.effect));
             assert_eq!(

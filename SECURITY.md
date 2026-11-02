@@ -46,6 +46,7 @@ Of particular interest:
 - the update path: the update check, the `latest.json` feed, signature
   verification of the downloaded installer, and the installer itself
   (`crates/deskspace-update`, `RELEASING.md`);
+- the icon set download and its signature check (`deskspace_update::fetch_signed`);
 - file handling: moving files into and out of the private store, paste, drag
   and drop, delete, and anything that could touch a file outside the user's
   intent;
@@ -59,6 +60,8 @@ user, and bugs in Windows or third-party dependencies (report those upstream;
 ## Privacy
 
 DeskSpace collects no telemetry. Its only network access is the update check,
-which asks GitHub for the latest release and sends nothing about you or your
+which asks GitHub for the latest release, and the one-time download of a space
+icon set, which asks first (Settings > General, "Icon downloads") and is
+verified against the same signing key. Neither sends anything about you or your
 files. Anything that contradicts this is a security bug; please report it as
 above.

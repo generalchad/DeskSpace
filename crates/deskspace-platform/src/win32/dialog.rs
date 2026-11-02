@@ -188,32 +188,32 @@ pub(crate) unsafe fn show(dialog: HWND, dark: bool) {
     }
 }
 
-/// Creates a child control of `parent` with the dialog's font.
-#[allow(clippy::too_many_arguments)]
-pub(crate) unsafe fn control(
-    chrome: &DialogChrome,
-    parent: HWND,
-    class: PCWSTR,
-    text: &str,
-    style: u32,
-    ex_style: WINDOW_EX_STYLE,
-    bounds: (i32, i32, i32, i32),
-    id: usize,
-) -> Option<HWND> {
-    let text = wide(text);
+/// The parts of a child control that vary between callers.
+pub(crate) struct ControlSpec<'a> {
+    pub class: PCWSTR,
+    pub text: &'a str,
+    pub style: u32,
+    pub ex_style: WINDOW_EX_STYLE,
+    pub bounds: (i32, i32, i32, i32),
+    pub id: usize,
+}
+
+/// Creates a child control of `parent` with `font`.
+pub(crate) unsafe fn control(font: HFONT, parent: HWND, spec: ControlSpec<'_>) -> Option<HWND> {
+    let text = wide(spec.text);
     // SAFETY: creating a child of our own window; `text` outlives the call.
     unsafe {
         let hwnd = CreateWindowExW(
-            ex_style,
-            class,
+            spec.ex_style,
+            spec.class,
             PCWSTR(text.as_ptr()),
-            WS_CHILD | WS_VISIBLE | WINDOW_STYLE(style),
-            bounds.0,
-            bounds.1,
-            bounds.2,
-            bounds.3,
+            WS_CHILD | WS_VISIBLE | WINDOW_STYLE(spec.style),
+            spec.bounds.0,
+            spec.bounds.1,
+            spec.bounds.2,
+            spec.bounds.3,
             Some(parent),
-            Some(HMENU(id as *mut core::ffi::c_void)),
+            Some(HMENU(spec.id as *mut core::ffi::c_void)),
             instance(),
             None,
         )
@@ -221,7 +221,7 @@ pub(crate) unsafe fn control(
         SendMessageW(
             hwnd,
             WM_SETFONT,
-            Some(WPARAM(chrome.font.0 as usize)),
+            Some(WPARAM(font.0 as usize)),
             Some(LPARAM(1)),
         );
         Some(hwnd)
@@ -299,12 +299,21 @@ pub(crate) unsafe fn window_text(control: HWND) -> String {
 /// Opens the standard file Open dialog over `owner` and returns the files the
 /// user picked, or an empty list when they cancelled. Multi-select is on and
 /// the dialog starts on the Desktop folder; only existing filesystem items are
-/// offered, so every returned path names a real file (F-55).
+/// offered, so every returned path names a real file (F-55). A non-empty
+/// `filter` lists (name, pattern) pairs such as `("Theme files",
+/// "*.deskspace-theme.toml")` and selects the first.
 /// https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-ifileopendialog
 /// https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/ne-shobjidl_core-_fileopendialogoptions
-pub(crate) unsafe fn pick_files(owner: HWND, title: &str) -> Vec<PathBuf> {
+pub(crate) unsafe fn pick_files(owner: HWND, title: &str, filter: &[(&str, &str)]) -> Vec<PathBuf> {
     // SAFETY: as `open_dialog` requires.
-    unsafe { open_dialog(owner, title, FOS_FILEMUSTEXIST | FOS_ALLOWMULTISELECT) }
+    unsafe {
+        open_dialog(
+            owner,
+            title,
+            FOS_FILEMUSTEXIST | FOS_ALLOWMULTISELECT,
+            filter,
+        )
+    }
 }
 
 /// Opens the Open dialog in "Select folder" mode over `owner` and returns the
@@ -312,16 +321,33 @@ pub(crate) unsafe fn pick_files(owner: HWND, title: &str) -> Vec<PathBuf> {
 /// folders are offered, so a library or "This PC" cannot be picked.
 pub(crate) unsafe fn pick_folder(owner: HWND, title: &str) -> Option<PathBuf> {
     // SAFETY: as `open_dialog` requires.
-    unsafe { open_dialog(owner, title, FOS_PICKFOLDERS) }
+    unsafe { open_dialog(owner, title, FOS_PICKFOLDERS, &[]) }
         .into_iter()
         .next()
 }
 
 /// The Open dialog over `owner`, titled `title`, with `options` added to its
-/// defaults and `FOS_FORCEFILESYSTEM`, starting on the Desktop. Returns the
-/// picked paths, empty when cancelled. `owner` must be a live window of this
-/// thread, with OLE initialized.
-unsafe fn open_dialog(owner: HWND, title: &str, options: FILEOPENDIALOGOPTIONS) -> Vec<PathBuf> {
+/// defaults and `FOS_FORCEFILESYSTEM`, starting on the Desktop. `filter` lists
+/// (name, pattern) pairs such as `("Theme files", "*.deskspace-theme.toml")`;
+/// the first is selected. Returns the picked paths, empty when cancelled.
+/// `owner` must be a live window of this thread, with OLE initialized.
+unsafe fn open_dialog(
+    owner: HWND,
+    title: &str,
+    options: FILEOPENDIALOGOPTIONS,
+    filter: &[(&str, &str)],
+) -> Vec<PathBuf> {
+    let names: Vec<(Vec<u16>, Vec<u16>)> = filter
+        .iter()
+        .map(|(name, pattern)| (wide(name), wide(pattern)))
+        .collect();
+    let specs: Vec<COMDLG_FILTERSPEC> = names
+        .iter()
+        .map(|(name, pattern)| COMDLG_FILTERSPEC {
+            pszName: PCWSTR(name.as_ptr()),
+            pszSpec: PCWSTR(pattern.as_ptr()),
+        })
+        .collect();
     // SAFETY: OLE is initialized on this thread; the dialog is modal over
     // `owner` and released when it goes out of scope.
     unsafe {
@@ -341,6 +367,9 @@ unsafe fn open_dialog(owner: HWND, title: &str, options: FILEOPENDIALOGOPTIONS) 
         }
         let title = wide(title);
         let _ = picker.SetTitle(PCWSTR(title.as_ptr()));
+        if !specs.is_empty() {
+            let _ = picker.SetFileTypes(&specs);
+        }
         if let Ok(desktop) =
             SHGetKnownFolderItem::<IShellItem>(&FOLDERID_Desktop, KF_FLAG_DEFAULT, None)
         {

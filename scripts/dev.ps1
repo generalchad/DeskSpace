@@ -25,6 +25,12 @@
     Run fmt, clippy, and tests first, then a release build.
 
 .EXAMPLE
+    ./scripts/dev.ps1 -Check -Changed -NoRun
+    Run fmt and clippy, but test only the crates changed since main and the
+    crates that depend on them. Use -Base to compare with another branch.
+    The gates still run on the whole workspace before a commit.
+
+.EXAMPLE
     ./scripts/dev.ps1 -RealConfig -- --placement desktop-background
     Use the real configuration and pass extra arguments to DeskSpace.
 
@@ -58,6 +64,10 @@ param(
     [switch]$NoIcons,
     # Run cargo fmt, clippy (warnings as errors), and tests before building.
     [switch]$Check,
+    # With -Check, test only the crates a change can affect.
+    [switch]$Changed,
+    # The branch -Changed compares with.
+    [string]$Base = 'main',
     # Build only; do not run.
     [switch]$NoRun,
     # Log verbosity: 0 = info, 1 = debug, 2 = trace.
@@ -73,7 +83,7 @@ $ErrorActionPreference = 'Stop'
 # Accept switches written the app's way, and app flags written PowerShell's
 # way, so `--OnTop` and `--Debug` work as `-OnTop` and `--debug` do. Done
 # first, because switches such as -Release and -Check change the build.
-$scriptSwitches = 'Release', 'Fresh', 'RealConfig', 'OnTop', 'Settings', 'NoIcons', 'Check', 'NoRun'
+$scriptSwitches = 'Release', 'Fresh', 'RealConfig', 'OnTop', 'Settings', 'NoIcons', 'Check', 'Changed', 'NoRun'
 $passThrough = @()
 foreach ($arg in $AppArgs) {
     if ($arg -eq '--') { continue }
@@ -110,6 +120,81 @@ function Invoke-Cargo {
     }
 }
 
+function Get-GitLines {
+    param([string[]]$Arguments)
+    $lines = & git @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "git $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
+    }
+    @($lines)
+}
+
+function Get-ChangedFiles {
+    param([string]$BaseBranch)
+    $files = @(
+        Get-GitLines @('diff', '--name-only', "$BaseBranch...HEAD")
+        Get-GitLines @('diff', '--name-only', 'HEAD')
+        Get-GitLines @('ls-files', '--others', '--exclude-standard')
+    )
+    @($files | Where-Object { $_ } | Sort-Object -Unique)
+}
+
+function Get-WorkspaceCrates {
+    $json = & cargo metadata --format-version 1 --no-deps --locked
+    if ($LASTEXITCODE -ne 0) {
+        throw "cargo metadata failed with exit code $LASTEXITCODE"
+    }
+    foreach ($package in ($json | ConvertFrom-Json).packages) {
+        $manifestDir = Split-Path -Parent $package.manifest_path
+        [pscustomobject]@{
+            Name         = $package.name
+            Dir          = [IO.Path]::GetRelativePath($root, $manifestDir) -replace '\\', '/'
+            Dependencies = @($package.dependencies | Where-Object { $_.path } | ForEach-Object { $_.name })
+        }
+    }
+}
+
+function Test-AffectsEveryCrate {
+    param([string]$File)
+    $File -in 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml' -or $File.StartsWith('.cargo/')
+}
+
+function Get-ChangedCrates {
+    param([string[]]$Files, [object[]]$Crates)
+    if ($Files | Where-Object { Test-AffectsEveryCrate $_ }) {
+        return @($Crates.Name)
+    }
+    @($Crates | Where-Object {
+            $prefix = "$($_.Dir)/"
+            $Files | Where-Object { $_.StartsWith($prefix) }
+        } | ForEach-Object { $_.Name })
+}
+
+function Add-Dependents {
+    param([string[]]$Names, [object[]]$Crates)
+    $affected = @($Names)
+    do {
+        $added = @($Crates | Where-Object {
+                $_.Name -notin $affected -and ($_.Dependencies | Where-Object { $_ -in $affected })
+            } | ForEach-Object { $_.Name })
+        $affected += $added
+    } while ($added)
+    $affected
+}
+
+function Invoke-AffectedTests {
+    param([string]$BaseBranch)
+    $crates = @(Get-WorkspaceCrates)
+    $changed = Get-ChangedCrates -Files (Get-ChangedFiles $BaseBranch) -Crates $crates
+    $affected = @(Add-Dependents -Names $changed -Crates $crates)
+    if (-not $affected) {
+        Write-Host 'No crate changed; no tests to run.' -ForegroundColor Green
+        return
+    }
+    Write-Host "Testing the affected crates: $($affected -join ', ')" -ForegroundColor Green
+    Invoke-Cargo (@('test', '--locked') + @($affected | ForEach-Object { '-p', $_ }))
+}
+
 Push-Location $root
 try {
     $targetDir = Join-Path $root 'target'
@@ -124,7 +209,12 @@ try {
     if ($Check) {
         Invoke-Cargo @('fmt', '--all')
         Invoke-Cargo @('clippy', '--workspace', '--all-targets', '--', '-D', 'warnings')
-        Invoke-Cargo @('test', '--workspace')
+        if ($Changed) {
+            Invoke-AffectedTests $Base
+        }
+        else {
+            Invoke-Cargo @('test', '--workspace')
+        }
     }
 
     $build = @('build', '-p', 'deskspace-app')

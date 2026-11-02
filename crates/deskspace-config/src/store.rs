@@ -64,6 +64,15 @@ impl ConfigStore {
         &self.icons
     }
 
+    /// Where theme files live: a `themes` folder beside the config, so a
+    /// scratch `--config` has its own and a real one keeps the user's.
+    pub fn themes_dir(&self) -> PathBuf {
+        self.path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("themes")
+    }
+
     pub fn exists(&self) -> bool {
         self.path.is_file()
     }
@@ -188,6 +197,12 @@ mod tests {
     fn explicit_configs_keep_the_icon_cache_beside_them() {
         let store = ConfigStore::with_path("C:/scratch/deskspace.toml");
         assert_eq!(store.icons_dir(), Path::new("C:/scratch/icons"));
+    }
+
+    #[test]
+    fn explicit_configs_keep_their_themes_beside_them() {
+        let store = ConfigStore::with_path("C:/scratch/deskspace.toml");
+        assert_eq!(store.themes_dir(), Path::new("C:/scratch/themes"));
     }
 
     #[test]

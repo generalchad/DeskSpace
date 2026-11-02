@@ -154,7 +154,11 @@ A native, lightweight, offline Windows desktop organizer that:
     the release page and never replaces its own files.
   - *Signing:* SignPath Foundation (free for open source), wired into
     `release.yml` through `cargo-packager`'s `windows.signCommand`. Signing
-    ships before or together with auto-update.
+    ships before or together with auto-update. Amended 2026-10-31
+    (maintainer): the update feed turns on in v0.3.0, ahead of signing. The
+    minisign signature already proves an update is ours, and waiting would
+    tie the release to SignPath's approval. Installers show SmartScreen's
+    warning until R10 lands.
 
 - **D7. Desktop takeover model (2026-10-10).**
   - The desktop's loose icons - the Desktop-folder files that are not in any
@@ -281,7 +285,11 @@ A native, lightweight, offline Windows desktop organizer that:
     state the same way. Anything else changed them since (a prune, a look
     edit, a re-flow that moved items, a file moved outside DeskSpace), so
     the entry is stale: it is dropped with a message naming it, and nothing
-    is changed. All checks run before the first file is touched.
+    is changed. All checks run before the first file is touched. A lens's
+    items are not part of this (amended 2026-10-31, maintainer): they are a
+    live view of its folder, replaced by every listing, so an entry neither
+    stores nor compares them. A lens brought back keeps showing what it holds,
+    or lists its folder if it shows another.
   - *Model:* a restore is a `Command` that puts back exactly the stored
     spaces, so the model still changes only through `Command`s. Ids are
     never reused within a session, so a restored space or item cannot
@@ -332,12 +340,13 @@ A native, lightweight, offline Windows desktop organizer that:
     differs from play to play; `TASKS.md` T24-T33). Black hole (the space swallowed by a hole that
     opens at its own center) is planned after composition (T14). It
     needs the composition path; on Windows 10 and the accent path it
-    plays Fade instead (amended 2026-10-29, maintainer). Also
-    planned (amended 2026-10-18, maintainer; `TASKS.md` T19-T21):
+    plays Fade instead (amended 2026-10-29, maintainer). Also in
+    the shared list (amended 2026-10-18, maintainer; `TASKS.md` T19-T21):
     - **Bounce:** the space drops in from beyond an edge of its monitor's
       work area (Automatic is the top), lands on its place, and settles in
-      a few shrinking bounces; out, it plays that backwards. It moves the
-      window's rect, as Fly does, so the blur follows it.
+      two shrinking rebounds, playing at twice the chosen duration so each
+      one can be seen (amended 2026-10-31); out, it plays that backwards.
+      It moves the window's rect, as Fly does, so the blur follows it.
     - **Scroll:** the space rolls up like a paper scroll. The body curls
       into a shaded cylinder, with the contents wrapped around it, that
       travels toward the edge (Automatic is the top) and grows as it
@@ -361,11 +370,11 @@ A native, lightweight, offline Windows desktop organizer that:
   - *Controls:* each kind has the common ones: its effect and a duration
     (100 to 1000 ms). An effect adds only the options it uses: Detail (the
     block size, grain, or edge width) for Pixelate, Dissolve, and Burn, and
-    Direction (which edge; Automatic is the effect's own: the top for Roll
-    and Gradient, the nearest for Fly) for Roll, Gradient, and Fly. A control the
-    chosen effect does not use is greyed, so each page keeps its shape. The
-    controls live in a Global-only Animations group of pages, one per kind,
-    so no page grows too tall for a 1080-pixel display. Each effect sets
+    Direction (which edge; Automatic is the effect's own: the top for Roll,
+    Gradient, and Bounce, the nearest for Fly) for Roll, Gradient, Fly, and
+    Bounce. A control the chosen effect does not use is greyed, so each page
+    keeps its shape. The controls live in a Global-only Animations group of
+    pages, one per kind, so no page grows too tall for a 1080-pixel display. Each effect sets
     its own pace (amended 2026-10-22, maintainer): its row stretches the
     chosen duration and picks its progress curve, so an effect that needs
     longer, or a different rhythm, is one value in its row, not a special
@@ -405,9 +414,9 @@ A native, lightweight, offline Windows desktop organizer that:
     never adds a branch on one effect's name.
   - *The blur:* the Acrylic and Blur material is drawn by DWM behind the
     whole window (the accent policy, D2) and can only be on or off. Roll,
-    Fly, and CRT's opening change the window's rect, so the blur follows
-    them exactly. The other effects change pixels: the painter applies them
-    to the tint and the contents, the same on every path. For the blur to
+    Fly, Bounce, and CRT's opening change the window's rect, so the blur
+    follows them exactly. The other effects change pixels: the painter applies
+    them to the tint and the contents, the same on every path. For the blur to
     follow those too, spaces move to the Windows composition engine
     (`Windows.UI.Composition`), where the blur is a host backdrop brush
     that takes the same opacity and masks (T12, T13). The painter draws
@@ -547,8 +556,12 @@ A native, lightweight, offline Windows desktop organizer that:
     not the darkest pixel. The blur leaves its peak at about three quarters
     of it below the space and half beside it; this is what shipped and what
     O3 checks.)
-  - *Animations:* the shadow follows the window's rect (Roll, Fly, CRT).
-    It fades with any frame that leaves the window see-through.
+  - *Animations:* the shadow follows the window's rect (Roll, Fly, Bounce,
+    CRT). It fades with any frame that leaves the window see-through.
+    (Amended 2026-10-31: Fly and Bounce cast none while the
+    work area clips them. A shadow of a new size reaches the screen a frame
+    after its window, and it is hollow, so crossing the edge left an empty
+    outlined box.)
   - *Debug window (amends D14):* a "Shadow settings" box edits the three
     settings as the settings window does, and saves them at once, as the
     animation settings box does. Two session-only toggles outline every
@@ -588,7 +601,9 @@ A native, lightweight, offline Windows desktop organizer that:
     from GitHub, and saves the answer (allowed or declined); the General
     page can change it. The first-run seed space starts with no icon, so
     the very first launch never asks. Declined, spaces show no icon and
-    the picker says so.
+    the picker says so. A build with no signing key cannot verify a set, so
+    it does not ask, saves no answer, and greys the General page's choice
+    (amended 2026-10-31, maintainer).
   - *Matching:* pure and unit-tested, outside the platform. The space's
     title is split into words and scored against a curated table of
     English words to icon names ("games", "work", "photos", "school"), then
@@ -679,8 +694,9 @@ A native, lightweight, offline Windows desktop organizer that:
   - Work items: `TASKS.md` section W, phase 4 (W8-W23).
 
 - **D18. Lens and view extras, M4 phase 5 (2026-10-21, maintainer).**
-  Builds on D17 and ships after v0.3 (section 6), so it never holds up
-  the lens release.
+  Builds on D17. It was planned to ship after v0.3 so it would never hold
+  up the lens release; it landed first, so v0.3.0 includes it (amended
+  2026-10-31, maintainer).
   - *Browsing into subfolders:* double-clicking a real folder in a lens
     shows that folder in place, as Explorer does. A shortcut to a folder
     still opens as today, because a shortcut can point anywhere. A Back
@@ -823,28 +839,36 @@ v0.2.4 (animations, F-33, and the debug window, F-61). Takeover ships opt-in
 **Done:** M0 (foundations), M1 (renderer and Windows 11 look), and M4
 (lenses, phases 0-5).
 
-**In progress:** M2 (only the stored-file watch remains), M3 (desktop verbs,
-F-52, and entries that wait on later milestones or design), and M5's space
-icons (S1-S4 are built; the title icon and the picker follow).
+**In progress:** M2 (only the stored-file watch remains), M3 (entries that
+wait on later milestones or design), and M5's space icons (the title icon and
+the download consent are built; the picker may run alongside the human test
+compendium).
 Undo (D11), drawn shadows (D15), and lenses (M4 phases 1-5) have landed since
 v0.2.4 and ship in the next release. Section 5 lists what each has done.
 
-**Next, in order:**
+**Next, in order** (decided 2026-10-31, maintainer: performance first, then
+the release path; amended the same day: the icon picker moves after v0.3.0,
+and the update feed no longer waits for signing; amended 2026-11-01: human
+checks collect in `TASKS.md` section V and no longer block work):
 
-1. **Space icons** (M5 item 7, F-62, `TASKS.md` section S). The model,
-   the icon-set library, its cache, and the signed download are built
-   (S1-S4, S6-S8, S13); S5 and S9-S12 need a screen.
-2. **L1's on-screen findings** (`TASKS.md` section L): record what each
-   drag source offers. The rest of adding items to spaces (F-50,
-   F-53..F-55) has landed.
-3. **On-screen verification pass** (`TASKS.md` section V, R7), starting with
-   the checks a script can make (`TASKS.md` section O, O1 first). Confirm the
-   built-but-unchecked behaviors before more work builds on them.
-4. **Release dry run on clean machines** (R12) and **code signing** (R10),
-   before turning on the update feed.
-5. **Animations beyond the eight that landed** (M5 item 5, D12, D13;
-   `TASKS.md` section T): Bounce, Scroll, and Magic lamp (T19-T21) are
-   ready. The composition spike (T1) runs alongside.
+1. **[done] Lens performance** (`TASKS.md` B37, archived): a big lens's list
+   is built off the UI thread, and swapping in 50,000 items takes about 0.3 ms.
+2. **The signing key and the icon set.** The maintainer's minisign key
+   (`RELEASING.md`), then the "Publish icon set" workflow (S5). The key turns
+   on the update feed (D6), and the set makes the automatic title icons of
+   new spaces work, which a keyed build otherwise offers and fails to fetch.
+3. **Human test compendium** (`TASKS.md` section V, R7), lens rows first,
+   starting with the checks a script can make (`TASKS.md` section O). Work
+   continues while rows await a person; a release still waits for the rows it
+   covers. L1's findings (`TASKS.md` section L) join the compendium.
+4. **Release dry run on clean machines** (R12), then **v0.3.0**.
+5. **The icon picker** (M5 item 7, F-62, `TASKS.md` S9-S12), which may run
+   alongside the compendium, and **code signing** (R10), when SignPath
+   approves it.
+6. **Animations beyond the effects that landed** (M5 item 5, D12, D13;
+   `TASKS.md` section T): Bounce is built and awaits its check (T19); Scroll
+   and Magic lamp (T20-T21) are ready. The composition spike (T1) runs
+   alongside.
 
 Not next: mapping Explorer's desktop view mode. The desktop offers only the
 three icon views, and its Small icons keep labels below, so F-40 closes with
@@ -901,17 +925,15 @@ Done (status in section 7; the full list is archived with M0's): the tray
 (F-16), the space menu (F-14, F-24, F-31), the settings window (F-17) with
 per-space looks (F-46), every `WindowSettings` field wired (F-18), dark mode
 for DeskSpace's own chrome (F-30), the zoom pop-up (F-57), the color picker
-(F-51), and the ways to add items without a drag (F-53..F-55).
+(F-51), the ways to add items without a drag (F-53..F-55), and the desktop
+background verbs (F-52).
 
 Remaining:
 1. Tray and menu entries:
    - pause takeover (unblocked now that the takeover exists);
    - new lens (M4);
    - snapshots (M6);
-   - an Arrange submenu;
-   - spaces entries on the desktop's own background menu - "New space",
-     "DeskSpace Settings", and the like - beside the existing "Show spaces"
-     verb, so the desktop is a control surface like the tray (F-52).
+   - an Arrange submenu.
 2. An Explorer "Send to" or right-click "Add to a DeskSpace space" entry
    (F-56). Deferred: it needs a hand-off to the running instance (the
    `--show` verb is the model) and, for the Windows 11 top-level menu, the
@@ -923,7 +945,8 @@ Remaining:
 4. Theme files (F-58): save a whole look to a file and load it on Global or
    a space, so themes can be shared without forking (`TASKS.md` C10). A
    theme carries the item preset, since it sets icon size and spacing
-   (decided 2026-10-29, maintainer).
+   (decided 2026-10-29, maintainer). The format and `themes_dir` are in
+   (`theme_file.rs`); the dialogs and settings buttons follow (C10b, C10c).
 
 Exit criteria: every runtime setting can be edited in the UI, and the tray
 menu can show and hide spaces and open settings.
@@ -947,8 +970,9 @@ Goal: spaces that mirror a folder live. Each phase lands green.
   - Entries come from the platform, so `core` does no IO: `FolderEntry { path,
     label, kind, size, modified, hidden }`.
   - New commands: `CreateLens`, `SetLensFolder`, `SetLensView`, and
-    `SyncLens { id, entries }`. `SyncLens` filters, sorts by the space's
-    `SortRule`, and reconciles by path, so `ItemId`s survive refreshes.
+    `SyncLens { id, items }`. A `LensBuilder` on the watch worker filters,
+    sorts by the space's `SortRule`, and reconciles by path, so `ItemId`s
+    survive refreshes (B37).
   - `AddItem` / `MoveItem` into a lens are `Rejected`.
   - Lens items are not persisted (F-07, F-08).
 - **Phase 2 - platform. [done]**
@@ -993,7 +1017,7 @@ Goal: spaces that mirror a folder live. Each phase lands green.
     custom text.
   - A View page for every space, a Lens page for each lens, and a Global
     Lenses page with defaults (F-17).
-- **Phase 5 - extras, after v0.3. [done]** Decided in D18;
+- **Phase 5 - extras. [done]** Decided in D18;
   `TASKS.md` W24-W49.
   - Two fixes first: a listing carries the folder it read, and the
     storage check moves off the UI thread.
@@ -1040,8 +1064,8 @@ Remaining:
    or chosen in a picker from the rename box or the space's settings, from
    a downloaded Fluent icon set (F-62, D16). Build it with or after F-28,
    which reworks the same title bar. Partial: the model, the library, the
-   cache, and the signed download are built (S1-S4); the title icon, the
-   picker, and the settings follow (S5-S13).
+   cache, the signed download, the title icon, and the consent are built (S1-S8,
+   S13, S14); the picker and the settings follow (S9-S12).
 
 Exit criteria: hide-all and peek are instant and reversible, and the fold
 policy can be set per space.
@@ -1158,8 +1182,9 @@ Remaining:
    10 describe the settings, controls, and code. `cargo deny` passes (the
    updater's `time` dependency moved the minimum Rust version to 1.88). Still
    to do (maintainer): set the `DESKSPACE_MINISIGN_KEY` secret and the public
-   `UPDATE_PUBKEY`, then sign before shipping (item 3), because unsigned
-   updates trigger SmartScreen on every version.
+   `UPDATE_PUBKEY`, which turns the feed on. It does not wait for code signing
+   (item 3; D6, amended 2026-10-31), so until then unsigned updates trigger
+   SmartScreen on every version.
 8. A winget manifest in `microsoft/winget-pkgs` for the installer, updated
    per stable release by a workflow step, after the first stable release.
 
@@ -1226,8 +1251,7 @@ catalog.
   of M2 and M3, with takeover opt-in (D8, D9). The rest of M2 and M3 (the
   stored-file watch, the desktop verbs) ships in a v0.2.x release or with
   v0.3, as the maintainer decides. Undo (D11) landed after v0.2.4.
-- **v0.3 "Lenses"**: M4 phases 0-4. Phase 5 (D18) follows in a v0.3.x
-  release or with v0.4.
+- **v0.3 "Lenses"**: M4, phases 0-5 (D18, amended 2026-10-31).
 - **v0.4 "Flow"**: M5.
 - **v0.5 "Rooms"**: M6, M7.
 - **v1.0**: M8.
@@ -1278,7 +1302,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-30 | Settings and menu theme override | M3 | Done; check pending |
 | F-31 | Sort items in normal spaces | M3, M4 | Done: Explorer's Sort by (W14) and Keep sorted (W15); check pending (`TASKS.md` V: W15) |
 | F-32 | Hover opacity | M5 | Open |
-| F-33 | Animations: startup and exit, hide/show, new space, delete, fold | M5 | Partial: built for Startup, Delete, and Fold with eight effects (D12; `TASKS.md` section T), awaiting the on-screen checks in section V; Bounce, Scroll, and Magic lamp ready (T19-T21) |
+| F-33 | Animations: startup and exit, hide/show, new space, delete, fold | M5 | Partial: built for Startup, Delete, and Fold with the effects in `EFFECTS` (D12; `TASKS.md` section T), awaiting the on-screen checks in section V; Bounce is built and awaits its check (T19); Scroll and Magic lamp are ready (T20-T21) |
 | F-34 | Start with Windows | M3, M8 | Done; check pending |
 | F-35 | Snap to other spaces | M6 | Open |
 | F-36 | Explorer-parity drag (move default, OLE drop target, right-button drag per D9) | M2 | Done (G5a-G5c); check pending |
@@ -1297,17 +1321,17 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-49 | Tabs in spaces (per-space pagination, off by default) | M6 | Open (`TASKS.md` section J) |
 | F-50 | Accept non-file shell drags (Start menu / taskbar apps) as shortcuts | M2 | Done; check pending (`TASKS.md` V: L2; L1 findings) |
 | F-51 | Modern color picker (replace the dated system `ChooseColor` dialog) | M3 | Done, and redesigned after the mockup: acrylic, hue and opacity sliders, hex/RGB/HSL entry, copy and paste, an eyedropper, and recent colors; check pending (`TASKS.md` V: F14) |
-| F-52 | Spaces entries on the desktop background context menu (New space, DeskSpace Settings, ...) | M3 | Open (`TASKS.md` C9); the "Show spaces" verb exists while spaces are hidden (M8 item 4 moves it into the Windows 11 top-level menu) |
+| F-52 | Spaces entries on the desktop background context menu (New space, DeskSpace Settings, ...) | M3 | Done: New space, DeskSpace Settings, and Show spaces (only while hidden) on the desktop background menu, each handing off to the running instance; check pending (`TASKS.md` section V: C9). M8 item 4 may move them into the Windows 11 top-level menu |
 | F-53 | "New shortcut ▸": pick installed apps (Store apps included), or describe a custom target, to add as shortcuts | M3 | Done: the space menu's submenu and a space's Settings page "Shortcuts" (a preview with an X per item and a + tile); checked on screen 2026-10-13 |
 | F-54 | "Paste shortcut" into a space, as in Explorer | M3 | Done; check pending (`TASKS.md` L5) |
 | F-55 | "Add files…": pick files to add to a space | M3 | Done; check pending (`TASKS.md` V: L6) |
 | F-56 | Explorer "Send to" / "Add to a DeskSpace space" entry | M3, M8 | Deferred; needs an instance hand-off and, for the Windows 11 menu, M8 item 4 |
 | F-57 | Zoom pop-up: the icon size as a percentage at the top center of the screen, with zoom out, zoom in, and Reset | M3 | Done; check pending (`TASKS.md` V) |
-| F-58 | Theme files: save, load, and share a look | M3 | Open (`TASKS.md` C10) |
+| F-58 | Theme files: save, load, and share a look | M3 | Partial: the format, clamping, and `themes_dir` are in (`deskspace-config/src/theme_file.rs`); the save/load dialogs and settings buttons follow (C10b, C10c) |
 | F-59 | Scripting verbs for the running instance (out-of-process extension point) | M7 | Open; needs design (`TASKS.md` R16) |
 | F-60 | Translation: the UI follows the Windows display language, with a Language override | M9 | Open; format decided in D20, the rest of the design is `TASKS.md` R18 |
 | F-61 | Debug window (`--debug`): live log console, test-space tools, diagnostics, and simulations | Tooling | Built; awaiting on-screen check (`TASKS.md` section V, X4-X20 and extras) |
-| F-62 | Space icons: an icon beside the title, matched from the space's name, changeable in the rename box and the space's settings | M5 | Partial: the model, the icon-set library, the cache, the signed download, the title icon, and the download consent are built (S1-S4, S6-S8, S13); the picker follows (S5, S9-S12), decided in D16 |
+| F-62 | Space icons: an icon beside the title, matched from the space's name, changeable in the rename box and the space's settings | M5 | Partial: the model, the icon-set library, the cache, the signed download, the title icon, and the download consent are built (S1-S8, S13, S14); the picker and the settings icons are next (S9-S12), decided in D16, with their checks in `TASKS.md` section V |
 | F-63 | Details columns: choose, resize, reorder, Date created | M4 | Done; check pending (`TASKS.md` V: W30, W31, W32); decided in D18 |
 | F-64 | Browse into subfolders inside a lens | M4 | Done; check pending (`TASKS.md` V: W42, W43); decided in D18 |
 | F-65 | Group by, as Explorer (every space) | M4 | Done; check pending (`TASKS.md` V: W37, W38); decided in D18 |

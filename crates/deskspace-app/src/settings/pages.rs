@@ -318,12 +318,9 @@ pub(super) fn general_page(config: &Config) -> SettingsPage {
                 "Icon downloads",
                 &labels(&ICON_DOWNLOAD_OPTIONS),
                 index_of(&ICON_DOWNLOAD_OPTIONS, config.window.icon_downloads),
-            ),
-            Field::note(
-                field::ICON_DOWNLOADS_NOTE,
-                "Space icons come from an icon set downloaded once from DeskSpace's releases \
-                 on GitHub, and only after you agree. Nothing about you or your files is sent.",
-            ),
+            )
+            .enabled(deskspace_update::is_configured()),
+            Field::note(field::ICON_DOWNLOADS_NOTE, icon_downloads_note()),
             Field::heading(field::UPDATES_HEADING, "Updates"),
             Field::toggle(
                 field::CHECK_UPDATES,
@@ -350,6 +347,15 @@ fn can_install_automatically(config: &Config) -> bool {
     config.window.check_for_updates
         && deskspace_update::is_configured()
         && deskspace_update::is_installed()
+}
+
+fn icon_downloads_note() -> &'static str {
+    if deskspace_update::is_configured() {
+        "Space icons come from an icon set downloaded once from DeskSpace's releases \
+         on GitHub, and only after you agree. Nothing about you or your files is sent."
+    } else {
+        "This build cannot download space icons."
+    }
 }
 
 fn updates_note() -> &'static str {

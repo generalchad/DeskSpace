@@ -1,6 +1,8 @@
 //! Ui methods for input sources: mouse hooks, folder and keyboard
 //! watches, timers, and hotkeys.
 
+use deskspace_core::{ItemId, LensBuilder, LensRules};
+
 use super::*;
 
 impl Ui {
@@ -13,13 +15,30 @@ impl Ui {
         }
     }
 
+    /// Whether `key` watches `path` now.
+    pub fn is_watching_folder(&self, key: WatchKey, path: &Path) -> bool {
+        with_runtime(|runtime| {
+            runtime
+                .folder_watches
+                .as_ref()
+                .is_some_and(|watches| watches.is_watching(key, path))
+        })
+        .unwrap_or(false)
+    }
+
     /// Watches `path` for changes under `key` and delivers
-    /// `Event::FolderChanged { key }` once per debounced burst. Calling it
-    /// again with the same key and path does nothing; another path replaces
-    /// that key's watch. Call `unwatch_folder` to stop. A folder whose final
-    /// path is `store` or inside it is never watched; it reports
-    /// `FolderListing::Refused`.
-    pub fn watch_folder(&mut self, key: WatchKey, path: &Path, store: &Path) {
+    /// `Event::FolderChanged { key }` once per debounced burst, with the list
+    /// `builder` made on the worker. Calling it again with the same key and
+    /// path does nothing; another path replaces that key's watch. Call
+    /// `unwatch_folder` to stop. A folder whose final path is `store` or inside
+    /// it is never watched; it reports `FolderListing::Refused`.
+    pub fn watch_folder(
+        &mut self,
+        key: WatchKey,
+        path: &Path,
+        store: &Path,
+        builder: Option<LensBuilder>,
+    ) {
         let Some(controller) = with_runtime(|runtime| runtime.controller) else {
             return;
         };
@@ -31,13 +50,39 @@ impl Ui {
                 }
             }
             match runtime.folder_watches.as_mut() {
-                Some(watches) => watches.watch(key, path, store),
+                Some(watches) => watches.watch(key, path, store, builder),
                 None => Ok(()),
             }
         });
         if let Some(Err(error)) = result {
             tracing::warn!(%error, path = %path.display(), "could not watch the folder");
         }
+    }
+
+    /// Has `key`'s worker build its list under `rules` from the last listing,
+    /// and deliver it as a change. Rules it already has do nothing.
+    pub fn set_lens_rules(&mut self, key: WatchKey, rules: LensRules) {
+        with_runtime(|runtime| {
+            if let Some(watches) = runtime.folder_watches.as_mut() {
+                watches.set_lens_rules(key, rules);
+            }
+        });
+    }
+
+    /// Tells `key`'s worker that item `id` now has `path` (a rename), so the
+    /// next listing keeps its id.
+    pub fn note_lens_item(
+        &mut self,
+        key: WatchKey,
+        path: PathBuf,
+        id: ItemId,
+        modified: Option<u64>,
+    ) {
+        with_runtime(|runtime| {
+            if let Some(watches) = runtime.folder_watches.as_ref() {
+                watches.note_lens_item(key, path, id, modified);
+            }
+        });
     }
 
     /// Stops the folder watch for `key`, if it has one.

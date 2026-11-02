@@ -257,6 +257,7 @@ impl App {
             if self.rename_space_item(id, shows_extension, typed, |path, new_name| {
                 ui.rename_path(path, new_name)
             }) {
+                self.note_renamed_lens_item(ui, id);
                 self.refresh_tray(ui);
                 self.save(ui);
             }
@@ -453,6 +454,9 @@ fn title_commit(space: &Space, typed: &str, default: LensTitle, profile: &Path) 
     })
 }
 
+/// The file name to rename to: `typed` as typed when the label showed the
+/// extension, otherwise with the original extension kept, as Explorer does
+/// when "File name extensions" is off.
 fn renamed_file_name(original: &Path, typed: &str, shows_extension: bool) -> String {
     if shows_extension {
         return typed.to_string();

@@ -27,7 +27,7 @@ use windows::core::{PCWSTR, w};
 
 use crate::error::PlatformError;
 use crate::ui::{CustomShortcut, ShortcutTarget};
-use crate::win32::dialog::{self, DialogChrome, ID_CANCEL, ID_OK, window_text};
+use crate::win32::dialog::{self, ControlSpec, DialogChrome, ID_CANCEL, ID_OK, window_text};
 use crate::win32::shortcuts::{display_name, resolve_path};
 use crate::win32::system::wide;
 use crate::win32::window_class::{self, WindowClass};
@@ -115,14 +115,16 @@ unsafe fn build(window: HWND, state: &mut DialogState, client: (i32, i32)) {
         // SAFETY: a child edit of our live window.
         unsafe {
             dialog::control(
-                chrome,
+                chrome.font,
                 window,
-                w!("Edit"),
-                text,
-                ES_AUTOHSCROLL as u32 | tab,
-                WS_EX_CLIENTEDGE,
-                bounds,
-                id,
+                ControlSpec {
+                    class: w!("Edit"),
+                    text,
+                    style: ES_AUTOHSCROLL as u32 | tab,
+                    ex_style: WS_EX_CLIENTEDGE,
+                    bounds,
+                    id,
+                },
             )
         }
     };
@@ -130,14 +132,16 @@ unsafe fn build(window: HWND, state: &mut DialogState, client: (i32, i32)) {
         // SAFETY: a child static of our live window.
         unsafe {
             dialog::control(
-                chrome,
+                chrome.font,
                 window,
-                w!("Static"),
-                text,
-                LABEL_STYLE,
-                WINDOW_EX_STYLE(0),
-                (margin, y, width, s(20)),
-                0,
+                ControlSpec {
+                    class: w!("Static"),
+                    text,
+                    style: LABEL_STYLE,
+                    ex_style: WINDOW_EX_STYLE(0),
+                    bounds: (margin, y, width, s(20)),
+                    id: 0,
+                },
             )
         }
     };
@@ -152,14 +156,16 @@ unsafe fn build(window: HWND, state: &mut DialogState, client: (i32, i32)) {
             ID_TARGET,
         );
         dialog::control(
-            chrome,
+            chrome.font,
             window,
-            w!("Button"),
-            "Browse\u{2026}",
-            BS_PUSHBUTTON as u32 | tab,
-            WINDOW_EX_STYLE(0),
-            (margin + width - browse_width, y - s(3), browse_width, s(30)),
-            ID_BROWSE,
+            ControlSpec {
+                class: w!("Button"),
+                text: "Browse\u{2026}",
+                style: BS_PUSHBUTTON as u32 | tab,
+                ex_style: WINDOW_EX_STYLE(0),
+                bounds: (margin + width - browse_width, y - s(3), browse_width, s(30)),
+                id: ID_BROWSE,
+            },
         );
         y += field_height + s(12);
         label("Arguments (optional):", y);
@@ -172,39 +178,45 @@ unsafe fn build(window: HWND, state: &mut DialogState, client: (i32, i32)) {
         let button = (s(96), s(30));
         let buttons_y = client.1 - margin - button.1;
         state.message = dialog::control(
-            chrome,
+            chrome.font,
             window,
-            w!("Static"),
-            "",
-            LABEL_STYLE,
-            WINDOW_EX_STYLE(0),
-            (margin, buttons_y, width - 2 * button.0 - s(16), button.1),
-            0,
+            ControlSpec {
+                class: w!("Static"),
+                text: "",
+                style: LABEL_STYLE,
+                ex_style: WINDOW_EX_STYLE(0),
+                bounds: (margin, buttons_y, width - 2 * button.0 - s(16), button.1),
+                id: 0,
+            },
         );
         dialog::control(
-            chrome,
+            chrome.font,
             window,
-            w!("Button"),
-            "Create",
-            BS_DEFPUSHBUTTON as u32 | tab,
-            WINDOW_EX_STYLE(0),
-            (
-                client.0 - margin - 2 * button.0 - s(8),
-                buttons_y,
-                button.0,
-                button.1,
-            ),
-            ID_OK,
+            ControlSpec {
+                class: w!("Button"),
+                text: "Create",
+                style: BS_DEFPUSHBUTTON as u32 | tab,
+                ex_style: WINDOW_EX_STYLE(0),
+                bounds: (
+                    client.0 - margin - 2 * button.0 - s(8),
+                    buttons_y,
+                    button.0,
+                    button.1,
+                ),
+                id: ID_OK,
+            },
         );
         dialog::control(
-            chrome,
+            chrome.font,
             window,
-            w!("Button"),
-            "Cancel",
-            BS_PUSHBUTTON as u32 | tab,
-            WINDOW_EX_STYLE(0),
-            (client.0 - margin - button.0, buttons_y, button.0, button.1),
-            ID_CANCEL,
+            ControlSpec {
+                class: w!("Button"),
+                text: "Cancel",
+                style: BS_PUSHBUTTON as u32 | tab,
+                ex_style: WINDOW_EX_STYLE(0),
+                bounds: (client.0 - margin - button.0, buttons_y, button.0, button.1),
+                id: ID_CANCEL,
+            },
         );
     }
 }

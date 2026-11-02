@@ -102,6 +102,14 @@ pub fn run(cli: Cli, debug_log: Option<DebugLog>) -> anyhow::Result<()> {
     if cli.show && deskspace_platform::signal_show_spaces() {
         return Ok(());
     }
+    // The other desktop verbs hand off the same way; with no instance running
+    // this process starts and opens the space or the window itself.
+    if cli.new_space && deskspace_platform::signal_new_space() {
+        return Ok(());
+    }
+    if cli.settings && deskspace_platform::signal_open_settings() {
+        return Ok(());
+    }
 
     let store = match &cli.config {
         Some(path) => ConfigStore::with_path(PathBuf::from(path)),

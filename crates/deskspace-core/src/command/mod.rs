@@ -22,7 +22,7 @@ use crate::id::{ItemId, SpaceId};
 use crate::item::{Item, ItemFacts};
 use crate::layout::{GridSpec, arrange_space, position_items};
 use crate::sort::SortRule;
-use crate::source::{FolderEntry, FolderView, LensTitle};
+use crate::source::{FolderView, LensTitle};
 use crate::space::{ResizeEdges, Space, SpaceLook};
 use crate::view::SpaceView;
 use crate::view_layout::ViewMetrics;
@@ -73,13 +73,12 @@ pub enum Command {
         id: SpaceId,
         view: FolderView,
     },
-    /// Replaces a lens's items from the folder's current `entries`. Hidden
-    /// entries are dropped unless the view shows them; the result is sorted
-    /// with natural name order. A path that survives keeps its `ItemId`, a new
-    /// path gets a fresh id, and a path that is gone is dropped.
+    /// Swaps in a lens's finished item list, which a `LensBuilder` filtered,
+    /// sorted, and gave ids to off the UI thread. This only lays it out. The
+    /// list it replaces is left for `Desktop::take_retired_items`.
     SyncLens {
         id: SpaceId,
-        entries: Vec<FolderEntry>,
+        items: Vec<Item>,
     },
     DeleteSpace {
         id: SpaceId,
@@ -173,7 +172,9 @@ pub enum Command {
     /// removes it. The layout is not applied: a restore is an exact copy.
     /// `Rejected`, changing nothing, if an id is listed twice, a space does
     /// not carry its listed id, or a restored item's id is held by a space
-    /// not listed, by another restored space, or by the desktop layer.
+    /// not listed, by another restored space, or by the desktop layer. A lens
+    /// keeps the items it holds while it shows the same folder, because undo
+    /// does not store them (`Space::undo_snapshot`).
     RestoreSpaces {
         spaces: Vec<(SpaceId, Option<(usize, Space)>)>,
     },
@@ -319,7 +320,7 @@ impl Desktop {
             }
             Command::SetLensTitle { id, title, text } => self.apply_set_lens_title(id, title, text),
             Command::SetLensView { id, view } => self.apply_set_lens_view(id, view),
-            Command::SyncLens { id, entries } => self.apply_sync_lens(id, entries, layout),
+            Command::SyncLens { id, items } => self.apply_sync_lens(id, items, layout, bounds),
             Command::MoveSpace { id, delta } => self.apply_move_space(id, delta, layout, bounds),
             Command::SetSpaceRect { id, rect } => {
                 self.apply_set_space_rect(id, rect, layout, bounds)
@@ -342,7 +343,7 @@ impl Desktop {
             Command::SetSpaceLook { id, custom, look } => {
                 self.apply_set_space_look(id, custom, look)
             }
-            Command::RestoreSpaces { spaces } => self.apply_restore_spaces(spaces),
+            Command::RestoreSpaces { spaces } => self.apply_restore_spaces(spaces, layout),
             Command::ToggleLock { id } => self.apply_toggle_lock(id),
             Command::ToggleFold { id } => self.apply_toggle_fold(id),
             Command::AutoArrange { id } => self.apply_auto_arrange(id, layout),
@@ -1525,6 +1526,32 @@ mod tests {
     }
 
     #[test]
+    fn renaming_a_kept_sorted_item_moves_it_into_place() {
+        let (mut desktop, id) = space_with_items(vec![
+            item(1, "a", ItemKind::File, 0, 0),
+            item(2, "b", ItemKind::File, 0, 0),
+            item(3, "c", ItemKind::File, 0, 0),
+        ]);
+        keep_sorted(&mut desktop, id, SortRule::default());
+        let renamed = desktop.space(id).unwrap().items[1].id;
+        assert_eq!(
+            desktop.apply(
+                Command::RenameItem {
+                    id: renamed,
+                    path: "C:/missing/z".into(),
+                    label: "z".into(),
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        assert_eq!(labels(&desktop, id), ["a", "c", "z"]);
+        let item = &desktop.space(id).unwrap().items[2];
+        assert_eq!(item.id, renamed);
+        assert_eq!(item.position, desktop.layout.grid_position(2));
+    }
+
+    #[test]
     fn reorder_items_rejects_an_empty_selection() {
         let (mut desktop, _) = space_with_items(vec![item(1, "a", ItemKind::File, 0, 0)]);
         assert_eq!(
@@ -1777,6 +1804,39 @@ mod tests {
         assert_eq!(labels(&desktop, id), ["c", "a", "b"]);
         keep_sorted(&mut desktop, id, SortRule::default());
         assert_eq!(labels(&desktop, id), ["a", "b", "c"]);
+        assert_eq!(
+            desktop.space(id).unwrap().items[0].position,
+            desktop.layout.grid_position(0)
+        );
+    }
+
+    #[test]
+    fn changing_a_kept_sort_rule_sorts_a_normal_space_at_once() {
+        let (mut desktop, id) = space_with_items(vec![
+            item(1, "a", ItemKind::File, 300, 1),
+            item(2, "b", ItemKind::File, 100, 1),
+            item(3, "c", ItemKind::File, 200, 1),
+        ]);
+        keep_sorted(&mut desktop, id, SortRule::default());
+        assert_eq!(labels(&desktop, id), ["a", "b", "c"]);
+        assert_eq!(
+            desktop.apply(
+                Command::SetSpaceView {
+                    id,
+                    view: SpaceView {
+                        keep_sorted: true,
+                        sort: SortRule {
+                            key: SortKey::Size,
+                            ..SortRule::default()
+                        },
+                        ..SpaceView::default()
+                    },
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        assert_eq!(labels(&desktop, id), ["b", "c", "a"], "by size");
         assert_eq!(
             desktop.space(id).unwrap().items[0].position,
             desktop.layout.grid_position(0)

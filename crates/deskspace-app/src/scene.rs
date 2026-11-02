@@ -223,7 +223,7 @@ pub fn space_scene_with_details(
                 id: item.id.0,
                 rect,
                 label: item_label(item, view.show_extensions),
-                icon: icons.icon_for(&item.path, metrics.icon_size, theme.overlay_size),
+                icon: icons.icon_for(&item.path, item.kind, metrics.icon_size, theme.overlay_size),
                 state: if view.dragged.contains(&item.id) {
                     ItemState::Dragged
                 } else if view.selected.contains(&item.id) {
@@ -431,7 +431,7 @@ pub fn desktop_layer_scene(
                 cell.height,
             ),
             label: item_label(item, view.show_extensions),
-            icon: icons.icon_for(&item.path, metrics.icon_size, theme.overlay_size),
+            icon: icons.icon_for(&item.path, item.kind, metrics.icon_size, theme.overlay_size),
             state: if view.dragged.contains(&item.id) {
                 ItemState::Dragged
             } else if view.selected.contains(&item.id) {
@@ -530,7 +530,7 @@ pub fn desktop_layer_drag_scene(
                     cell.height,
                 ),
                 label: item_label(item, show_extensions),
-                icon: icons.icon_for(&item.path, icon_size, overlay_size),
+                icon: icons.icon_now(&item.path, icon_size, overlay_size),
                 state: ItemState::Normal,
                 hovered: false,
                 checked: false,
@@ -573,7 +573,7 @@ pub fn drag_scene(
                 id: item.id.0,
                 rect: Rect::new(cell.x, content_top + cell.y, cell.width, cell.height),
                 label: item_label(item, show_extensions),
-                icon: icons.icon_for(&item.path, icon_size, overlay_size),
+                icon: icons.icon_now(&item.path, icon_size, overlay_size),
                 state: ItemState::Normal,
                 hovered: false,
                 checked: false,
@@ -1218,6 +1218,45 @@ mod tests {
             &mut IconCache::new(),
         );
         assert!(scene.items[0].cut);
+    }
+
+    #[test]
+    fn a_huge_lens_scene_carries_only_the_visible_page() {
+        let mut desktop = Desktop::new();
+        let id = crate::fixtures::create_lens(
+            &mut desktop,
+            "Lens",
+            Rect::new(0, 0, 240, 120),
+            "C:/folder",
+        );
+        let items: Vec<Item> = (0..2_000)
+            .map(|n| {
+                Item::new(
+                    ItemId(n),
+                    format!("C:/folder/file{n}.txt"),
+                    ItemFacts::default(),
+                )
+            })
+            .collect();
+        assert!(
+            desktop
+                .apply(Command::SyncLens { id, items }, Rect::new(0, 0, 1920, 1080))
+                .is_applied()
+        );
+        let space = desktop.space(id).unwrap();
+        let theme = Theme::default();
+        let scene = space_scene(
+            space,
+            surface_look(&theme, &theme.palette(true)),
+            ViewState::default(),
+            &mut IconCache::new(),
+        );
+        assert!(
+            scene.items.len() < 200,
+            "only the page that fits is drawn, not all {} items",
+            space.items().len()
+        );
+        assert!(!scene.items.is_empty());
     }
 
     #[test]

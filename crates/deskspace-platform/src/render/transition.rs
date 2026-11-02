@@ -3,9 +3,10 @@
 //! tested here and the window side only applies frames.
 //!
 //! A transition tracks one linear value, `u`, from 0 (gone) to 1 (fully
-//! there), and a direction. What is drawn is a function of `smoothstep(u)`
-//! alone, one symmetric curve for both directions, so an Out is the In
-//! played backwards and reversing at any moment just turns the direction
+//! there), and a direction. What is drawn is a function of the effect's
+//! curve of `u` alone, smoothstep for every effect but Bounce's
+//! `bounce_ease`, one symmetric curve for both directions, so an Out is the
+//! In played backwards and reversing at any moment just turns the direction
 //! around: the next frame equals the current one.
 
 use std::time::Duration;
@@ -98,13 +99,13 @@ pub struct Geometry {
     /// The rect Roll collapses to: nothing at an edge when hiding, the title
     /// bar when folding.
     pub rolled: Rect,
-    /// The work area of the window's monitor; Fly never leaves it.
+    /// The work area of the window's monitor; Fly and Bounce never leave it.
     pub work_area: Rect,
 }
 
 impl Geometry {
     /// A window that hides and shows (or comes and goes) with `play`: Roll
-    /// collapses it into the play's side, and Fly uses `work_area`.
+    /// collapses it into the play's side, and Fly and Bounce use `work_area`.
     pub fn for_visibility(rect: Rect, work_area: Rect, play: &Play) -> Self {
         let rolled = match play.side(rect, work_area) {
             Side::Top => Rect::new(rect.x, rect.y, rect.width, 0),
@@ -189,12 +190,15 @@ pub struct TransitionFrame {
     pub mask: Mask,
     /// How the contents are drawn.
     pub content: Content,
+    /// The work area cuts this frame's window short of the space (Fly,
+    /// Bounce), so it changes size however fast the space moves.
+    pub clipped: bool,
 }
 
 impl TransitionFrame {
     /// Whether the frame's contents are as opaque as at rest over the whole
     /// window, so nothing behind them shows through: what moves is only the
-    /// window's rect (Roll, Fly, CRT).
+    /// window's rect (Roll, Fly, Bounce, CRT).
     pub fn covers_window(&self) -> bool {
         self.opacity >= 1.0 && self.content.covers() && self.mask.hides_nothing()
     }
@@ -202,9 +206,14 @@ impl TransitionFrame {
     /// How strongly the space casts its shadow, 0 to 1 (ROADMAP D15). A
     /// frame that only moves the window casts it whole, since the shadow
     /// follows the rect. One that leaves the window see-through fades it as
-    /// far as the space has faded, or as far as it has gone.
+    /// far as the space has faded, or as far as it has gone. A clipped one
+    /// casts none: a shadow of a new size reaches the screen a frame after
+    /// its window, and it is hollow, so a space crossing the edge left an
+    /// empty outlined box behind it.
     pub fn shadow_strength(&self) -> f32 {
-        if self.covers_window() {
+        if self.clipped {
+            0.0
+        } else if self.covers_window() {
             1.0
         } else {
             self.opacity.min(self.shown).clamp(0.0, 1.0)
@@ -348,7 +357,13 @@ impl Transition {
     }
 
     pub fn frame(&self, now: Duration) -> TransitionFrame {
-        frame(&self.play, &self.geometry, smoothstep(self.u(now)))
+        let u = self.u(now);
+        // Bounce brings its own curve; every other effect shares smoothstep.
+        let shown = match self.play.effect {
+            Effect::Bounce => bounce_ease(u),
+            _ => smoothstep(u),
+        };
+        frame(&self.play, &self.geometry, shown)
     }
 }
 
@@ -372,6 +387,7 @@ fn frame(play: &Play, geometry: &Geometry, shown: f32) -> TransitionFrame {
         opacity: 1.0,
         mask: Mask::None,
         content: Content::Whole,
+        clipped: false,
     };
     let gone = 1.0 - shown;
     match play.effect {
@@ -421,13 +437,14 @@ fn frame(play: &Play, geometry: &Geometry, shown: f32) -> TransitionFrame {
             },
             ..whole
         },
-        Effect::Fly => {
+        Effect::Fly | Effect::Bounce => {
             let side = play.side(geometry.rect, geometry.work_area);
             let moved = fly_rect(geometry.rect, geometry.work_area, side, gone);
             let rect = moved.intersection(geometry.work_area);
             TransitionFrame {
                 rect,
                 content_offset: offset_of(moved, rect),
+                clipped: rect != moved,
                 ..whole
             }
         }
@@ -472,6 +489,43 @@ fn fly_rect(rect: Rect, work_area: Rect, side: Side, gone: f32) -> Rect {
     }
 }
 
+/// How much of the fall's distance its speed at the start covers: the space
+/// crosses the edge already moving, so an Out leaves the screen rather than
+/// hanging at its edge.
+const BOUNCE_ENTRY: f32 = 0.25;
+/// How much of its speed each landing keeps.
+const BOUNCE_KEPT: f32 = 1.0 / 3.0;
+/// How much of the play the first rebound lasts, per unit of the fall.
+const BOUNCE_REBOUND: f32 = BOUNCE_KEPT * (2.0 - BOUNCE_ENTRY) / (1.0 - BOUNCE_ENTRY);
+/// When the space lands: the end of the fall and of the first rebound. The
+/// second rebound lands at 1.
+const BOUNCE_LANDINGS: [f32; 2] = {
+    let fall = 1.0 / (1.0 + BOUNCE_REBOUND + BOUNCE_REBOUND * BOUNCE_KEPT);
+    [fall, fall * (1.0 + BOUNCE_REBOUND)]
+};
+/// The acceleration that carries the fall, which the rebounds share.
+const BOUNCE_GRAVITY: f32 = 2.0 * (1.0 - BOUNCE_ENTRY) / (BOUNCE_LANDINGS[0] * BOUNCE_LANDINGS[0]);
+
+/// A fall that lands and settles in two shrinking rebounds, one parabola
+/// each under one gravity. Penner's easeOutBounce (four arcs, a first rebound
+/// a quarter of the fall) left its last arcs a frame or two at the usual
+/// durations and read as jitter.
+fn bounce_ease(t: f32) -> f32 {
+    let [fall, first] = BOUNCE_LANDINGS;
+    if t < fall {
+        let t = t / fall;
+        return BOUNCE_ENTRY * t + (1.0 - BOUNCE_ENTRY) * t * t;
+    }
+    let (start, end) = if t < first {
+        (fall, first)
+    } else {
+        (first, 1.0)
+    };
+    let half = (end - start) / 2.0;
+    let from_peak = t - (start + half);
+    1.0 - BOUNCE_GRAVITY / 2.0 * (half * half - from_peak * from_peak)
+}
+
 /// Where the space's content starts: the offset of `content` (the rect the
 /// whole space would fill) from `window`'s top-left.
 fn offset_of(content: Rect, window: Rect) -> Point {
@@ -481,7 +535,7 @@ fn offset_of(content: Rect, window: Rect) -> Point {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use deskspace_core::animation::EFFECTS;
+    use deskspace_core::animation::{DURATION_MS_DEFAULT, EFFECTS};
 
     /// Every effect, from the table, so a new one is tested without an edit
     /// here.
@@ -633,10 +687,45 @@ mod tests {
             assert_eq!(transition.frame(ms(0)).shadow_strength(), 1.0, "{effect:?}");
             let midway = transition.frame(ms(100));
             let strength = midway.shadow_strength();
-            if midway.covers_window() {
+            if midway.clipped {
+                assert_eq!(strength, 0.0, "{effect:?} is crossing the edge");
+            } else if midway.covers_window() {
                 assert_eq!(strength, 1.0, "{effect:?} only moves the window");
             } else {
                 assert!((0.0..1.0).contains(&strength), "{effect:?}: {strength}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_space_casts_no_shadow_while_the_work_area_clips_it() {
+        for effect in [Effect::Fly, Effect::Bounce] {
+            let transition = start(effect, Way::Out);
+            let mut clipped = 0;
+            for step in 0..=200 {
+                let frame = transition.frame(ms(step));
+                let inside = frame.rect == geometry().rect.offset(0, frame.rect.y - 100);
+                assert_eq!(frame.clipped, !inside, "{effect:?} at {step}: {frame:?}");
+                if frame.clipped {
+                    clipped += 1;
+                    assert_eq!(frame.shadow_strength(), 0.0, "{effect:?} at {step}");
+                } else {
+                    assert_eq!(frame.shadow_strength(), 1.0, "{effect:?} at {step}");
+                }
+            }
+            assert!(clipped > 0, "{effect:?} crosses the edge");
+        }
+    }
+
+    #[test]
+    fn only_the_work_area_clips_a_frame() {
+        for effect in every_effect() {
+            if matches!(effect, Effect::Fly | Effect::Bounce) {
+                continue;
+            }
+            for step in 0..=40 {
+                let frame = start(effect, Way::Out).frame(ms(step * 5));
+                assert!(!frame.clipped, "{effect:?} at {step}");
             }
         }
     }
@@ -650,7 +739,10 @@ mod tests {
     }
 
     #[test]
-    fn showing_only_ever_reveals_more() {
+    fn showing_only_ever_reveals_more_except_bounce() {
+        // Bounce lands and rebounds, so its progress and its rect retreat
+        // during a bounce. Its opacity and block size still only grow, as
+        // every other effect's do.
         for effect in every_effect() {
             for edge in every_edge() {
                 let case = format!("{effect:?} from {edge:?}");
@@ -658,14 +750,17 @@ mod tests {
                 let mut last = transition.frame(ms(0));
                 for step in 1..=40 {
                     let frame = transition.frame(ms(step * 5));
-                    assert!(frame.shown >= last.shown, "{case} at {step}");
                     assert!(frame.opacity >= last.opacity, "{case} at {step}");
                     assert!(block(frame) <= block(last), "{case} at {step}");
-                    assert!(
-                        frame.rect.width * frame.rect.height >= last.rect.width * last.rect.height
-                            || effect == Effect::Crt,
-                        "{case} at {step}"
-                    );
+                    if effect != Effect::Bounce {
+                        assert!(frame.shown >= last.shown, "{case} at {step}");
+                        assert!(
+                            frame.rect.width * frame.rect.height
+                                >= last.rect.width * last.rect.height
+                                || effect == Effect::Crt,
+                            "{case} at {step}"
+                        );
+                    }
                     last = frame;
                 }
             }
@@ -678,13 +773,16 @@ mod tests {
         for effect in every_animated_effect() {
             for edge in every_edge() {
                 for way in [Way::In, Way::Out] {
-                    for at in [0, 1, 37, 100, 150, 199, 200, 260] {
+                    for at in [0, 1, 37, 72, 73, 100, 150, 199, 200, 260] {
                         let case = format!("{effect:?} from {edge:?} {way:?} at {at}");
                         let mut transition = start_from(effect, way, edge);
                         let before = transition.frame(ms(at));
                         transition.reverse(ms(at));
                         assert_eq!(transition.frame(ms(at)), before, "{case}");
-                        let next = transition.frame(ms(at + 5));
+                        // Bounce is steepest just before its first landing,
+                        // so give it a finer step to hold the same bound.
+                        let step = if effect == Effect::Bounce { 1 } else { 5 };
+                        let next = transition.frame(ms(at + step));
                         let shift = (next.shown - before.shown).abs();
                         assert!(shift < 0.1, "{case} jumps by {shift}");
                     }
@@ -781,6 +879,7 @@ mod tests {
         assert_eq!(side(Effect::Fly), Side::Right, "the nearest side");
         assert_eq!(side(Effect::Roll), Side::Top);
         assert_eq!(side(Effect::Gradient), Side::Top);
+        assert_eq!(side(Effect::Bounce), Side::Top);
         let left = Play {
             edge: Edge::Left,
             ..play(Effect::Fly, Way::Out)
@@ -809,6 +908,103 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn bounce_ease_lands_at_least_three_times_and_stays_in_range() {
+        assert_eq!(bounce_ease(0.0), 0.0);
+        assert!((bounce_ease(1.0) - 1.0).abs() < 1e-6);
+        for step in 0..=1000 {
+            let t = step as f32 / 1000.0;
+            let value = bounce_ease(t);
+            assert!((0.0..=1.0).contains(&value), "at {t}: {value}");
+        }
+        let [fall, first] = BOUNCE_LANDINGS;
+        assert!(bounce_ease((fall + first) / 2.0) < 1.0, "rebounds");
+        assert!(bounce_ease((first + 1.0) / 2.0) < 1.0, "rebounds again");
+        let landings = [fall, first, 1.0];
+        let touched = landings
+            .iter()
+            .filter(|&&t| (bounce_ease(t) - 1.0).abs() < 1e-5)
+            .count();
+        assert_eq!(touched, 3, "touched 1 only {touched} times");
+    }
+
+    #[test]
+    fn bounce_ease_moves_at_its_ends_and_every_landing_keeps_the_same_speed() {
+        // The slope of `bounce_ease` at `t`, measured just inside its arc.
+        let slope = |t: f32, sign: f32| (bounce_ease(t + sign * 1e-3) - bounce_ease(t)) / 1e-3;
+        assert!(slope(0.0, 1.0) > 0.2, "enters already moving");
+        let [fall, first] = BOUNCE_LANDINGS;
+        let (lands, leaves) = (slope(fall, -1.0), -slope(fall, 1.0));
+        assert!(
+            (leaves / lands + BOUNCE_KEPT).abs() < 0.02,
+            "{lands} {leaves}"
+        );
+        let (lands, leaves) = (slope(first, -1.0), -slope(first, 1.0));
+        assert!(
+            (leaves / lands + BOUNCE_KEPT).abs() < 0.02,
+            "{lands} {leaves}"
+        );
+    }
+
+    #[test]
+    fn every_bounce_is_long_enough_to_see_at_the_default_duration() {
+        // At 60 Hz, the slowest common refresh, a shorter arc shows as a
+        // twitch rather than a bounce.
+        const REFRESH_MS: f32 = 1000.0 / 60.0;
+        const FRAMES: f32 = 3.0;
+        let chosen = Duration::from_millis(DURATION_MS_DEFAULT.into());
+        let played = Effect::Bounce.spec().stretched(chosen).as_secs_f32() * 1000.0;
+        let [fall, first] = BOUNCE_LANDINGS;
+        for arc in [fall, first - fall, 1.0 - first] {
+            assert!(arc * played >= FRAMES * REFRESH_MS, "{arc} of {played} ms");
+        }
+    }
+
+    #[test]
+    fn bounce_drops_in_and_settles_without_leaving_the_work_area() {
+        let whole = geometry().rect;
+        let area = work_area();
+        for edge in every_edge() {
+            let transition = start_from(Effect::Bounce, Way::In, edge);
+            // A frame carries only the part inside the work area, so gone
+            // means empty here.
+            assert!(is_gone(&transition.frame(ms(0))), "{edge:?} starts outside");
+            for step in 0..=200 {
+                let frame = transition.frame(ms(step));
+                if frame.rect.is_empty() {
+                    continue;
+                }
+                assert_eq!(
+                    frame.rect.intersection(area),
+                    frame.rect,
+                    "{edge:?} at {step}: {:?}",
+                    frame.rect
+                );
+                match edge {
+                    Edge::Auto | Edge::Top | Edge::Bottom => {
+                        assert_eq!(frame.rect.x, whole.x, "{edge:?} keeps x");
+                    }
+                    Edge::Left | Edge::Right => {
+                        assert_eq!(frame.rect.y, whole.y, "{edge:?} keeps y");
+                    }
+                }
+            }
+            assert_eq!(transition.frame(ms(200)).rect, whole, "{edge:?} settles");
+        }
+    }
+
+    #[test]
+    fn bounce_lands_then_rebounds_before_settling() {
+        let whole = geometry().rect;
+        let transition = start(Effect::Bounce, Way::In);
+        let landed = (0..200)
+            .find(|&at| transition.frame(ms(at)).rect == whole)
+            .expect("lands");
+        let rebound = (landed..200).any(|at| transition.frame(ms(at)).rect != whole);
+        assert!(rebound, "moves off again after landing");
+        assert_eq!(transition.frame(ms(200)).rect, whole);
     }
 
     #[test]

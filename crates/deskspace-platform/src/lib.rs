@@ -1,6 +1,7 @@
 mod debug_console;
 mod edit;
 mod error;
+mod icon_queue;
 mod input;
 mod render;
 mod ui;
@@ -32,7 +33,9 @@ pub use win32::debug_info::{
     HookState, MonitorRow, ProcessStats, TaskbarRow, WindowRow, foreground_window, monitors,
     process_stats,
 };
-pub use win32::desktop_entry::{set_desktop_show_entry, signal_show_spaces};
+pub use win32::desktop_entry::{
+    DesktopVerb, set_desktop_verbs, signal_new_space, signal_open_settings, signal_show_spaces,
+};
 pub use win32::desktop_icons::{
     hide as hide_desktop_icons, rehide_if_active as rehide_desktop_icons,
     restore as restore_desktop_icons, take_explorer_rename,
@@ -50,7 +53,7 @@ pub use win32::drag_image::DragImage;
 pub use win32::file_op::OnCollision;
 pub use win32::glyphs::GlyphCache;
 pub use win32::hotkey::{Hotkey, HotkeySpec, hotkey_id, parse as parse_hotkey};
-pub use win32::icons::IconCache;
+pub use win32::icons::{IconCache, IconUser};
 pub use win32::names::{is_inside, same_name_ignoring_case, upper_name};
 pub use win32::shell_items::{DragEffect, DragResult, ItemMenuChoice};
 pub use win32::shortcuts::{create_custom_shortcut, create_shortcut, resolve_path};

@@ -97,6 +97,10 @@ platform, data-driven UI) are `ENGINEERING.md` section 3.
   | `clipboard` | cut / copy / paste |
   | `menus` | space, item, and tray menus, `create_space` |
   | `space_icons` | `SpaceIcons`: the title icons' sets, loaded off the main thread, the automatic match memo, the glyph cache, and the download consent (D16) |
+  | `lens` | keeping folder watches in line with the model, swapping in a lens's list, browsing into subfolders |
+  | `undo` | `UndoStack`, recording an action, and undoing or redoing it (ROADMAP D11) |
+  | `animation` | turning the settings and Windows' switch into each window's `Play` (ROADMAP D12) |
+  | `settings_session` | the settings window's open, preview, Apply, and Cancel |
   | `visibility` | show/hide, the desktop "Show spaces" verb, start with Windows |
   | `hotkeys` | `Hotkeys`: registering, re-registering, and releasing the global hotkeys |
   | `info_tip` | the hover info tip |
@@ -216,12 +220,28 @@ extensions" check shows what the space shows now and flips to the
 opposite; the View page offers all three. Hit tests, the marquee, keyboard
 navigation, the drag drop index, and the scroll indicator all read the same
 layout. `FolderEntry` is what the platform reads from the folder.
-A lens's items are a live cache: the watch worker lists the folder and posts
-`Event::FolderChanged`, and the app dispatches `Command::SyncLens`, which
-filters hidden entries and the view's "Show only" and "Hide" patterns
-(`FolderView::shows`, `wildcard::matches`), sorts by the space's
-`SortRule`, and reconciles by
-path so an `ItemId` survives a refresh. They are never written to the config,
+A lens's items are a live cache, built off the UI thread, because filtering and
+sorting a big folder takes far longer than a frame. The watch worker lists the
+folder and gives the entries to the lens's `LensBuilder` (`lens_build.rs`, pure),
+which filters hidden entries and the view's "Show only" and "Hide" patterns
+(`wildcard::matches`), sorts by the space's `SortRule`, and reconciles by path so
+an `ItemId` survives a refresh. Ids come from a block the watch reserved
+(`Desktop::reserve_item_ids`), and an item the model re-points tells the worker
+(`App::note_renamed_lens_item`). The worker posts the finished `LensList`, and the
+app swaps it in with `Command::SyncLens`, which only places the items; the list
+it replaces is freed off the UI thread (`Desktop::take_retired_items`, in
+`App::dispatch`). A lens that would need more than its monitor's work area for
+its items stops at that edge and scrolls, and stays that size for later
+listings, so a huge folder never makes a window millions of pixels tall. A list
+names the `LensRules` it was built under, and one that
+no longer matches the lens, like one for a folder it no longer shows, is dropped.
+A change of rules goes to the worker through `App::sync_watches`, and it builds
+again from its last listing without reading the folder. A grouped lens's display
+order stays on the UI thread: on 50,000 items it takes about 3.5 ms, and
+7.4 ms by Type, the figure accepted when B37 landed. Explorer's first type
+name for each extension is loaded by the watch worker when it lists the
+folder, into a cache shared with the UI thread, so the UI thread no longer
+pays that 14 ms spike. They are never written to the config,
 and `Config::migrate` drops any a hand-edited file lists. `AddItem` and
 `MoveItem` into a lens are `Rejected`; file changes there are shell
 operations: a drop on a lens moves
@@ -258,8 +278,10 @@ long, is cut from its start so the folder shown stays in view
 (`SpaceScene::title_keeps_end`). The painter measures the title's
 DirectWrite clusters once per title, so a cut never splits a character,
 and recuts by arithmetic as the width changes.
-A lens's title bar shows its folder's own shell icon, or the generic folder
-icon while the folder is unavailable; a normal space's title bar shows none.
+A lens's title bar shows its folder's own shell icon once the icon worker has
+loaded it, and the generic folder icon until then (and while the folder is
+unavailable), so a slow folder never stalls a scene; a normal space's title
+bar shows none.
 Hovering a lens's title bar tips the folder it displays (`scene::title_tip`),
 prefixed with "Folder not available" while its folder is gone; a normal
 space's title bar tips nothing (W27).
@@ -373,10 +395,10 @@ ones a variant's doc cannot show.
   changes; pointing it at the folder it already shows keeps them.
   `SetLensTitle { id, title, text }` sets how the title follows the folder
   (D17); `SetLensView { id, view }` replaces its folder view; `SyncLens { id,
-  entries }` reconciles the listed items by path, keeping ids, filtering
-  hidden entries unless the view shows them, and sorting by the space's
-  `SortRule` (natural names, so `file2` comes before `file10`; folders first
-  when asked). "Show only"
+  items }` swaps in a list a `LensBuilder` finished. The builder keeps ids by
+  path, drops hidden entries unless the view shows them, and sorts by the
+  space's `SortRule` (natural names, so `file2` comes before `file10`; folders
+  first when asked). "Show only"
   (`include`) keeps only files whose name matches, and "Hide" (`exclude`)
   drops any match, file or folder (D18). The lists are capped by
   `FolderView::clamped` when the config loads and in `SetLensView`.
@@ -390,7 +412,10 @@ ones a variant's doc cannot show.
   changes. Every space has a `Space.view`, so a lens needs no separate command.
 - `RestoreSpaces { spaces }` is undo's and redo's way back (ROADMAP D11): it
   puts recorded spaces back exactly, each at its recorded index, without
-  applying the layout, and changes nothing if any item id would clash.
+  applying the layout, and changes nothing if any item id would clash. Undo
+  stores no lens items (`Space::undo_snapshot`), so a lens brought back keeps
+  the items it holds while it shows the same folder, and its worker lists or
+  rebuilds as `App::sync_watches` tells it to.
 
 ### Theme (`theme.rs`)
 
@@ -482,6 +507,12 @@ default in `Default`.
   revision. The cache is trusted once written: only the download is
   verified, and a cached file that does not parse is deleted so the next
   need fetches it again.
+- `ThemeFile` (`theme_file.rs`, F-58) is the shared-look file: `format = 1`,
+  a `name`, an optional `author`, and a `[look]` table holding a `SpaceLook`.
+  Missing fields default, out-of-range values clamp on load, unknown keys are
+  ignored, and a newer `format` loads with a warning. `themes_dir()` is a
+  `themes` folder beside the config, so a scratch `--config` has its own.
+  The file dialogs and settings buttons follow (C10b, C10c).
 - `window.icon_downloads` (D16) is `Ask` by default: the app reads a set
   from the cache first, and only `Allowed` downloads a missing one (the
   signed file). `Ask` shows one question a session and saves the answer;
@@ -544,7 +575,7 @@ exhaustive match:
 
 | Ids | Where | Guard |
 |-----|-------|-------|
-| `WM_APP + n` messages to the controller (and `FRAME` to space windows) | `win32/messages.rs` (each says who posts it; `TaskbarCreated` is a registered message outside the range) | the `ALL` list in its tests |
+| `WM_APP + n` messages to the controller (and `FRAME` to space windows) | `win32/messages.rs` (each says who posts it; `SHOW_SPACES`, `NEW_SPACE`, and `OPEN_SETTINGS` cross processes; `TaskbarCreated` is a registered message outside the range) | the `ALL` list in its tests |
 | App timers | `enum Timer` in `deskspace-app/src/app.rs`, delivered as `Event::Timer` and set through `App::set_timer` / `clear_timer`; each delay is a constant in the module that starts it | `Timer::ALL` and the exhaustive `App::on_timer` |
 | Menu ids | `enum MenuId` in `deskspace-app/src/app.rs`, below `0x8000` (`shell_items::SHELL_FIRST_ID`, where the shell's item-menu ids start); a chosen id becomes a `MenuId` through `MenuId::from_id` | `menu_ids_round_trip` and `menu_ids_stay_below_the_shell_range` |
 | Settings field ids | `settings/ids.rs`'s `mod field` | `field_ids_are_unique` |
@@ -579,64 +610,31 @@ one arm in `App::on_event`, whose match is exhaustive.
   the color picker, MessageBox) re-enter window procedures; events raised
   then are queued and delivered by the outermost `dispatch`. Runtime state is
   borrowed only in short sections (`with_runtime`) that never call into Win32.
+- Process-wide state: every `static` or `thread_local!` that holds state is
+  marked `// Process state:` with what it holds, why it cannot be passed, and
+  who clears it; `rg -n "Process state:"` lists them.
 
 ### Controller (`win32/controller.rs`, `win32/tray.rs`, `win32/console.rs`)
 
-- A hidden top-level window (not message-only, so it receives broadcasts).
-  It owns hotkeys (`WM_HOTKEY`), timers (`Ui::set_timer` / `clear_timer`, via
-  `WM_TIMER` to `Event::Timer`), the tray callback (`NOTIFYICON_VERSION_4`:
-  left click `TrayEvent::Activated`, right click `TrayEvent::MenuRequested`,
-  keyboard select (`NIN_KEYSELECT`) opens Settings), `TaskbarCreated` (re-adds
-  the icon after Explorer restarts), `WM_SETTINGCHANGE` "ImmersiveColorSet"
-  (`Event::SystemThemeChanged`), `WM_DWMCOLORIZATIONCOLORCHANGED`
-  (`Event::SystemColorChanged`, which restyles only when dark mode or the
-  accent really changed), and session end.
-- Outside clicks (`win32/outside_click.rs`): spaces are never activated, so a
-  `WH_MOUSE_LL` hook is the only way to see clicks on the desktop or other
-  apps. While the app asks for it (`Ui::watch_outside_clicks`: an item is
-  selected, a rename is active, or a surface is current), the hook posts each
-  button press to the controller, which raises
-  `Event::PointerDownOutside { on_desktop }` unless the press hit a space,
-  the desktop layer, or a popup menu (`is_surface_window`). Those handle
-  their own presses.
-- Graceful exit (ROADMAP D13): Exit and the update install call
-  `App::exit`, which hands `Ui::quit_after` each shown space's Startup Out
-  (reverse reading order, the stagger shrunk to fit `EXIT_LIMIT`). The
-  spaces play it; the last one to finish (`runtime::space_left`), or a
-  thread timer at the limit, posts the same `WM_CLOSE` as `Ui::quit`, so
-  the teardown, and the takeover restore after it, run only once the
-  spaces have left. A second Exit while leaving closes at once.
-- `Ui::quit`, console Ctrl+C or close (`console.rs` posts `WM_CLOSE` and waits
-  up to 4.5 s; meaningful only with a console attached, as in debug builds),
-  and `WM_ENDSESSION` all lead to exactly one `Event::CloseRequested`; then
-  the space and settings windows are destroyed, the tray icon removed, and
-  the loop ends.
-- Desktop verb (`win32/desktop_entry.rs`): while spaces are hidden, the app
-  writes a per-user `DesktopBackground\Shell` verb, "Show DeskSpace spaces",
-  that re-launches the executable with `--show`. On start, `--show` posts
-  `SHOW_SPACES` to the running instance's controller window (found by class)
-  and exits, or starts with the spaces shown when none is running. The verb is
-  removed when spaces are shown and on a clean exit.
-- The tray, settings-window, and debug-window icon is the `.ico` that
-  `deskspace-app`'s build script embeds (`winresource`, from
-  `assets/deskspace.ico`), loaded as resource 1 by `app_icon::load`. The tray
-  loads it at the small-icon size. Each window owns its own big and small
-  icons (`app_icon::WindowIcons`, at its DPI), because the taskbar and
-  Alt+Tab draw `ICON_BIG` and a small icon there left the windows without a
-  usable taskbar icon. They are set on the window's class too: the taskbar
-  asks the window with a timeout, and while startup keeps the UI thread busy
-  it falls back to the class icon. The debug window's copy carries a bug on an amber disc
-  (`Badge::Debug`, drawn by `render::d2d::debug_badge`), so it stands apart
-  from the settings window.
+- The controller is a hidden top-level window because a message-only window
+  would miss broadcasts such as `TaskbarCreated` (its module doc). Every
+  process-wide input source lands here; `outside_click.rs` explains why
+  outside presses need a hook at all, and `tray.rs` owns the icon.
+- Exit and the update install leave through one path (`App::exit` →
+  `Ui::quit_after`), so the teardown and the takeover restore wait for the
+  spaces' Startup Out. A second Exit, a console close, and `WM_ENDSESSION`
+  converge on one `CloseRequested`. `console.rs` bounds its wait because
+  Windows ends the process soon after a console close handler returns.
+- The desktop verbs and their flags are one re-launch path
+  (`desktop_entry.rs`): New space, DeskSpace Settings, and Show spaces (only
+  while hidden) each find the running instance by class and post their
+  message, else the new process starts and does it.
+- The tray, settings, and debug windows take their icons from the embedded
+  resource (`app_icon`); each window owns its big and small sizes, and the
+  debug window's copy carries its badge.
 
 ### Space windows (`win32/space_window.rs`, `win32/dwm.rs`)
 
-- One window per space, created by `Ui::create_space`, with its state in a
-  `Box<SpaceState>` behind `GWLP_USERDATA`, freed in `WM_NCDESTROY`.
-  `set_style`, `set_rect`, and `set_scene` return early when the value is
-  unchanged (the style is kept in the state, the rect read back from the
-  window, the scene compared with the stored one), so restyling every space
-  on a settings edit only touches the ones that changed.
 - **The desktop layer** (`Ui::create_desktop_layer`,
   `set_desktop_layer_rect` / `_scene`, `destroy_desktop_layer`) reuses this
   window with a `chrome: false` style. It spans the
@@ -671,436 +669,95 @@ one arm in `App::on_event`, whose match is exhaustive.
     nothing on the layer. A drop on the layer opens a new space at the drop
     point and drops into it (`App::drop_onto`; ROADMAP D7, amended
     2026-10-17); a drop that adds nothing closes that space again.
-- **Animations** (ROADMAP D12; `win32/space_animation.rs`): a window keeps
-  its running `Animation` in its `SpaceState`, and while it runs gets a
-  `messages::FRAME` after every DWM composition, so one per display
-  refresh (`win32/frame_clock.rs`: a thread waiting on `DwmFlush` that
-  lives while any window animates). A 15 ms `WM_TIMER` drifted against
-  the refresh, so frames were dropped or doubled and every animation
-  stuttered, and it held a 144 Hz display to about 60 frames. Each
-  frame moves the window to the frame's rect (hidden while it is empty) and
-  repaints through the frame; the app is not called per frame. A request
-  that finds an animation heading the other way reverses it, `set_rect`
-  while animating moves its target instead of the window, and a window on
-  its way out refuses drops (`DragKind::None`). `Ui::set_spaces_visible`
-  and `Ui::fold_space` take the `Play` the app built (`app/animation.rs`);
-  the accent blur is there for the whole show and gone at the end of a hide,
-  while a composition space's follows each frame (D12, "The blur"). With Windows' "Transparency effects" off, Windows
-  draws the material flat, which left a dark box under a fading space, so
-  while a frame leaves the window see-through (`TransitionFrame::
-  covers_window` is false: the effects that fade or mask pixels) the material
-  steps aside, and comes back when the animation ends. The border DWM
-  draws steps aside then too, whatever the switch, since it cannot fade
-  either (`space_window::Backing`, `show_backing`). A fold is a Roll between the space's rect and its title
-  bar: `App::toggle_fold` runs `Effect::FoldSpace` before the repaint, whose
-  `set_rect` to the same rect then leaves the roll be, and a folding window
-  keeps drawing its unfolded scene (the folded one has no items) until the
-  fold ends (`Animation::defer`). Hiding a space mid-fold ends the fold
-  first. A new window is created hidden; `App::sync_windows` (the one place
-  space windows are made) pushes its scene, then `Ui::show_space` brings it
-  in with Startup's play, staggered at startup only (`sync_windows_at_startup`,
-  `startup_delays`). A window waiting its turn stays hidden, blur included.
-  Every show goes through `space_window::show`, which paints the window
-  once more about 100 ms later: the first frame presented right after a
-  show is sometimes lost, which left a space blank (blur only) until a
-  hover repainted it.
-  A deleted space's window leaves the runtime's spaces map at once, so it
-  is gone to every lookup, and waits in `Runtime::dying` while it plays
-  Delete's Out (a space still arriving turns around instead); its input no
-  longer reaches the app, it refuses drops, and it destroys itself at the
-  end, or with the rest at teardown.
-- **Top-level placement:** `WS_POPUP` + `WS_EX_TOOLWINDOW |
-  WS_EX_NOACTIVATE`, kept at `HWND_BOTTOM` through `WM_WINDOWPOSCHANGING`, and
-  never activated (`MA_NOACTIVATE`). A space ignores `WM_SYSCOMMAND` /
-  `SC_MINIMIZE`, so Show Desktop cannot minimize it: survival never depends on
-  the shell's undocumented tool-window exclusion, and the accent blur is never
-  torn down. `dwm::apply_style` extends the frame over the client area, sets
-  dark mode, corner preference, and border color, and turns on the blur with
-  the undocumented accent policy (`SetWindowCompositionAttribute`,
-  `ACCENT_ENABLE_ACRYLICBLURBEHIND` / `ACCENT_ENABLE_BLURBEHIND`). Clear uses
-  a fully transparent `ACCENT_ENABLE_TRANSPARENTGRADIENT`, because disabling
-  the accent after a blur turned the space black until it was recreated. The
-  documented `DWMWA_SYSTEMBACKDROP_TYPE` was tried first and does not work:
-  system backdrops render only on active windows.
-- **Composition** (`win32/composition.rs`, ROADMAP D12, TASKS T12): on
-  Windows 11 a top-level space is made with `WS_EX_NOREDIRECTIONBITMAP`
-  and shows a visual tree instead of the accent blur: a root clipped to the
-  space's corners, a sprite with the host backdrop brush (shown for Acrylic
-  and Blur; `DWMWA_USE_HOSTBACKDROPBRUSH`), and a sprite showing the drawing
-  surface the painter draws into. The rest of `dwm::apply_style` (corners,
-  dark mode) applies as before. `composition::start` decides once,
-  at startup, and logs it: Windows 10, "Transparency effects" off (the host
-  backdrop ignores the switch, T1), desktop-hosted or click-through spaces,
-  and a failure to start keep the accent blur, and the desktop layer always
-  does; a window whose tree cannot be built is made again with it. The
-  compositor and its devices are per thread, released in the teardown
-  before `OleUninitialize`. While a frame leaves the window see-through,
-  the painter also draws its opacity and mask into a second surface, the
-  blur's mask, and after that paint the backdrop sprite swaps its brush for
-  an effect brush that shows the backdrop through the mask's alpha
-  (`win32/alpha_mask.rs`, D2D's AlphaMask; T13). At rest it shows the plain
-  backdrop brush again, so an idle space costs no effect.
-- **Desktop-hosted placement** (`--placement desktop-*`, a visible CLI option
-  with no config setting since the "Keep spaces on the desktop" toggle was
-  removed): a `WS_CHILD` of Progman / WorkerW, painted opaque and rounded with
-  a (non-anti-aliased) window region. With no host found, `run` warns and
-  falls back to top-level.
-- **Corners, border, and shadow:** DWM rounds accent-blurred and Solid spaces with
-  square, 4 px, or 8 px corners (`SpaceStyle::dwm_draws_frame`), but never
-  a composition space (`dwm::Material::dwm_rounds`): DWM's corners bring
-  the Windows 11 shadow, which cannot fade, so it stayed behind every
-  animation as a ghost box and kept Roll from rolling thinner than twice
-  the radius. A composition space is clipped to its corners in its visual
-  tree, so DWM casts no shadow for it. Instead, each space that DWM casts
-  no shadow for (composition spaces, and accent spaces whose corners DWM
-  does not round; never Clear, desktop-hosted, or the desktop layer) gets a
-  layered, click-through shadow window (`win32/shadow_window.rs`,
-  `render/shadow.rs`; ROADMAP D15) kept directly below its space and above
-  the desktop layer. Its corner tile is cached and its frame is filled from
-  the tile and per-axis Gaussian profiles; it follows the space's rect
-  (Roll, Fly, CRT) and fades with `TransitionFrame::shadow_strength`. The painter rounds every composition
-  space, every Clear space, Solid spaces with other radii, chrome-less
-  windows, and hosted spaces (anti-aliased fills); hosted spaces also get a window region
-  so the opaque fill does not show past the corners (`Frame` in
-  `space_window.rs`). The painter draws every space's border, never DWM
-  (`dwm::BorderOwner`), so the border goes through an animation's opacity
-  and mask with the rest of the space. Where DWM rounds, the border follows
-  DWM's corners, which DWM scales with the window's DPI; Windows 10 has no
-  DWM corners, so there the border is square. The zoom pop-up still takes
-  DWM's border. The blur fills the whole window rectangle
-  and ignores both the window region and the `DwmEnableBlurBehindWindow` blur
-  region (tried on build 26300), so Acrylic and Blur spaces use the nearest
-  DWM radius at or below the chosen one (`Theme::effective_corner_radius`).
-  Larger blurred radii need a composition backdrop (M5).
-- **Mouse input** arrives as `SpaceEvent`s in desktop coordinates;
-  `TrackMouseEvent` provides `MouseLeave`, and capture is held from button
-  down to the last button up. Ctrl and Shift come from the message's `MK_*`
-  flags (`space_window::modifiers`), never `GetKeyState`, which reports the
-  state as of the last keyboard message the thread read, and a space's thread
-  reads none (Ctrl+wheel did nothing until this was fixed on 2026-10-16).
-  `WM_MOUSEWHEEL` (screen coordinates, with the Ctrl state) becomes
-  `SpaceEvent::Wheel`; it reaches never-focused spaces through Windows'
-  "scroll inactive windows" setting (on by default). Ctrl+wheel calls
-  `App::adjust_icon_size` (section 8 and ROADMAP D9 give the behavior; under
-  "Match Explorer's display" it sets the desktop's own size through
-  `set_desktop_icon_size`, `IFolderView2::SetViewModeAndIconSize`).
-- **Resizing** is app-driven like moving: the app hit-tests the edges and sets
-  the pointer with `Ui::set_space_cursor(CursorShape)`, which the window
-  applies at once (`WM_SETCURSOR` is not sent while the mouse is captured)
-  and on `WM_SETCURSOR`. The border band is 6 px on edges and 12 px at
-  corners; locked or folded spaces cannot be resized. A press on a border
-  resizes only once the pointer leaves a half-cell dead zone around the grab
-  (`pointer::resize_edges_now`), so a click or a tiny drag never resizes, and
-  each axis joins separately: a corner grab that moves on one axis resizes
-  only that axis.
-- `--on-top` (hidden CLI flag) makes spaces topmost so their look can be
-  checked without uncovering the desktop. It never applies to the desktop
-  layer: a topmost window spanning every monitor would take every click.
+- Everything else about a space window lives where it happens: `dwm.rs` owns
+  the material, corners, and border; `composition.rs` the visual tree and
+  the startup choice; `space_animation.rs` and `frame_clock.rs` the frames;
+  `space_window.rs` the backing, resizing, and mouse modifiers; and
+  `shadow_window.rs` / `render/shadow.rs` the shadow. ROADMAP D12 and D15
+  give the decisions.
 
 ### Drops (`win32/drop_target.rs`)
 
-- Every space and the desktop layer is an OLE `IDropTarget`
-  (`RegisterDragDrop`, revoked in `WM_DESTROY`), not a `WS_EX_ACCEPTFILES`
-  window, so it chooses the drop effect and the shell shows the move/copy
-  cursor. `drag_kind` says what a
-  drag carries (`DragKind`: real files, shell items, or nothing), and the pure
-  `drop_plan` decides what a drop does (`DropPlan`) and which effect to
-  report. Every `DragEnter` logs the allowed effects, keys, kind, and offered
-  formats at `debug`.
-- A file drop becomes `SpaceEvent::FilesDropped` with a `DropAction`: `Move`
-  by default (`MOVE`), `KeepInPlace` while Shift is down (`COPY`), or `Copy`
-  from a right drop's menu. A right drag carrying files reports `MOVE` while
-  hovering over a space and, on `Drop`, shows the menu `right_drop_entries`
-  builds, owned by the space window (G5b, G5c). The chosen entry becomes the
-  `DropPlan`, the same type a left drop gets from `drop_plan`, so both take
-  one path: "Create shortcuts here" is `DropPlan::Shortcuts`, and
-  `right_drop_effect` reports what each entry means to the source; an entry
-  is greyed when the source refuses that effect. A drag carrying neither files nor shell items reports
-  `DROPEFFECT_NONE`.
-- What a drop lands in comes from the scene (`SpaceScene::drop_into`, read
-  by `space_window::drop_into`): `DropInto::Folder` for a lens. Over a lens a
-  file drop with Shift is refused, a `COPY`-only source becomes `Copy`, and
-  the right-drop menu greys "Show here without moving", because a folder
-  cannot list a file kept elsewhere.
-- As in Explorer, a `LINK` drop always makes shortcuts: a file list links when
-  Alt is held and the source allows a link, or when the source offers neither
-  `MOVE` nor `COPY`. A `CF_HDROP` counts as files only when every entry is an
-  absolute path: the Start menu puts AppUserModelIDs there (for example
-  `com.squirrel.element-desktop.Element`), so its drags are shell items. A
-  drag with real files and shell items is treated as files, so a real file
-  still moves unless Alt is held.
-- A shell-item drag (any form `SHCreateShellItemArrayFromDataObject` reads,
-  including a packaged app with no filesystem path) is accepted
-  (`shell_drop_effect` prefers `LINK`, then `COPY`, then `MOVE`) and raises
-  `SpaceEvent::ShellItemsDropped` with each item's absolute ID list, Explorer
-  display name, and filesystem path (`None` for a virtual item). The app
-  (`App::add_shortcuts`) copies a dropped `.lnk` or `.url` into the space
-  storage, so no shortcut points at a shortcut, and writes a new `.lnk` for
-  anything else (`win32/shortcuts.rs` `create_shortcut`,
-  `IShellLinkW::SetIDList` + `IPersistFile::Save`) under a clash-free name, as
-  Explorer does when such an item is dropped on a folder (F-50). The source is
-  never moved or deleted.
-- On `DragEnter` the target stores an empty "DropDescription"
-  (`DROPIMAGE_NOIMAGE`, no text) on the source's data object, so a shell
-  source such as Explorer or the desktop draws no "Move"/"Copy" hint over the
-  item image. A move marks the data object with "Performed DropEffect" so a
-  shell source does not move the files a second time; a shortcut, copy, or
-  keep-in-place drop never sets it.
-- Every file DeskSpace moves (into storage, back to the desktop) is announced
-  with `notify_moved` (`SHChangeNotify` delete + create, `FLUSHNOWAIT` so it
-  never blocks Explorer inside a drop); without it the desktop kept stale
-  icons for files already moved into a space, and dragging one dropped a path
-  that no longer existed. Dropped paths that do not exist are ignored rather
-  than listed (which showed a label with no icon).
+- Every space and the desktop layer is an OLE `IDropTarget` (`register` /
+  `revoke` around the window's life), so a drop chooses its effect and the
+  shell draws the move/copy cursor. The pure `drag_kind`, `drop_plan`, and
+  `right_drop_*` functions decide what a drag carries, what a drop does, and
+  what the source is told; the window only raises `FilesDropped` or
+  `ShellItemsDropped`.
+- A drop's destination comes from the app through the scene
+  (`SpaceScene::drop_into`), so a lens receives a folder and a space its own
+  list; the app also owns what a dropped shell item becomes
+  (`App::add_shortcuts`). Every file DeskSpace moves is announced with
+  `notify_moved` (`win32/desktop_items.rs`), so open shell views follow.
 
 ### Drag out and the drag image
 
-- Dragging an item out (`shell_items::drag_out`) sets the data object's
-  "Preferred DropEffect" to `MOVE`, so a drop on the desktop takes the file out
-  of the space instead of leaving a `- Copy`. The drop target alone performs
-  the transfer (async mode is off, so it is done when the drag returns), and
-  afterwards the app only removes the item if its file is gone. It never moves
-  the file itself after a drag: an earlier "dropped on the desktop, so move it
-  back" step turned desktop copies into `- Copy` / ` (2)` duplicates.
-- The drag image (`win32/drag_image.rs`, `win32/drag_ghost.rs`) is the picture
-  that follows the pointer, distinct from the move/copy cursor. When an item
-  drag starts, the app builds a drag scene (`scene::drag_scene`) of the whole
-  active set, members scrolled out of view included, at their grid positions,
-  and `DragImage::of_selection` renders it offscreen (`d2d::render_items`: one
-  WIC bitmap render target with a scale transform, running the space's own
-  `draw_item`, so icons, labels, and colors match), scaled down to
-  `MAX_DRAG_IMAGE` when larger and with a uniform translucency
-  (`DRAG_IMAGE_ALPHA`). The hotspot is the grab offset in the scaled group,
-  and every view of the drag shows these same pixels.
-- Inside the space a layered, click-through, topmost ghost window shows it
-  (`UpdateLayeredWindow`, premultiplied DIB), and every dragged slot is drawn
-  faded (`ItemState::Dragged`). Once the pointer leaves the space, the ghost
-  hides and `drag_out` hands the same image to the shell's drag-image manager
-  (`IDragSourceHelper2::InitializeFromBitmap`, straight-alpha DIB, since it
-  premultiplies itself; `SetFlags(0)` leaves the drop description off, so a
-  target like the desktop cannot add its "Move to ..." label and arrow). Space
-  drop targets forward all four calls to one shared `IDropTargetHelper`,
-  without which the image vanishes over a space; it is released before
-  `OleUninitialize`. Without an image the shell substitutes its own opaque,
-  oversized one, so a right drag, which goes straight to the shell with no
-  ghost, renders the same image (`App::drag_image_of`) first.
+- A drag that leaves a space is the shell's (`shell_items::drag_out`), and
+  the drop target performs the whole transfer; the app only prunes an item
+  whose file is gone. The picture is built once by the app
+  (`scene::drag_scene`, `DragImage::of_selection`) and shown two ways: the
+  in-space ghost window while rearranging, and the shell's drag-image manager
+  once the pointer leaves. A right drag goes straight to the shell, so the
+  app builds the same image for it first (`App::drag_image_of`).
 
 ### Selection, display matching, keys, and clipboard
 
 - **Clicking a space acts like clicking the desktop**
-  (`win32/shell_selection.rs`, `Ui::on_desktop_click`): spaces never take
-  activation, so the shell's desktop window (`GetShellWindow`) is made active
-  (the app in front goes inactive) and the desktop icon selection is cleared
-  through its `IShellView` (`SelectItem(NULL, SVSI_DESELECTOTHERS)`, found
-  through `IShellWindows` and the `SID_STopLevelBrowser` service). A selection
-  inside an Explorer window is left alone, as Windows only changes a
-  selection within the view that was clicked. The enumerator is cached and
-  released before `OleUninitialize`.
-- **Explorer display settings** (`win32/display_settings.rs`) are read from
-  the desktop's `IShellView` (`win32/shell_view.rs`, shared with the click
-  code) and `SHGetSetSettings`: `FWF_CHECKSELECT` / `FWF_AUTOCHECKSELECT`
-  (item check boxes), `SSF_SHOWALLOBJECTS` / `SSF_SHOWSUPERHIDDEN` (hidden
-  files), `SSF_SHOWEXTENSIONS`, `SSF_SHOWCOMPCOLOR`,
-  `IFolderView2::GetViewModeAndIconSize` (the desktop's icon size), and
-  `IFolderView::GetSpacing` (item spacing), all carried in `ShellDisplay`.
-  The snapshot is re-read at startup, on `Event::SystemThemeChanged`, and on
-  every space click; a change repaints every space. When
-  `Theme::match_explorer()` is on (the default), the app overlays them:
-  - The desktop icon size and spacing replace DeskSpace's icon-size and grid
-    settings and drive the jumbo icon fetch and the per-monitor scale, so
-    matching is 1:1.
-  - `ShellDisplay.check_boxes` is a `CheckBoxMode`: `FWF_CHECKSELECT` gives
-    `Independent`, `FWF_AUTOCHECKSELECT` `Selection`, neither `Hidden`.
-    `SpaceScene.show_check_boxes` draws an Explorer-style box at each icon's
-    corner; a checked box is filled with `SpaceScene.check_fill` (the Windows
-    accent, or Windows blue when unknown) under a white tick. In `Selection`
-    mode the box shows on hover and while selected and its tick mirrors the
-    selection; in `Independent` mode it always shows and its tick is a
-    session-only set, separate from the selection, which is then the operand
-    for delete, copy, cut, and drag (`active_items`). A plain click ticks one
-    item and unticks the rest, Ctrl+click ticks several, and clicking the box
-    itself toggles one (`render::item_check_box_hit` is its clickable region).
-    `desktop_display_since` keeps the stored mode when the view read fails
-    (briefly, for example while Explorer restarts), so a transient failure
-    does not hide the boxes; `desktop_display` is the same read starting from
-    `Hidden`.
-  - `scene::item_label` shows a file's full name when extensions are on,
-    except for shortcuts, whose `.lnk` / `.url` Explorer never shows; both
-    forms come from the path, so the option can be toggled either way.
-    `SSF_SHOWCOMPCOLOR` colors compressed labels blue and encrypted ones green
-    (`Item::compressed` / `encrypted`, read at creation).
-  - Icons carry the shell's overlay (`SHGFI_ADDOVERLAYS`, plus
-    `SHGFI_LINKOVERLAY` for `.lnk` / `.url` only), so shortcut arrows and sync
-    badges appear; labels come from
-    `IShellItem::GetDisplayName(SIGDN_NORMALDISPLAY)`, and seeding skips
-    hidden or protected items Explorer would hide.
+  (`win32/shell_selection.rs`, `Ui::on_desktop_click`): the shell's desktop
+  window is focused and its icon selection cleared; a selection in an Explorer
+  window is left alone. The shell view is cached and released before
+  `OleUninitialize` (`win32/shell_view.rs`).
+- **Explorer display settings** (`win32/display_settings.rs`) are read into
+  `ShellDisplay` from the desktop's `IShellView` and `SHGetSetSettings`, then
+  re-read at startup, on `Event::SystemThemeChanged`, and on every space
+  click; a change repaints every space. Under `Theme::match_explorer()`, the
+  app overlays them: icon size and spacing drive the grid, the jumbo icon
+  fetch, and the per-monitor scale, while `CheckBoxMode` drives the check
+  boxes and the shell's options drive labels, colors, overlays, and display
+  names.
 - **Inline rename** (`edit.rs`, `win32/keyboard.rs`): the app owns a pure
-  `TextEdit` buffer and pushes it in the scene's `editing` (a space title) or
-  `editing_item` (an item's label). The painter draws Explorer's rename field:
-  an opaque bordered box around the laid-out text, the selection in the
-  system highlight, and a blinking caret. An item's box wraps the whole name
-  in the label's width and grows downward over the items below, as
-  Explorer's does; a title's stays on one line. Spaces are never activated and
-  cannot receive `WM_CHAR`, so a `WH_KEYBOARD_LL` hook (installed while
-  editing or while either selection watch is on) turns key presses during a
-  rename into `Event::EditKey` and consumes them (an Alt or Win combination
-  cancels the rename and passes through). The thread never removes keyboard
-  messages, so `GetKeyboardState` is frozen: the hook reads each held modifier
-  from `GetAsyncKeyState`'s sign bit and Caps Lock's toggle from
-  `GetKeyState`'s low bit (`GetAsyncKeyState`'s low bit is an unrelated
-  "pressed since the last call" flag), so Shift and Caps stay predictable.
-  F2 renames the focused item, or the current space's title with no item
-  selected, and a second click on a selected item (a slow double-click)
-  starts an item rename. An item rename is committed with
-  `IFileOperation::RenameItem` (undoable; the extension is kept when the
-  label hid it). A space applies it through `Command::RenameItem`, which updates the
-  item's path and label; the desktop layer, a cache of the Desktop folder,
-  re-syncs and keeps the renamed item selected.
-- **Other keys**: the same hook watches keys outside a rename
-  (`Ui::watch_selection_keys`); `ENGINEERING.md`'s Keys table is the one list
-  of which key needs which flag, and section 8 says what each does. The arrow
-  keys raise `Event::Navigate` (the nearest item in that direction, scrolled
-  into view; Shift extends from the anchor), typed characters `Event::Typed`
-  (type-to-select with a short timeout buffer), and the focused item is drawn
-  with a dotted rectangle (`SpaceScene.focused_item`). Alt+Enter calls
-  `Ui::show_properties`. The watch is limited to the desktop's foreground
-  because the selection is kept when another app is focused, as Explorer
-  keeps a desktop selection; otherwise DeskSpace would steal that app's own
-  Ctrl+C/V. Each watched key is posted to the controller as its own `WM_APP`
-  message (table above) and becomes one `Event`; a new key either reuses
-  `SELECTION_KEY` with a new `SelectionKey` variant (the simplest path) or, if
-  it carries data, gets its own message.
-- **Clipboard** (`win32/clipboard.rs`, `win32/file_op.rs`): Ctrl+C/X put the
-  selected items on the shell clipboard as `CF_HDROP` with a "Preferred
-  DropEffect" (`MOVE` for a cut), the formats Explorer uses, so they paste
-  into Explorer and other apps; cut items render ghosted (`ItemVisual::cut`).
-  Ctrl+V pastes into the current space: an item already in a space is
-  re-pointed (`MoveItem`), while external files and copies go through
-  `IFileOperation` into the store (`FOF_RENAMEONCOLLISION` keeps Explorer's
-  Replace dialog off the shared store; `FOF_ALLOWUNDO` records an undo), and
-  an `IFileOperationProgressSink` returns each created path so the pasted
-  items are listed and selected. `Ui::clipboard_shell_items` reads the
-  clipboard's shell items through `OleGetClipboard` and
-  `drop_target::shell_items` (sharing `open_clipboard`'s retry) for "New
-  shortcut ▸ Paste shortcut" (F-54). The controller registers
-  `AddClipboardFormatListener`; `Event::ClipboardChanged` clears cut ghosting
-  when another app or the desktop replaces the clipboard and prunes items
-  whose files a paste elsewhere moved away. A clipboard read that fails
-  (another process holds it) keeps the ghost.
-- **Delete** sends the selection to the Recycle Bin (`Ui::delete_files(paths,
-  permanent)`, `IFileOperation::DeleteItem` with `FOF_ALLOWUNDO |
-  FOF_NOCONFIRMATION`: no prompt, undoable; Shift+Delete passes `permanent`,
-  which drops `FOF_ALLOWUNDO`) and drops the items whose files are gone: a
-  space removes them, and the desktop layer re-reads the Desktop folder.
-  `Ui::restore_recycled(original, since)` (`file_op::restore_recycled`)
-  enumerates `FOLDERID_RecycleBinFolder`, matches the newest item whose
-  `System.Recycle.DeletedFrom` + display name equals `original` and whose
-  `System.Recycle.DateDeleted` is at or after `since`, and restores it with
-  the shell's `"undelete"` context-menu verb.
+  `TextEdit` and the painter draws the field. A `WH_KEYBOARD_LL` hook turns
+  keys into `Event::EditKey` because spaces never receive `WM_CHAR`, and reads
+  modifiers live because `GetKeyboardState` is frozen. F2 renames the focused
+  item, or the title with no item selected; a slow second click starts an item
+  rename. An item rename goes through `IFileOperation::RenameItem` and
+  `Command::RenameItem`; the desktop layer re-syncs and keeps it selected.
+- **Other keys**: `Ui::watch_selection_keys` watches outside a rename, and
+  `ENGINEERING.md`'s Keys table owns which key needs which flag. The watch
+  runs only while the desktop has the foreground, so another app keeps
+  Ctrl+C/V. New keys join the `SELECTION_KEY` message or get their own when
+  they carry data.
+- **Clipboard** (`win32/clipboard.rs`, `win32/file_op.rs`): Ctrl+C/X write a
+  `CF_HDROP` and "Preferred DropEffect" (`MOVE` for cut); cut items are drawn
+  ghosted. Ctrl+V moves a listed item or copies external files through
+  `IFileOperation`, whose progress sink returns the created paths so they are
+  listed and selected. Clipboard changes clear stale ghosting and prune files
+  a paste moved away; a failed read keeps the ghost.
+- **Delete** sends the selection to the Recycle Bin through
+  `IFileOperation::DeleteItem` without a prompt; Shift+Delete passes
+  `permanent`. Items whose files are gone are dropped, and `restore_recycled`
+  finds the newest matching Recycle Bin entry and restores it with the shell's
+  `"undelete"` verb.
 
 ### Rendering (`render/scene.rs`, `render/d2d/`)
 
 - `SpaceScene` and `SpaceStyle` are the contract between app and renderer.
-  `SpaceScene` carries everything a space draws: chrome, title, resolved
-  colors, item metrics, `item_layout`, and the visible `ItemVisual`s in
-  window-local coordinates. `SpaceStyle` carries the window-level attributes.
-  Both are documented field by field in `render/scene.rs`. A new visual is one
-  `SpaceScene` field, filled in
-  `deskspace-app/src/scene.rs` and drawn in `d2d/`; a `SpaceStyle` field is
-  for window-level attributes only (it re-applies DWM state).
-- `item_layout` tells the painter how a cell places its icon and label: the
-  grid centers the icon over a wrapped label below it; `Inline` (Small icons
-  and List) puts the check box, the icon, and one left-aligned ellipsized label
-  line in a row, all vertically centered. The check-box hit test takes the
-  same layout, so the painted box and the clickable box always agree.
-- The app scrolls by offsetting the rects `ViewLayout` gives, along the axis
-  the layout reports, and includes only the lines its `visible` range names;
-  the renderer clips items to the content area.
-  Scenes are pushed only on change, and the window stores a `PreparedScene`
-  with strings pre-encoded to UTF-16, so painting does not allocate.
-  `chrome: false` (the desktop layer) draws no title bar or border and fills
-  the window with items; the painter reads the scene's `chrome` for the title
-  and scroll thumb and the window's `Frame` reads the style's, so both are set
-  together, and `SpaceStyle::dwm_draws_frame` is then false.
-- `Icon` is an `Arc` of owned premultiplied-BGRA pixels with a never-reused
-  id. The main path decodes the `IShellItemImageFactory` HBITMAP through WIC
-  (`d2d::decode_bitmap`); the classic fallback and overlays decode an HICON
-  through WIC (`d2d::decode_icon`, which applies a legacy icon's AND mask) and
-  destroy it at once, so scenes never point at freed handles.
-- Icon-set glyphs (ROADMAP D16) become `Icon`s the same way. `render/glyph.rs`
-  wraps an Iconify body as an SVG document at the glyph's own viewBox, in the
-  title text's color: the root's `fill` plus a replacement of every
-  `currentColor` (Direct2D's SVG support has none), and the document's
-  `opacity` when the color is translucent. `d2d/glyph.rs::rasterize` draws it
-  with `ID2D1DeviceContext5::CreateSvgDocument` and `DrawSvgDocument` into a
-  target bitmap, copies that to a CPU-readable one, and returns an `Icon`. A
-  Windows without `ID2D1DeviceContext5` (10 before 1703) fails, so no icon
-  shows. `win32/glyphs.rs`, `GlyphCache`, keeps the results keyed by glyph,
-  pixel size, and color (256 entries, least-recently-used) and logs a failed
-  draw once per glyph at debug.
-- The title bar (`d2d/title.rs`) draws the scene's `TitleIcon` at its
-  window-local rect, a lens's folder icon or a space's glyph, then the title
-  text or rename box a gap after it, scaled with the bar, and the lock glyph.
-  Without an icon the text starts at `TITLE_INSET`, so a space without one
-  looks as it did.
-- `Painter` draws on a `Canvas` (`d2d/canvas.rs`; premultiplied alpha, 96
-  DPI so one DIP is one pixel) with a brush and a per-target bitmap cache
-  keyed by `Icon::id`, pruned to the current scene's icons on every scene.
-  The canvas is the window's own `ID2D1HwndRenderTarget` (`HwndCanvas`,
-  which the zoom pop-up uses too), or a composition space's drawing
-  surface (`SurfaceCanvas`), whose Direct2D context exists only during a
-  draw and sits at an offset in a shared atlas, so the painter draws
-  relative to the origin the canvas gives it. The factories and text
-  formats are shared per thread (`Graphics`, released in the runtime
-  teardown). A lost device (`D2DERR_RECREATE_TARGET`, or the Direct3D
-  device under a surface removed or reset) drops device resources and
-  invalidates the window, so the next paint recreates them; without that,
-  the lost frame left the window blank until a click repainted it. The
-  first surface to find its device lost gives the composition graphics
-  device a new one, and every space repaints (`runtime::invalidate_spaces`).
-- Text uses DirectWrite (Segoe UI Variable Text when installed; the lock glyph
-  from Segoe Fluent Icons or MDL2): grayscale antialiasing on translucent
-  surfaces and ClearType on opaque ones, ellipsis trimming, one or two wrapped
-  label lines at the configured size (formats cached per 10 % size step), and
-  a 1 px shadow when the scene asks (label shadow `Auto` below 25 % tint
-  alpha, or `On`).
-- Animations (ROADMAP D12): `render/transition.rs` is the pure frame math.
-  A `Transition` tracks one linear progress and a direction, and every
-  frame is a function of the eased progress alone, so an Out is the In
-  played backwards and `reverse` continues from the very frame it is on.
-  A `TransitionFrame` gives the window rect (Roll, Fly, and CRT move or crop
-  it; Fly is clipped to the work area), where the space's content sits in
-  it, and the opacity, mask, and `Content` (how the contents are drawn:
-  whole, pixelated, or lit) the painter applies.
-  The cell effects keep their math pure, on a `render::math::Grid` of
-  cells covering the space, and the painter only uploads what it writes.
-  Dissolve is `render/dissolve.rs`: a fixed noise value per grain-sized
-  cell. Burn's paper is `render/burn.rs`: a field of smooth noise biased to
-  burn the bottom first, and per cell the stage at the current front (gone,
-  glowing, charred, scorched, whole), written into two smooth cell
-  bitmaps: the contents' opacity mask and the marks over it.
-  Its flames rise past the frame, where the space's own window would put
-  blur behind them, so they are drawn on an overlay (`win32/overlay.rs`: what
-  an effect draws beside the space's window, chosen per effect, made when the
-  effect starts, following the space if it moves, and dropped when it ends).
-  The flames' overlay is `win32/flame_overlay.rs`: a layered, click-through
-  window owned by the space window (so it stays above it and dies with it),
-  placed directly above it when made (`place_above_owner`: Windows puts a new
-  owned window at the top of the non-topmost band) and shown in that slot
-  again whenever it shows if the space moved (`space_window::window_above`).
-  `render/flames.rs` (pure) stands tongues on the burning edge and shades them
-  on the CPU into its DIB section each frame.
-- The zoom pop-up (F-57, `win32/zoom_bar.rs`) is a topmost, never-activated
-  `WS_POPUP` with the space material (`dwm::apply_style` from the global
-  look; a Clear backdrop becomes Acrylic and the tint is at least 160/255 so
-  the text stays readable). `ZoomBarPainter` (`d2d/zoom_bar.rs`) draws the
-  `ZoomBar` the app sends in 96-DPI units under a scale transform for the
-  monitor under the pointer: zoom out and in (Segoe Fluent glyphs), the
-  percentage, a divider, and Reset, with a hover fill and dimmed disabled
-  buttons. `Ui::show_zoom_bar` places it at the top center of that monitor's
-  work area; a click (press and release on the same button) raises
-  `Event::Zoom`. The app hides it after `Timer::ZoomBar` unless
-  `Ui::is_zoom_bar_hovered`.
+  `render/scene.rs` documents both field by field: a scene carries everything
+  a space draws, and a style only the window-level attributes. Scenes are
+  pushed only on change, and the window stores its `PreparedScene`, so a
+  repaint allocates nothing.
+- `Icon` is an owned bitmap shared by a never-reused id. `d2d/` holds the
+  painters, their per-target caches, and the shared Direct2D and DirectWrite
+  factories; canvas, text, glyph, and title-bar details belong to the module
+  that owns them. A lost device is replaced once and every space repaints
+  (`runtime::invalidate_spaces`).
+- Animations are pure frame math in `render/`; the window applies each frame,
+  and an effect that draws past the window gets an overlay
+  (`win32/overlay.rs`). An effect's row may stretch the chosen duration, which
+  the app applies when it makes the `Play`. `TASKS.md` section T has the
+  recipe.
+- The zoom pop-up is its own topmost, never-activated window using the space
+  material; `win32/zoom_bar.rs` and `render/zoom_bar.rs` own it.
 
 ### Native UI (`ui.rs`, `win32/menu.rs`, `win32/settings_window/`)
 
@@ -1140,14 +797,16 @@ in `ui.rs`. What spans them:
   "Customize this space" switch is on, its always-enabled View page (the view
   mode, the status bar, the extension choice, and the sort rule, which
   preview through `SetSpaceView`), and its always-enabled Shortcuts page.
+  That page's preview asks the icon worker for its first page of icons and
+  draws generic ones for the rest, so opening it on a big lens never loads
+  every icon on the UI thread.
   A lens also lists a Lens page: its folder (or "Folder not available"), Open
   folder and Change folder…, its Title (Show as and a custom title, which
   preview through `SetLensTitle`), Show hidden files, which previews
   through `SetLensView`, and its Filter: "Show only" and "Hide", each a
   `;`-separated list (`settings::pages::parse_patterns`). A filter edit
-  is a `SetLensView` that re-filters the lens's last listing, kept per lens
-  in `App::listings` with the folder it came from, without reading the
-  folder (`FieldEffect::Refilter`); the field shows the text as typed
+  is a `SetLensView` whose new rules the worker applies to its last listing,
+  without reading the folder (`FieldEffect::Lens`); the field shows the text as typed
   (`Session::filter_texts`), so the form never rewrites it mid-edit. A
   lens whose filters leave no entry says "No items match the filter".
   Global edits write `Config` directly; a space's edits
@@ -1195,115 +854,31 @@ in `ui.rs`. What spans them:
 
 ### Desktop shell, shell items, DPI, hotkeys
 
-- `folder_watch.rs` watches folders off the UI thread with one worker for
-  every watch, on an I/O completion port. A watch is keyed by `WatchKey`
-  (`Desktop`, or a lens's `Space(id)`); `ReadDirectoryChangesW` reports into
-  the port, and the worker lists the folder itself with `folder_list.rs`, so
-  the UI thread does no IO. Changes are debounced per folder by up to 150 ms
-  (the pure `Coalescer`) so a multi-file copy wakes the app once. A folder
-  that is missing or cannot be read posts `FolderListing::Unavailable` and is
-  tried again every 5 s on the worker. An open folder's path is checked on the
-  same cadence: renaming a watched folder moves its handle with it, so the
-  pending read may never fail. When the path no longer names a folder, the
-  worker reads where the handle went and posts `FolderListing::Moved { to }`
-  when a lens may follow it (`follows_to`: the same volume, outside a Recycle
-  Bin and the store; D19), else `Unavailable`. Each time the worker opens a folder it asks
-  for the handle's final path (`GetFinalPathNameByHandleW`) and refuses one
-  that is the store or inside it, posting `FolderListing::Refused`; the
-  5 s path check also refuses a path that has come to lead into the store
-  (a junction put in a renamed folder's place). `is_inside` compares
-  paths for it and for the app: whole components, without case, and a drive
-  or share alike with or without the `\\?\` prefix. A refused folder is
-  retried like a missing one. `Ui::watch_folder(key, path, store)` adds or
-  replaces that key's watch (idempotent for the same path) and
-  `Ui::unwatch_folder(key)` stops it. A change posts `FOLDER_CHANGE` with the
-  watch's slot in `wParam`; the worker leaves the listing in a shared slot,
-  and the controller raises `Event::FolderChanged { key, folder, listing }`.
-  A listing names the folder it read, because a posted change can wait in
-  the event queue (for example during `pick_folder`'s message pump) while
-  the key's watch moves to another folder. A lens drops a listing whose
-  folder is not the one it shows now; the desktop layer, which re-reads
-  the shell instead, takes one from another folder to mean the Desktop
-  moved and re-points its watch. M2 watches the Desktop folder while
-  the layer is drawn (a change makes the app re-enumerate and `SyncDesktop`)
-  and ignores the listing; M4 uses it for a lens's folder.
-- `desktop_shell.rs` finds Progman or the wallpaper `WorkerW` (through the
-  `0x052C` spawn trick) for hosted placements.
-- `desktop_icons.rs` hides and restores Explorer's icon layer for the
-  takeover: `hide` / `restore` hide or show every `SysListView32` under a
-  `SHELLDLL_DefView`, re-enumerating each time so a recreated listview is
-  found, and `rehide_if_active` re-hides only while takeover is on. The walk
-  recurses the desktop shell's (`Progman` / `WorkerW`) whole subtree, because
-  on some builds the icon `SHELLDLL_DefView` is nested (for example
-  `Progman -> WorkerW -> SHELLDLL_DefView`), and only that subtree, because an
-  Explorer window also contains a `SHELLDLL_DefView`. Only the listview is
-  hidden, never the `SHELLDLL_DefView`, so `find_host` and the shell-view COM
-  reads keep working. `restore` runs in the `run` teardown before
-  `OleUninitialize`; `rehide_if_active` runs on `TaskbarCreated` and from the
-  app's health timer.
-- `watchdog.rs` is the crash-safety half of the takeover (D8). Before hiding
-  the icons the app calls `arm_watchdog`, which creates a per-pid clean-exit
-  event and launches `deskspace-watchdog.exe` (`<pid>` as its only argument)
-  detached, so a bulk kill of `deskspace.exe` by name or a closed console
-  leaves it running. The watchdog re-parents itself once
-  (`respawn_reparented`) so ending the app's process tree cannot reach it,
-  then waits on the main process and re-shows every listview unless the event
-  was signaled; the teardown calls `signal_watchdog_clean_exit` right after
-  `desktop_icons::restore`, so the watchdog acts only on a crash. A named
-  mutex keeps a stray watchdog a no-op, and the pure `watchdog_pid` /
-  `is_watchdog` and `should_restore` decide the argument and the restore.
-- `win32/desktop_items.rs`: `enumerate_desktop_items` reads the desktop
-  view's items and positions (`IFolderView::ItemCount` / `Item` /
-  `GetItemPosition`) once OLE is up, and falls back to a name-sorted walk of
-  the Desktop folder, without positions, when the view cannot be reached.
-- `win32/icons.rs`, `IconCache`: icons are rendered by
-  `IShellItemImageFactory` at the requested pixel size; a path the factory
-  rejects falls back to the classic 32 px icon, scaled. The overlay (shortcut
-  arrow, sync badges) is drawn as Explorer draws it: `SHGetFileInfoW` with
-  `SHGFI_OVERLAYINDEX` names the overlay (this works in any process), and
-  `IImageList::GetOverlayImage` fetches its full-icon-sized image from the
-  system image list nearest the size (`SHIL_SMALL`..`SHIL_JUMBO`),
-  area-averaged to `theme.overlay_size` percent and anchored bottom-left
-  before compositing. HICONs are decoded through WIC (`d2d::decode_icon`).
-  Entries are keyed by path, pixel size, and overlay size, with
-  least-recently-used eviction at 1024 entries; `invalidate(path)` forgets
-  every size of one path.
-- `shell_items.rs`, Explorer behavior for items:
-  - `Ui::open_path` runs `ShellExecuteExW` with the default context-menu verb,
-    first passing DeskSpace's foreground right on with
-    `AllowSetForegroundWindow` (spaces are never active, so opened apps would
-    stay behind). Paths are given with backslashes, so it cannot open a URL
-    (`TASKS.md` E10 adds `Ui::open_url`).
-  - `Ui::item_menu` puts the app's entries above the shell's `IContextMenu`;
-    the controller forwards owner-draw and submenu messages to it while open.
-  - `Ui::drag_out` (`SHDoDragDrop`): one item uses the shell item's own data
-    object; several use `SHCreateDataObject` over the items' ID lists relative
-    to their deepest common folder (or full IDs under the desktop when they
-    share none), so a multi-item drag carries the ID list the desktop needs to
-    drop at the pointer and accepts the drag image, plus "Shell Object
-    Offsets" (`CFSTR_SHELLIDLISTOFFSET`, from the items' current cells) so the
-    group keeps its arrangement instead of stacking in a column. Async mode is
-    forced off so the transfer ends inside the drag loop, and it reports the
-    effect and whether the drag ended over the desktop. Drag and drop is why
-    the runtime uses `OleInitialize`.
-- `dpi.rs` sets per-monitor v2 awareness; `window_dpi` / `scale_for` back the
-  runtime's `space_dpi(id)` (the space window's own monitor scale), which the
-  app reads per space. `system.rs` provides `work_area_at(point)`,
-  `virtual_desktop_rect()`, `cursor_pos()`, `drag_threshold()`,
-  `system_uses_dark_mode()`, `system_accent_color()`, and `wide` (UTF-16
-  conversion; use it rather than a local copy).
-- Info tips (`win32/info_tip.rs`, `Ui::show_info_tip` / `hide_info_tip`):
-  after the pointer rests on an item, the app shows Explorer's info tip (name,
-  shell type, size, local modification date) in one reusable native tracking
-  tooltip (`TTF_TRACK`, `TTM_TRACKPOSITION` / `TTM_TRACKACTIVATE`). The app
-  owns the hover delay with a timer; moving off, clicking, or hiding spaces
-  dismisses it.
-- `hotkey.rs`: `parse("Ctrl+Alt+D")`, `hotkey_id(index)`, and
-  register/unregister on the controller window through `Ui`. The table
-  `settings::HOTKEY_BINDINGS` drives the three bindings (section 8): each row
-  names its `HotkeyAction`, two field ids, a label, and the `WindowSettings`
-  field that stores it, and its position is its registration index;
-  `App::on_hotkey` matches on the action. An empty binding is unregistered.
+- `folder_watch.rs` is the one watcher: one worker on an I/O completion
+  port serves every watch, lists the folder, and builds a lens's list, so
+  the UI thread does no IO. Its module doc and the `FolderListing` variants
+  own the debounce, the retries, the store refusal, and the D19 follow rule.
+  The app watches the Desktop only while the layer is drawn and each lens's
+  folder while the lens exists (`App::sync_watches`).
+- A listing names the folder it read: a posted change can wait in the event
+  queue while a key's watch moves, so a lens drops a stale one. The desktop
+  layer re-reads the shell instead, and treats another folder as the Desktop
+  having moved (`app/lens.rs`).
+- `desktop_shell.rs` finds the host, `desktop_icons.rs` hides and restores
+  Explorer's listviews, and `watchdog.rs` is the crash-safe half; each
+  module doc owns its rules, and the takeover as a whole is D8's.
+- `desktop_items.rs`, `icons.rs`, and `info_tip.rs` read the shell without
+  blocking the UI thread; their module docs own the enumeration, the icon
+  cache and its worker (`icon_queue.rs`), and the tracking tooltip.
+- `shell_items.rs` is Explorer behavior for an item: open, the item menu,
+  and drag out. Its module doc and `drag_out` own the foreground hand-off,
+  the data object, and the image. Drag and drop is why the runtime uses
+  `OleInitialize`.
+- `dpi.rs` sets per-monitor v2 awareness and `system.rs` wraps the Windows
+  queries; use them rather than reading the registry or metrics again.
+- `hotkey.rs` parses and registers, and `settings::HOTKEY_BINDINGS` is the
+  one table tying each binding to its action, field ids, label, and setting;
+  its position is the registration index.
 
 ## 7. Runtime flow
 
@@ -1353,118 +928,74 @@ in `ui.rs`. What spans them:
 
 ## 8. Controls (current)
 
+`README.md` "Controls" is the user's list, and `ENGINEERING.md`'s Keys table
+owns when each key is watched. This section keeps only what those leave out:
+exact steps, ranges, edge cases, and the code behind them.
+
 **Spaces**
 
-- Drag a space's title bar to move it (snaps to the grid); double-click it to
-  fold or unfold the space.
-- Drag an edge or corner to resize; the wheel scrolls overflowing content.
-- Ctrl+wheel changes the icon size. Under the default "Match Explorer's
-  display" preset it changes the desktop's own icon size (8 px a notch,
-  16-256 px), as Ctrl+wheel on the desktop does, and the matching spaces
-  follow (ROADMAP D9); under Custom it changes the global icon size (10 % a
-  notch). A space with its own Custom look or a fixed icon view keeps its
-  icon size. Every space keeps its size and re-flows its icons into more or
-  fewer columns (scrolling when they no longer fit), as an Explorer window
-  does; "Fit to contents" sizes it to its items again.
+- Moving snaps to the grid; resizing follows the view's cells (ROADMAP D22).
+- Ctrl+wheel: under the default "Match Explorer's display" preset it sets
+  the desktop's own icon size, 8 px a notch between 16 and 256, and matching
+  spaces follow (ROADMAP D9); under Custom it changes the global size 10 % a
+  notch. A space with its own Custom look or a fixed icon view keeps its
+  size. Every space re-flows its icons into more or fewer columns;
+  "Fit to contents" sizes it to its items again.
 - On a space set to one of Explorer's views, Ctrl+wheel, Ctrl+Plus, and
-  Ctrl+Minus step it through the views in the View menu's order, zooming in
-  toward the bigger ones, and stop at the ends; Ctrl+0 returns it to
-  "Settings icon size". Each step is one "Change view" undo entry, and no
-  zoom pop-up shows for it (W39).
-- Every zoom shows the zoom pop-up at the top center of the monitor under the
-  pointer (F-57): the size as a percentage (the desktop's 48 px "Medium
-  icons" is 100 %), zoom out and in (one notch each), and Reset (back to
-  100 %). Buttons grey out at the ends of the range, and Reset at 100 %. It
-  hides 2 s after the last zoom, or once the pointer leaves it.
-- Rename a space from its right-click menu: the title is edited in place
-  (Enter commits, Escape cancels, clicking away commits). A typed title on a
-  lens is a nickname that stops the title following the folder. Committing an
-  empty title makes it follow again, as the Lenses page's "Show as" says
-  (Folder name when that is Custom), as one undo entry. An empty title on a
-  normal space, or on a lens that already follows its folder, is ignored.
+  Ctrl+Minus step through the View menu's order, stop at the ends, and each
+  step is one "Change view" undo entry; no zoom pop-up shows for it (W39).
+  Ctrl+0 returns to "Settings icon size".
+- The zoom pop-up (F-57) shows the size as a percentage (the desktop's
+  48 px "Medium icons" is 100 %), greys its buttons at the range ends and
+  Reset at 100 %, and hides 2 s after the last zoom or when the pointer
+  leaves it.
+- Renaming a space (menu or F2) commits on Enter or a click away and cancels
+  on Escape. A typed title on a lens is a nickname that stops the title
+  following the folder. An empty one follows again, as the Lenses page's
+  "Show as" says (Folder name when that is Custom), as one undo entry; on a
+  normal space, or on a lens that already follows its folder, it is ignored.
 
 **Menus**
 
-- Right-click a space (`App::show_space_menu`, `app/menus.rs`): Undo and Redo
-  (named for the top entry, such as "Undo Move 3 items", and greyed when empty);
-  Fold/Unfold, Rename, Lock position, Fit to contents (unlocked spaces that
-  are resized or in a view that places items by order); New shortcut…, Add files…, Appearance…, View…, Sort by…, Group by…; Delete space
-  (asks first unless the space is empty); New space, New lens…; Settings…,
-  Hide/Show spaces, Exit DeskSpace.
-- A lens's menu adds Open folder and Change folder… (`Ui::pick_folder`; a
-  folder `ItemStore::allows_lens` refuses gets a message instead) after the
-  first group. Its Sort by… checks the space's rule and keeps it as files come
-  and go (`SetSpaceView`), and adds Show hidden files (`SetLensView`). Folders
-  first is part of the rule for both kinds. A sort or hidden-files change
-  starts the lens's watch again, so the folder is listed afresh in the new
-  order.
-- New space, from any menu or the hotkey, opens beside the top row of spaces
-  on the monitor of the click or the pointer, one typical gutter to the
-  right (ROADMAP D10).
-- New lens… (`App::create_lens`), under New space in the space menu, the
-  tray, and the desktop layer's menu (`new_entries`), asks for a folder
-  (`Ui::pick_folder`), refuses DeskSpace's storage folder with a message,
-  and opens a `CreateLens` where New space would put a space, titled with
-  the folder's name. It then starts the lens's watch (`sync_watches`).
-- **Appearance ▸** sets a tint-opacity preset (100/80/60/40/20 %), an icon size
-  (Small 75, Medium 100, Large 150, Extra large 200 %), or a custom tint or
-  text color. Each customizes the space, starting from what it shows now; "Use
-  global appearance" (greyed unless customized) makes it follow Global again
-  (keeping its look for later), and "Space settings…" opens the settings
-  window on that space. **View ▸** picks "Settings icon size" (the look's
-  size), Extra large, Large, Medium, Small icons, or List; the three large
-  views set that space's icon size at 256, 96, or 48 px at 96 DPI and leave it
-  out of Ctrl+wheel and Match Explorer, while Small icons (W16) and List (W17)
-  draw 16 px icons in inline cells. Small icons wraps the cells into rows and
-  scrolls down; List fills a column top to bottom and scrolls sideways, wheel
-  included. **Sort by ▸** is Explorer's folder menu:
-  the `SORT_KEYS` keys as radio items, then Ascending and
-  Descending, then Folders first and Keep sorted, then, on a lens, Show
-  hidden files. Keep sorted is checked and greyed on a lens. A key
-  keeps the direction, a direction keeps the key, and Folders first toggles,
-  all through one `SortRule`. A normal space sorts once with the new rule, or
-  holds the order once Keep sorted is on; a lens always holds it and lists its
-  folder again. The menus are built from tables:
-  `OPACITY_PRESETS`, `ICON_SIZE_PRESETS`, `VIEW_PRESETS`, and `SORT_MENU_IDS`
-  in `app.rs`, with the view labels in `VIEW_MODES` and the sort keys and
-  words in `SORT_KEYS` in `settings/tables.rs`.
-- **New shortcut ▸** (F-53, F-54; `NEW_SHORTCUT_ENTRIES` in `app.rs`, also
-  enabled on a locked space): "From installed apps…", a picker listing every
-  app in the Applications folder (Store apps included) with a check box per
-  row and a search box; "Custom shortcut…", a dialog for a target (file,
-  folder, program, or web address, with Browse…), optional arguments, and a
-  name that follows the target until edited; and, after a separator, "Paste
-  shortcut", enabled when the clipboard holds shell items
-  (`Ui::clipboard_shell_items`), which leaves the clipboard, its files, and any
-  cut ghosting untouched. A typed path is resolved as the Run dialog does
-  (`%VARIABLES%`, a bare program name on the search path), and a missing
-  target is reported in the dialog. A web address becomes a `.url`,
-  everything else a `.lnk` (a copied `.lnk` or `.url` is duplicated into the
-  store). All three end in `App::add_shortcuts`, which writes into the space
-  storage and lists the shortcuts at the end of the space; for a lens it
-  writes them into the lens's folder and lists nothing, since the watch does.
-  The same choices
-  open from the + tile on a space's Settings page "Shortcuts", whose preview
-  also deletes an item from its X (after asking).
-- **Add files…** (F-55) picks files in the standard Open dialog
-  (`Ui::pick_files`, an `IFileOpenDialog` with multi-select, started on the
-  Desktop folder) and moves them in through the drop path (`App::add_dropped`,
-  ROADMAP D3), so a picked file is relocated exactly like a dragged one.
-  Cancelling adds nothing.
-- Tray icon: left-click (or keyboard select) opens Settings; right-click
-  offers Undo and Redo, Settings., Hide/Show spaces, New space, New lens.,
-  Check for updates. (or "Restart to update to X" once an automatic update is
-  downloaded), and Exit DeskSpace, and, with `--debug`, Debug.. A space
-  created from the tray opens on the monitor of the pointer, and creating a
-  space while spaces are hidden shows them.
+- The space and tray menus are listed in README and built in `app/menus.rs`.
+  Rules README leaves out: Undo and Redo are named for the top entry and
+  greyed when empty; Fit to contents is offered only on an unlocked space
+  that is resized or in an order-placed view; Delete space asks first unless
+  the space is empty; a lens's Change folder… refuses a folder
+  `ItemStore::allows_lens` rejects with a message, and its Sort by… and Show
+  hidden files rebuild the list on the worker. With `--debug`, the tray adds
+  Debug… (D14).
+- New space opens beside the monitor's top row, one typical gutter right
+  (ROADMAP D10); a space from the tray opens on the pointer's monitor, and
+  creating one while hidden shows the spaces. New lens… (`App::create_lens`)
+  asks for a folder (`Ui::pick_folder`), refuses the store, opens where New
+  space would, and starts the watch (`sync_watches`).
+- Appearance presets: tint opacity 100/80/60/40/20 % and icon size Small 75,
+  Medium 100, Large 150, Extra large 200 %. "Use global appearance" is greyed
+  unless customized and keeps the look for later. View presets set 256, 96,
+  or 48 px at 96 DPI (out of Ctrl+wheel and Match Explorer); Small icons and
+  List draw 16 px inline cells. In Sort by, a key keeps the direction, a
+  direction keeps the key, Folders first toggles, and Keep sorted is checked
+  and greyed on a lens. The tables are `OPACITY_PRESETS`,
+  `ICON_SIZE_PRESETS`, `VIEW_PRESETS`, `SORT_MENU_IDS`, and
+  `NEW_SHORTCUT_ENTRIES` in `app.rs`, with `VIEW_MODES` and `SORT_KEYS` in
+  `settings/tables.rs`.
+- New shortcut ▸ offers installed apps, a custom target, and Paste shortcut,
+  enabled only when the clipboard holds shell items, which it leaves
+  untouched. A typed target resolves as the Run dialog does (`%VARIABLES%`,
+  a bare program on the search path); a missing one is reported in the
+  dialog. A web address becomes `.url`, anything else `.lnk`. All paths end
+  in `App::add_shortcuts`, which writes into the store or the lens's folder.
+- Add files… uses `Ui::pick_files` (multi-select, starting on the Desktop)
+  and moves through the drop path (`App::add_dropped`); Cancel adds nothing.
 
 **Settings**
 
-- Pick Global or a space in the left pane. Global edits apply to every space
-  that is not customized. A space's pages show the global values, greyed,
-  until "Customize this space" is ticked; its edits then apply to that space
-  alone. A space's header also has a "Delete space" button. Selecting a space
-  highlights it on the desktop for about 1.2 s.
+- Global edits apply to every space that is not customized. A space's pages
+  show the global values, greyed, until "Customize this space" is ticked; its
+  edits then apply to that space alone. A space's header also has a "Delete
+  space" button. Selecting a space highlights it on the desktop for about
+  1.2 s.
 - Edits preview live. Icon size, spacing, and edge padding re-flow every
   space; icon size scales the icon and its grid cell, defaults to 100 %
   (Windows' 48 px desktop icon), and can be typed as a percentage. The shell
@@ -1472,158 +1003,53 @@ in `ui.rs`. What spans them:
   80 %; 100 % matches Explorer). The Layout page's "Fit to contents" button
   (grey unless a resized, unlocked space is selected) commits at once like
   the menu entry.
-- The pages (`settings/pages.rs`, one builder function each). "Look" pages
-  appear for Global and every space, Shortcuts only for a space, the rest
-  only for Global:
-
-  | Page | Scope | Fields |
-  |------|-------|--------|
-  | Appearance | look | Color mode, Background material, Corner radius, Tint opacity, Title bar shading, Show window border, Border thickness, Show shadow, Shadow size, Shadow opacity, Item preset |
-  | Labels | look | Label lines, Label size, Label shadow |
-  | Layout | look | Icon size, Icon spacing, Edge padding, Fit to contents |
-  | Colors | look | Use custom colors, Background tint, Text, Use Windows accent (the selection), Border color (Automatic, Windows accent, Custom), Custom border color, Border opacity, Selection box color, Show selection box border, Restore default / Match global appearance |
-  | Advanced | look | Shortcut overlay size |
-  | General | Global | Start with spaces hidden, Snap to grid, Snap resized spaces to whole columns and rows, Start DeskSpace when you sign in, Take over the desktop, Settings and menus (theme), Check for updates automatically, Install updates automatically, Check for updates now |
-  | New spaces | Global | Default title, width, height, Start new spaces locked, Icon, and the view and sort a new space starts with (affect only spaces created afterwards) |
-  | Hotkeys | Global | Show or hide spaces (`Ctrl+Alt+D` by default), Create a new space (on the pointer's monitor), Open settings (both unbound by default) |
-  | About | Global | Version, summary, license, configuration file path |
-  | Shortcuts | space | A note, and a preview of the space: an X on each item (delete, after a confirmation) and a + tile (New shortcut) |
-  | Animations › one page per kind | Global | Built from `ANIMATION_PAGES` and the core tables (ROADMAP D12): the Windows note and "Open Windows animation settings…", Effect, Duration, and the options the kind offers, greyed when the effect does not use them; New space adds the startup order and delay. Everything is greyed while Windows' "Animation effects" is off, which `Event::SystemAnimationsChanged` follows live |
+- The pages, scopes, and fields are `settings/pages.rs`; every editable field
+  has a handler (`settings/apply.rs`), and the uniqueness and coverage tests
+  point at a missing one. Animations are one page per kind from
+  `ANIMATION_PAGES` (D12); everything greys while Windows' "Animation
+  effects" is off, which `Event::SystemAnimationsChanged` follows live.
 
 **Items**
 
-- Drop files from Explorer or the desktop onto a space to move them into it;
-  hold Shift to leave them in place and only show them in the space, or Alt to
-  add a shortcut instead. A right drag onto a space shows a menu to move,
-  copy, link, or just show the files (G5b, G5c). An app dragged from the Start menu or
-  the taskbar (or any drag that offers only a link) becomes a shortcut in the
-  space, as Explorer does on a folder; a dropped shortcut file is copied, and
-  its original stays.
-- Click an item to select it; Ctrl+click adds or removes it, Shift+click
-  selects the range from the last click. Drag from empty space to rubber-band
-  select (Ctrl or Shift adds), and Ctrl+A selects every item in the current
-  space. Clicking empty space in a space or the desktop clears the selection
-  (so do hiding spaces and folding one); clicking another application keeps
-  it, as Explorer keeps a desktop selection. Clicking anywhere on a space acts
-  like a desktop click: it focuses the desktop (deactivating the app in
-  front) and clears the desktop icon selection, leaving any selection inside
-  an Explorer window alone.
-- Double-click an item to open it (a folder in a lens shows in place,
-  D18); click a selected item again (a slow double-click) to rename it
-  inline. Right-click it for Explorer's context
-  menu with DeskSpace's "Rename" and "Fit to contents" on top (Fit is greyed
-  when the space cannot fit; D23); Explorer's own Delete there sends the
-  file to the Recycle Bin (ROADMAP D3); right-clicking an item in a
-  multi-selection keeps the selection. Loose items on the desktop layer
-  rename the same ways. Rest the pointer on an item for Explorer's info tip.
-- Right-click an empty spot of the desktop layer (or press the Menu key with
-  nothing selected there) for "New space", "New lens…", "DeskSpace settings…", and
-  Hide/Show spaces above Explorer's own desktop background menu
-  (`App::show_desktop_menu`). Takeover hides Explorer's view, so without it
-  that menu would be unreachable. A shell command re-syncs the layer, and
-  for a moment after it the app looks for a rename Explorer started in
-  its hidden view (New › Folder does): `take_explorer_rename` cancels it and
-  DeskSpace's own rename opens on the same icon instead. When
-  the view's menu adds nothing, the Desktop folder's own background menu
-  (New, Display settings, Personalize; no View or Sort by) stands in, so the
-  menu never ends after DeskSpace's entries.
-- Item check boxes follow Explorer's mode (when the desktop shows them and the
-  `MatchExplorer` preset is on). A checked box is filled with the Windows
-  accent under a white tick (`Palette::check_fill`; Windows blue when the
-  accent is unknown), independent of the space's selection colors; an
-  unchecked box is a bordered light box. With auto-check-select, hovering
-  reveals the box and it mirrors the selection; clicking an item ticks it and
-  unticks the others, Ctrl+click ticks several, and clicking the box toggles
-  one. With independent check boxes, the boxes always show, clicking a box
-  toggles a persistent tick and moves the highlight, the ticks survive
-  empty-space and desktop clicks, and delete, copy, cut, and drag act on the
-  ticked items.
-- Drag an item within its space to rearrange it (`ReorderItem`); dragging one
-  member of a multi-selection moves the whole block (`ReorderItems`). The
-  selection's drag image follows the pointer and every member's slot fades;
-  the new order sticks until a Sort by reorders it. A space that keeps sorted
-  (a lens, or Keep sorted on) refuses the rearrangement and keeps its order.
-- Drag an item out: into a folder or app like an Explorer item, onto another
-  space to move it there, or onto the desktop to take it out of the space.
-  With takeover on, a drop on the desktop instead opens a new space at the
-  drop point, clear of the other spaces and the taskbar, holding what was
-  dropped, whatever its source (ROADMAP D7, amended 2026-10-17).
-  When the grabbed item is part of the selection, the whole selection drags.
-- A right-button press on an item selects it; dragging past the drag
-  threshold starts a shell drag (ROADMAP D9, `TASKS.md` G5a) that never
-  rearranges inside the space, so a right drag onto Explorer or the desktop
-  shows the shell's Move / Copy / Create shortcut menu. A right drag onto a
-  space shows DeskSpace's Move here / Copy here / Create shortcuts here /
-  Show here without moving / Cancel menu (G5b, G5c): "Copy here" copies the
-  files into the store and leaves the originals, "Create shortcuts here" adds
-  a shortcut to each (a dropped shortcut file is copied) and is grey when the
-  source refuses a link, "Show here without moving" lists them where they
-  are, and Cancel drops nothing. A right click without moving still opens the
-  item or space menu.
-- Delete sends the selected items' files to the Recycle Bin (no prompt), as
-  Explorer does, and Undo restores them; Shift+Delete removes them for good
-  and records no undo. A stored file
-  goes back to the desktop only by dragging it there (not with takeover on)
-  or deleting its space.
-- Ctrl+X, Ctrl+C, and Ctrl+V cut, copy, and paste. Cut items are ghosted until
-  pasted; paste goes into the current space, moving (cut) or duplicating
-  (copy) the files through the shell's file operation.
+- A right drop greys an entry the source refuses; a dropped shortcut file is
+  copied rather than linked to.
+- Clicking anywhere on a space focuses the desktop and clears its icon
+  selection, leaving an Explorer window's selection alone. Empty-space and
+  desktop clicks clear the space selection; hiding spaces and folding too.
+- A right press selects; past the drag threshold it starts a shell drag, and
+  a right click without moving opens the menu.
+- Delete has no prompt and is undoable; Shift+Delete is permanent and records
+  no undo. A stored file leaves only by dragging it to the desktop (not with
+  takeover on) or deleting its space.
+- The desktop layer's menu has DeskSpace's entries above Explorer's; a shell
+  command re-syncs the layer, and `take_explorer_rename` hands New › Folder's
+  rename to DeskSpace. If the view's menu adds nothing, the Desktop folder's
+  own menu stands in, so the menu never ends after DeskSpace's entries.
 
 **Keys** (`ENGINEERING.md`'s Keys table says when each is watched)
 
-- F2 renames the selected item's file inline (Enter commits, Escape cancels,
-  clicking away commits; the extension is kept when the label hides it), or
-  the current space's title with no item selected (an empty lens title
-  follows the folder again, as under Menus). F2 never renames a lens's
-  folder.
-- Alt+Enter opens the selected item's Properties, or DeskSpace Settings with
-  nothing selected. With an item selected, Enter opens it, and the Menu key or
-  Shift+F10 opens its context menu (the space's menu with no item selected).
-  Escape clears the selection, and F5 refreshes the spaces.
-- Ctrl+Plus and Ctrl+Minus zoom in and out one notch and Ctrl+0 resets to
-  100 %, as the zoom pop-up's buttons do (F-57).
-- A right-click on a Details header opens Explorer's column menu: a check per
-  column shows or hides it (one "Choose columns" undo entry), and Name is on
-  and grey. It leaves the selection alone.
-- Dragging a Details header's divider resizes a column, and the divider right
-  of Name resizes the next column. Esc during the drag, or losing the mouse,
-  puts the width back. It is one "Resize column" undo entry on release.
-- "Group by" (in a space's menu and on the View page) is Explorer's: (None),
-  the keys, and the direction. A click on a group's header folds or opens the
-  group (session only).
-- Dragging a Details header moves its column, with a mark where it would land
-  (one "Reorder columns" undo entry on release; Esc cancels). Name stays first.
-  A click that never becomes a drag sorts, on release.
-- Ctrl+Shift+1 through 8 switch the current space to Extra large, Large,
-  Medium, or Small icons, List, Details, Tiles, or Content, the way the View
-  menu does.
-- While the current space is a lens shown below its own folder, Backspace,
-  Alt+Left, and Alt+Up show the parent folder (`SelectionKey::Back`, under
-  the hook's `WATCH_BACK`), as do the title bar's Back button (a click, or
-  each press of a double-click) and the mouse's back button over the lens
-  (`SpaceEvent::BackButton`). At the lens's own folder there is no button
-  and the keys pass through (D18).
-- With a space current, Ctrl+Z undoes the last action and Ctrl+Y redoes it
-  (passing through to Explorer when no space is current); typing selects the
-  next item whose label starts with
-  the typed letters (the buffer clears after about a second); Home, End,
-  PageUp, and PageDown scroll the space to the start, the end, or one page
-  along its view's axis; and the arrow keys move the selection across the
-  cells (Shift extends, Ctrl moves the dotted focus rectangle only).
+- F2 keeps a hidden extension when it renames an item and never renames a
+  lens's folder. With no space current, Ctrl+Z and Ctrl+Y pass through to
+  Explorer. Type-to-select clears its buffer after about a second.
+- In Details, right-clicking the header opens Explorer's column menu (Name on
+  and grey; one "Choose columns" undo entry); dragging a divider resizes a
+  column (Esc or losing the mouse restores; one "Resize column" entry on
+  release); dragging a header reorders with a drop mark (Esc cancels; one
+  "Reorder columns" entry on release, Name stays first). A click that never
+  becomes a drag sorts on release.
+- A group header click folds or opens its group (session only). README covers
+  the Back rules; `WATCH_BACK` is the hook state that enables them.
 
 **Hotkeys and the command line**
 
-- Settings → Hotkeys binds the global hotkeys: show/hide spaces
-  (`Ctrl+Alt+D` by default), a new space on the pointer's monitor, and open settings
-  (both unbound). While spaces are hidden, the desktop's right-click menu has
-  "Show DeskSpace spaces" (a per-user `DesktopBackground\Shell` verb, removed
-  once they are shown). It runs the executable with `--show`, which signals
-  the running instance instead of starting a second copy.
-- CLI flags (`cli.rs`): `--config`, `--placement` (`top-level` |
-  `desktop-background` | `desktop-foreground`), `--reset`, `--hidden`,
-  `--show`, `--settings`, `--no-icons`, `--click-through`, `-v` / `-vv`, and
-  the hidden development flags `--on-top`, `--takeover-layer`,
-  `--takeover`, and `--debug`.
+- The Hotkeys page binds show/hide (`Ctrl+Alt+D`), a new space on the
+  pointer's monitor, and Settings; the last two start unbound. The desktop
+  background menu offers "New space", "DeskSpace Settings", and, while spaces
+  are hidden, "Show DeskSpace spaces"; each runs its flag (`--new-space`,
+  `--settings`, `--show`), which signals the running instance instead of
+  starting a second.
+- CLI flags are in README; the hidden `--debug` (D14) is not, and `cli.rs` is
+  the source of truth for all of them.
 
 ## 9. Feature parity
 

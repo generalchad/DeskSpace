@@ -34,6 +34,9 @@ pub(crate) const CLASS_NAME: PCWSTR = w!("DeskSpaceController");
 /// https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shell_notifyiconw
 const NIN_KEYSELECT: u32 = NIN_SELECT | 0x1;
 
+// Process state: the `TaskbarCreated` message id, assigned only by
+// `RegisterWindowMessageW` and needed from the window procedure, which gets no
+// context. `create` sets it; it never changes afterwards.
 static TASKBAR_CREATED: AtomicU32 = AtomicU32::new(0);
 
 /// The registered `TaskbarCreated` message, which Explorer broadcasts when
@@ -105,6 +108,8 @@ fn event_for(message: u32, wparam: WPARAM, lparam: LPARAM) -> Option<Event> {
         WM_CLIPBOARDUPDATE => Event::ClipboardChanged,
         messages::TRAY_CALLBACK => tray_event(wparam, lparam)?,
         messages::SHOW_SPACES => Event::ShowSpaces,
+        messages::NEW_SPACE => Event::NewSpace,
+        messages::OPEN_SETTINGS => Event::OpenSettings,
         messages::FOLDER_CHANGE => {
             let (key, folder, listing) = runtime::folder_change(wparam.0)?;
             Event::FolderChanged {
@@ -114,6 +119,7 @@ fn event_for(message: u32, wparam: WPARAM, lparam: LPARAM) -> Option<Event> {
             }
         }
         messages::WAKE => Event::Wake { id: wparam.0 },
+        messages::ICONS_LOADED => Event::IconsLoaded,
         messages::EDIT_KEY => Event::EditKey(keyboard::decode(wparam.0, lparam.0)?),
         messages::DELETE_KEY => Event::DeleteSelection,
         messages::CLIPBOARD_KEY => Event::Clipboard(keyboard::clipboard_action(wparam.0)?),
@@ -257,6 +263,11 @@ mod tests {
             Some(Event::SelectionKey(SelectionKey::Open))
         );
         assert_eq!(event(messages::SHOW_SPACES, 0, 0), Some(Event::ShowSpaces));
+        assert_eq!(event(messages::NEW_SPACE, 0, 0), Some(Event::NewSpace));
+        assert_eq!(
+            event(messages::OPEN_SETTINGS, 0, 0),
+            Some(Event::OpenSettings)
+        );
     }
 
     #[test]

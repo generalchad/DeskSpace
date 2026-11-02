@@ -20,7 +20,11 @@ Notable changes to DeskSpace, newest first. The format follows
   about you or your files is sent. The icon takes the title's color, so it
   follows a dark and light switch, and a space without one keeps its old
   title bar. Settings > About credits the icon sets.
-- Lenses: a space that shows a folder's live contents. "New lens." in a
+- DeskSpace entries on the desktop's right-click menu: New space, DeskSpace
+  Settings, and Show spaces while the spaces are hidden. Each opens the
+  running app's window or adds the space there, without starting a second
+  copy.
+- Lenses: a space that shows a folder's live contents. "New lens…" in a
   space's menu, the tray, and the desktop menu asks for a folder and shows it;
   files dropped, pasted, or added as shortcuts go into that folder, and
   deleting a lens never touches it. A lens keeps its sort rule as files come
@@ -39,6 +43,29 @@ Notable changes to DeskSpace, newest first. The format follows
 - Sort by now has Explorer's shape: Name, Date modified, Type, and Size;
   Ascending or Descending; Folders first; and Keep sorted, which holds a
   space's order as items change.
+- Browsing inside a lens: double-click a folder to show it in place, and go
+  back with the title bar's Back button, Backspace, Alt+Left, Alt+Up, or the
+  mouse's back button. A lens never goes above its own folder.
+- Group by for every space, with Explorer's keys and group names, and groups
+  that fold.
+- Lens filters: "Show only" and "Hide" lists of `*` and `?` wildcards on
+  Settings > Lens.
+- A lens follows its folder when it is renamed or moved on the same volume,
+  says where it went, and Ctrl+Z points it back.
+- Details columns: choose them from the header's menu, drag a divider to
+  resize, and drag a header to reorder. Date created joins as a column and a
+  sort key.
+- A compact view per space, file name extensions per space (Automatic, Show,
+  or Hide), and a default view for new spaces on Settings > New spaces.
+- Ctrl+wheel and Ctrl+Plus/Minus step through the views on a space set to one
+  of them, and Ctrl+0 goes back to "Settings icon size".
+- Hovering a lens's title shows its folder's path.
+- "Fit to contents" on an item's menu in a space.
+- A Bounce animation: a space drops in from beyond an edge of its monitor's
+  work area and settles in shrinking bounces, and hides the same way
+  backwards. It plays at twice the chosen duration, so each bounce can be
+  seen. Settings > Animations offers it for Startup and Delete, with its own
+  edge.
 
 - Undo and redo for layout changes, file moves, item removal, space creation
   and deletion, copies, pastes, and new shortcuts. Ctrl+Z and Ctrl+Y act while
@@ -59,9 +86,20 @@ Notable changes to DeskSpace, newest first. The format follows
 - The window border is white in dark mode and black in light mode, as
   Explorer's borders are. "Use Windows accent color" now colors the selection
   only, unless "Border color" is set to the Windows accent.
+- "Snap resized spaces to whole columns and rows" fits the current view's
+  cells: Details and Content snap to rows only.
+- Fit to contents never makes a space larger than its monitor's work area; a
+  space that is capped scrolls.
 
 ### Fixed
 
+- A lens on a very large folder no longer stalls every space when it refreshes
+  or when its sort or filters change: its list is built in the background.
+- A locked lens places its items instead of stacking them.
+- A slow or network folder no longer stalls every space while its icons load.
+  An item shows a generic icon at once, and its own fills in, as in Explorer.
+- Renaming an item in a big lens, grouping one by Type for the first time, and
+  opening the Shortcuts page on it no longer stall the spaces.
 - With the desktop takeover on: a taskbar that ended up under the desktop
   layer takes clicks again; Delete removes loose desktop icons; New › Folder
   opens a visible rename box; and an icon updates when its file changes in

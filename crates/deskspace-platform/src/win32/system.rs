@@ -112,7 +112,9 @@ pub fn transparency_enabled() -> Option<bool> {
 /// <https://learn.microsoft.com/uwp/api/windows.ui.viewmanagement.uicolortype>
 pub(crate) fn accent_shade(dark: bool) -> Option<Color> {
     thread_local! {
-        // Kept, because the settings window asks on every appearance edit.
+        // Process state: this thread's `UISettings`, kept because the settings
+        // window asks on every appearance edit. The first call creates it; it
+        // is never cleared.
         static SETTINGS: std::cell::RefCell<Option<UISettings>> =
             const { std::cell::RefCell::new(None) };
     }
@@ -162,6 +164,8 @@ pub(crate) const WINDOWS_11: u32 = 22000;
 
 /// Whether this is Windows 11 or later, read once.
 pub(crate) fn is_windows_11() -> bool {
+    // Process state: whether this is Windows 11, read once because the build
+    // cannot change under the process. First use fills it; never cleared.
     static WINDOWS_11_OR_LATER: OnceLock<bool> = OnceLock::new();
     *WINDOWS_11_OR_LATER.get_or_init(|| windows_build().is_some_and(|build| build >= WINDOWS_11))
 }

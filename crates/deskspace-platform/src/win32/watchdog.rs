@@ -39,9 +39,12 @@ use crate::win32::system::wide;
 /// Set on the watchdog copy that waits, so it does not re-parent again.
 const REPARENT_ENV: &str = "DESKSPACE_WATCHDOG_REPARENTED";
 
-/// The main process's clean-exit event handle, or 0 while none is armed.
+// Process state: the clean-exit event handle the watchdog in another process
+// waits on. `arm` creates it and `signal_clean_exit` swaps it to 0 and closes
+// it.
 static CLEAN_EXIT: AtomicIsize = AtomicIsize::new(0);
-/// Whether a watchdog has been launched for this process.
+// Process state: whether a watchdog was launched for this process, so `arm` is
+// idempotent. `arm` sets it and clears it again only when arming fails.
 static ARMED: AtomicBool = AtomicBool::new(false);
 
 /// The parent pid this process was launched to watch, from the dedicated

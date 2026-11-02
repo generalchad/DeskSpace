@@ -5037,6 +5037,402 @@ until I5-I6 all land, so no partial build hides the desktop.
     core test covers the cap. The menu's placement, greyed state, and
     desktop absence are in section V.
 
+- [x] **B31. Test only the crates a change affects (scripts).**
+  - Why: `cargo test --workspace` runs every crate's tests. A change to
+    `deskspace-config` can only break `config` and `app`, the crates that
+    depend on it, so while working the rest can be skipped. Cargo has no
+    built-in way to do this. `ENGINEERING.md` section 3 already names
+    the switch this task adds.
+  - `scripts/dev.ps1`: add a `-Changed` switch. Without `-Check` it does
+    nothing. With `-Check`, the test step runs `cargo test --locked -p
+    <crate> ...` for the affected crates only; fmt and clippy are
+    unchanged. Add an example to the script's comment-based help.
+  - Which crates are affected. Write each step as its own small
+    PowerShell function, so each can be read and tried alone:
+    1. **Changed files:** `git diff --name-only main...HEAD`, plus `git
+       diff --name-only HEAD` (uncommitted), plus untracked files from
+       `git ls-files --others --exclude-standard`. Add a `-Base` parameter
+       for the branch to compare with, default `main`.
+    2. **Changed crates:** a file under `crates/<dir>/` belongs to the
+       package in that folder. Read the package names from `cargo
+       metadata --format-version 1 --no-deps --locked` (each package's
+       `manifest_path`), never from a list in the script, so a new crate
+       needs no edit. A change to `Cargo.toml`, `Cargo.lock`,
+       `rust-toolchain.toml`, or anything under `.cargo/` affects every
+       crate. Any other file (docs, scripts, workflows) affects none.
+    3. **Dependents:** from the same metadata, a crate's dependencies
+       are its `dependencies` entries that have a `path`. Repeat until
+       nothing new is added: every crate that depends on an affected
+       crate is affected too.
+    4. If nothing is affected, print "No crate changed; no tests to
+       run." and skip the test step.
+  - Print the affected crates before testing, so the user sees what was
+    skipped.
+  - `ENGINEERING.md` section 1: add the switch to the list after `-Check`.
+  - Done when: these runs print the expected crates (try each, then
+    undo the change):
+    - edit a comment in `deskspace-app`: `deskspace-app` only;
+    - in `deskspace-config`: `deskspace-config`, `deskspace-app`;
+    - in `deskspace-core`: all five;
+    - in `docs/TASKS.md` only: none;
+    - in `Cargo.toml`: all five.
+
+    No unit tests: the repository has no PowerShell test framework, and
+    adding one is out of scope.
+
+- [x] **B33. Load icons off the UI thread (platform, app).** The design
+  below was approved by the maintainer, 2026-10-29.
+  - Why: `IconCache::icon_for` loads a missing icon synchronously while
+    `space_scene` builds a scene, through the shell's image factory. A
+    lens on a slow or network folder, or the first scroll through a big
+    one, stalls every space until each icon is loaded. Explorer draws a
+    generic icon at once and fills the real one in later.
+  - Design: `icon_for` returns the cached icon, or a generic one for
+    the item's `ItemKind` and queues the path. One worker thread (COM
+    initialized as STA, as the image factory needs) loads queued icons
+    and posts a `WM_APP` message (next free id) that becomes
+    `Event::IconsLoaded { paths }`. The app refreshes only the spaces
+    that list those paths. The queue drops paths that scrolled out of
+    view before the worker reaches them.
+  - Pure parts to test: the queue (dedupes, keeps the newest request per
+    path, drops a path that is no longer wanted) and which spaces a
+    loaded path refreshes.
+  - **[needs human]** check: a lens on a folder of a few thousand images
+    scrolls without stalls, and its icons fill in.
+
+- [x] **B38. Check for rewritten files without comparing every pair (app).**
+  Found by review, 2026-10-31.
+  - Why: `App::take_listing` compared each listed entry with each of the
+    lens's items on the UI thread, and an unchanged file never ended the
+    search early. Every listing after a lens's first stalled every space: 95
+    ms at 1,000 files, 2.4 s at 5,000, and 9.7 s at 10,000 (release build,
+    2026-10-31). The timing test for B37 covers only `SyncLens`, so it did
+    not show.
+  - `rewritten_paths(items, entries)` in `app/lens.rs` indexes the items by
+    path once and looks each entry up. Pure, and tested on plain data.
+  - Done when: the scan is gone and the gates pass. On 50,000 entries it takes
+    21 ms, where the old loop scaled to about 248 s; that is still over the
+    Performance rule's 8 ms, and B37 moves the work off the UI thread.
+
+- [x] **S14. Do not offer a download that cannot work (app).** **[needs
+  decision]** Found 2026-10-31: `next_step` (`app/space_icons.rs`) never asks
+  `deskspace_update::is_configured`. So a build with an empty `UPDATE_PUBKEY`
+  still asks "Show icons on spaces?" for a new space with an automatic icon,
+  then `fetch_signed` returns `NotConfigured` and no icon shows. Setting the
+  key alone does not cure it: the download also fails until S5 has published
+  the set. To decide: whether a build without a key skips the question (the
+  update controls already grey out this way, and a declined consent must not
+  be saved for it), or whether the key and S5 are simply required before any
+  release. Tests, if the code changes: `next_step` for a build with no key.
+  - Decided (maintainer, 2026-10-31): a build without a key skips the question.
+
+- [x] **S5. Publishing an icon set (ci).** **[needs human]**
+  - `.github/workflows/icons.yml`, `workflow_dispatch` with a `prefix`
+    input (default `fluent`), on `windows-latest`, copying `release.yml`'s
+    toolchain and `cargo install cargo-packager` steps:
+    1. `cargo run -p deskspace-config --example icon_set -- spec <prefix>`
+       into `$GITHUB_OUTPUT`.
+    2. Fail if `gh release view <tag>` finds the release. A published set is
+       never replaced, because shipped builds pin its revision.
+    3. Download and extract the upstream package, run `trim`, then `git diff
+       --exit-code assets/icons`. The commit that bumped the row must
+       already carry its names file.
+    4. Sign the file with `cargo packager signer sign`, using
+       `CARGO_PACKAGER_SIGN_PRIVATE_KEY` from `DESKSPACE_MINISIGN_KEY`. Stop
+       with a clear error while the secret is empty.
+    5. `gh release create <tag> <file> <file>.sig --prerelease
+       --latest=false`, titled "Icon set: `label` r`revision`", with notes
+       naming the upstream package and saying it is not an app release.
+       It must be a pre-release: the update feed reads
+       `releases/latest/download/latest.json`, which a newer full release
+       would take over.
+  - `RELEASING.md`: a short "Publishing an icon set" section. To add or
+    update a set, bump or add its row, run the example's `trim`, commit the
+    row and names file, then run the workflow. Never delete an `icons-*`
+    release. `actionlint` must pass.
+  - **[needs human]** check (maintainer, once `DESKSPACE_MINISIGN_KEY` and
+    `UPDATE_PUBKEY` are set): run the workflow for `fluent`. The release is
+    a pre-release named `icons-fluent-r1`, with the `.json` and `.sig`. The
+    repository's "Latest" badge still points at the app. A second run fails
+    at step 2.
+
+- [x] **B37. Refresh a big lens off the UI thread (core, platform,
+  app).** The split below was decided by the maintainer, 2026-10-29, and amended 2026-10-31.
+  - Why: `Command::SyncLens` filters, reconciles, sorts, and lays out
+    every entry on the UI thread. On 50,000 entries in a release build it
+    took 44-46 ms with no filters and 62-65 ms with 32 typical filter
+    patterns, and 309 ms with 32 patterns built so each is tried in full
+    (2026-10-29, `time_a_filtered_sync_of_fifty_thousand_entries` in
+    `command/lens_ops.rs`). The Performance rule in section W allows 8 ms.
+    Accepted for W34 by the maintainer on that date, with this task to
+    follow.
+  - Measured again, 2026-10-31: those timings used names already in sorted
+    order. In NTFS-like order `sort_items` alone takes about 330 ms on 50,000
+    items, against 24 ms sorted, and the whole `SyncLens` 430-490 ms on a
+    scattered listing. Moving only the filter and the sort cannot reach 8 ms:
+    reconciling ids by path costs about 38 ms (build the map 20, look up 12,
+    drop it 6), and `rewritten_paths` (B38) 21 ms. Feed the timing test
+    entries in listing order.
+  - Design (amended by the maintainer, 2026-10-31): the watch worker, which
+    already lists the folder off the UI thread, builds the finished item list.
+    It filters, sorts, reconciles ids, and finds the rewritten paths with
+    pure functions from `deskspace-core`, using the view's rules passed in
+    with the watch (as W25 passes the store). The UI thread only swaps the
+    list in, and the old list is dropped off it. A filter or sort change sends
+    the new rules to the worker, which redoes the work there.
+  - To settle while building, and ask if a choice changes this design:
+    - Ids. `Desktop` hands them out and they are never reused (D11), so the
+      worker needs a block of reserved ids and its own map from path to id.
+    - A list built under old rules, or before an undo restored the lens, must
+      not be swapped in. Tag each list with what it was built from.
+    - `App::filtered_out` needs to know the listing was not empty, and
+      `refilter_lens`'s copy of the listing moves to the worker.
+    - `App::sync_grouping` also walks every item on the UI thread for a
+      grouped lens. Measure it, and move it with the rest if it is over budget.
+  - Measure with the timing test above before and after; record both.
+  - Done when: swapping in a 50,000-entry list stays under 8 ms on the UI
+    thread with 32 patterns, and a lens of that size refreshes without a
+    visible hitch (**[needs human]**).
+
+- [x] **T19. Bounce (core, platform).** **[needs human]**
+  - Row: `effect(Effect::Bounce, "bounce", &[Direction])`. Not in Fold.
+  - Frame math: the rect moves as Fly's does (from beyond `edge` of
+    `work_area`, clipped to it; Automatic is the top, the row's default
+    `auto_edge`), but its progress goes through a pure `bounce_ease(t: f32) ->
+    f32` instead of Fly's easing: Robert Penner's "easeOutBounce" (four
+    parabolic arcs; cite https://easings.net/#easeOutBounce beside it).
+    The out is the in played backwards, as for every effect.
+  - Tests: `bounce_ease` is 0 at 0 and 1 at 1, stays within 0..=1, and
+    touches 1 at least three times (the landings); the frame at progress
+    0 is wholly outside the work area on the chosen edge, at 1 it is the
+    space's rect, and it never leaves the work area's span on the other
+    axis (copy Fly's transition test).
+  - **[needs human]** check: Bounce on Startup (show, a new space,
+    startup) and Delete from each edge, on Acrylic and Solid at 100 % and
+    150 %: it drops in, bounces about three times shrinking, and settles
+    exactly in place; it never shows on a second monitor or over the
+    taskbar.
+
+- [x] **B22. Mark the process-wide state where it lives.** The platform keeps
+  a number of `static`s and `thread_local!`s. Most are needed, because hooks
+  and Win32 callbacks get no context pointer. But none says why, which makes
+  the runtime the hardest part to reason about. Explain each one in a
+  comment beside it, not in a doc table, which would drift (`ENGINEERING.md`
+  section 7).
+  1. List them: `rg -n "^\s*(pub(\(crate\))? )?static |thread_local!"
+     crates/deskspace-platform/src`. Skip `static` string or number
+     constants that never change; they are not state.
+  2. Above each remaining one, write a comment that starts with
+     `// Process state:` and gives, in at most three lines:
+     - what it holds;
+     - why it cannot be passed instead (for example, "a `WH_KEYBOARD_LL`
+       hook procedure gets no user pointer");
+     - who sets it and who clears it.
+
+     For a `thread_local!` block, comment each entry.
+  3. If you cannot say why one cannot be passed, do not guess. Write
+     `// Process state: TODO(B22): no stated reason` and add a line under
+     **Found while working**.
+  4. In `CONTEXT.md` section 6, at the end of "Runtime", add one bullet:
+     "Process-wide state: every `static` or `thread_local!` that holds state
+     is marked `// Process state:` with what it holds, why it cannot be
+     passed, and who clears it; `rg -n "Process state:"` lists them."
+  - Comments only; no code changes. Make one commit for the platform crate.
+  - Done when: every match from step 1 that holds state has the comment.
+
+- [x] **B25. Name `App::on_event`'s long arms.** `app.rs` `on_event` is a
+  good dispatch `match` except for `Event::Started` (about 40 lines),
+  `Event::SystemThemeChanged`, and `Event::CloseRequested`. Move each into
+  `on_started`, `on_system_theme_changed`, and `on_close_requested`, in the
+  module that owns most of what they touch (`app/view.rs` for the theme,
+  `app/persist.rs` or `app.rs` for start and close; follow `CONTEXT.md`
+  section 7's runtime-flow steps 3 and 6, which describe them). Pure move.
+  Done when: every arm of `on_event` is one call.
+
+- [x] **B24. Split `App::on_space_event`.** `app/pointer.rs`
+  `on_space_event` is about 135 lines: a preamble (the surface still exists,
+  commit a rename, act like a desktop click) and a `match` over
+  `SpaceEvent` whose arms run up to 25 lines.
+  - Move the preamble into `fn prepare_space_event(&mut self, ui, surface,
+    &event) -> bool` (false means ignore), and each arm longer than about
+    five lines into a named method in the module that owns it (`pointer.rs`
+    for mouse arms; the drop arms call into `files.rs`, where the logic
+    already lives).
+  - Pure move: no behavior change, no new `pub(super)` beyond what the moved
+    methods need. Done when: `on_space_event` is under about 50 lines.
+
+- [x] **B13. One child-control helper.** `win32/dialog.rs` `control` and
+  `win32/settings_window/build.rs` `Builder::control` are near-copies, both
+  allowed `too_many_arguments` (8).
+  - Add `pub(crate) struct ControlSpec<'a> { class: PCWSTR, text: &'a str,
+    style: u32, ex_style: WINDOW_EX_STYLE, bounds: (i32, i32, i32, i32), id:
+    usize }` in `dialog.rs`; `control(chrome, parent, spec)` creates the
+    window and sets the font. `Builder::control` calls it with its own font.
+  - Done when: both allows are gone and **Found while working** no longer
+    lists `too_many_arguments`. **[needs human]** check: the settings window
+    and the custom shortcut dialog look as before.
+
+- [x] **B14. Split `Builder::field` by field kind.**
+  `win32/settings_window/build.rs` `Builder::field` is about 260 lines: one
+  `match` over `FieldKind` (Heading, Note, Choice, Toggle, Slider, Color,
+  Text, Button, SpacePreview) with layout literals (`self.s(184)`,
+  `self.s(12)`, `self.s(28)`, `self.s(16)`).
+  - Turn each arm into a `Builder` method (`heading_field`, `choice_field`,
+    ...) returning its height; `field` keeps the shared setup and the
+    dispatch.
+  - Name the literals as `const`s at the top of `build.rs` (`LABEL_WIDTH`,
+    `LABEL_GAP`, `ROW_HEIGHT`, `EDGE`, ...) in 96-DPI pixels, scaled through
+    `self.s`. Same values, so the layout does not move.
+  - Done when: no method in `build.rs` is over about 80 lines.
+    **[needs human]** check: every settings page looks as before at 100 %
+    and 150 %.
+
+- [x] **B26. Split `settings_window::build` and `update`.**
+  `win32/settings_window/build.rs` `build` (about 210 lines) and
+  `update.rs` `update` (about 125 lines) each build or diff the panes, the
+  header, and the pages in one body. Split each into `*_panes`, `*_header`,
+  and `*_pages` helpers in the same file, in the order the body already runs
+  them. Pure move. Done when: no function in either file is over about 80
+  lines. **[needs human]** check: the settings window opens, switches scopes
+  and pages, and previews as before.
+
+- [x] **Q2. "Selection, display matching, keys, and clipboard"**
+  (`win32/shell_selection.rs`, `win32/display_settings.rs`, `edit.rs`,
+  `win32/keyboard.rs`, `win32/clipboard.rs`, `win32/file_op.rs`). The
+  ENGINEERING.md Keys table stays where it is.
+
+- [x] **Q5. "Drops" and "Drag out and the drag image"**
+  (`win32/drop_target.rs`, `shell_items.rs`, `drag_image.rs`,
+  `drag_ghost.rs`).
+
+- [x] **Q6. "Rendering" and "Controller"** (`render/`, `win32/controller.rs`,
+  `tray.rs`, `console.rs`, `outside_click.rs`, `desktop_entry.rs`).
+
+- [x] **Q4. "Desktop shell, shell items, DPI, hotkeys"**
+  (`win32/folder_watch.rs`, `desktop_shell.rs`, `desktop_icons.rs`,
+  `watchdog.rs`, `desktop_items.rs`, `icons.rs`, `shell_items.rs`, `dpi.rs`,
+  `system.rs`, `info_tip.rs`, `hotkey.rs`).
+
+- [x] **Q3. "Space windows"** (`win32/space_window.rs`, `win32/dwm.rs`). Keep
+  the desktop-layer and `Surface` paragraph (bucket c).
+
+- [x] **Q7. One home for the controls.** `CONTEXT.md` section 8 and
+  `README.md` "Controls" describe the same controls, one for contributors
+  and one for users. Decided by the maintainer, 2026-10-29: README keeps
+  the user prose, and section 8 keeps only the rules README leaves out
+  (exact steps, ranges, and edge cases), linking to README for the rest.
+  The key recipe and the menu-entry recipe then name the one place to
+  edit.
+
+- [x] **C9. Spaces entries on the desktop background menu (F-52).**
+  The entries below were approved by the maintainer, 2026-10-29. Today `win32/desktop_entry.rs` writes only "Show DeskSpace spaces", while
+  spaces are hidden (`App::sync_desktop_show_entry`).
+  - Platform, `win32/desktop_entry.rs`: replace
+    `set_desktop_show_entry(enabled, label, command, icon)` with
+    `set_desktop_verbs(verbs: &[DesktopVerb])`, where `DesktopVerb { key,
+    label, command, icon }` are `&'static str` and each `key` is a child of
+    `DesktopBackground\Shell` under a common `DeskSpace` prefix. Delete each
+    known key (`RegDeleteTreeW`), then write them; keep the `create` /
+    `set_string` helpers.
+  - Each verb re-launches the executable with a flag the running instance
+    handles, as `--show` does: `--settings` exists; add `--new-space` (a
+    `cli.rs` field; `bootstrap.rs` posts a new `controller::NEW_SPACE`, the
+    next free `WM_APP` id, and exits; the controller raises an event the app
+    handles by creating a space on the pointer's monitor).
+  - App, `app/visibility.rs`: `App::sync_desktop_verbs` writes "New space",
+    "DeskSpace Settings", and, only while hidden, "Show DeskSpace spaces";
+    `remove_desktop_show_entry` becomes `remove_desktop_verbs`. Call it on
+    `Started` and on every visibility change.
+  - Docs: `CONTEXT.md` sections 6 (the `WM_APP` table) and 8 (CLI flags), and
+    the `ROADMAP.md` F-52 row.
+  - Done when: CI is green (registry writes stay behind `cfg(test)`) and the
+    flag/event round trip is unit-tested. **[needs human]** check: right-click
+    the desktop and use "New space" and "DeskSpace Settings"; the entries are
+    gone after a clean exit.
+- [x] **B39. Move one renamed item instead of re-sorting the space (core).**
+  - Why: `apply_rename_item` calls `hold_kept_order`, which sorts every item
+    in a lens or kept-sorted space on the UI thread. On 50,000 lens items that
+    is about 24 ms (found in B37).
+  - `sort.rs`: `SortRule::move_into_order(&mut Vec<Item>, index)`, which
+    removes the item and re-inserts it where a binary search puts it. Among
+    items the rule calls equal, it keeps the item's old relative place, so
+    the result matches a stable `sort_items`.
+  - `command/item_ops.rs` `apply_rename_item`: after the path and label
+    change, when `space.keeps_sorted()`, call `move_into_order` instead of
+    `hold_kept_order`, then `position_items`. `rearrange` and every other
+    caller keep the full sort.
+  - Tests: for every `SortKey` and both directions, the moved list equals a
+    full `sort_items`, including ties and items moved to either end; a lens
+    rename keeps its order and places the item. Add the rename to the release
+    timing test and record it.
+  - Done when: the gates pass and a rename on 50,000 items is well under the
+    Performance rule's 8 ms.
+- [x] **B40. Load a lens title's folder icon on the icon worker (platform).**
+  - Why: `IconCache::folder_icon` calls `load_folder_icon` on the UI thread
+    while a scene is built, so a lens on a slow or disconnected folder stalls
+    every space there (found in B33).
+  - `win32/icons.rs` `folder_icon` follows `icon_for`: a cached icon (even a
+    stale one) is drawn at once; otherwise the key joins the current scene's
+    wanted list and the kind's generic folder icon is drawn. The worker
+    already knows `IconKind::Folder`, so nothing else changes.
+  - Tests: outside a scene nothing is asked for; in a scene the key is
+    queued, the generic icon is returned, and the loaded icon reaches the
+    cache and refreshes the asking space.
+  - `CONTEXT.md` section 3: a lens's title icon loads like an item's, generic
+    first.
+  - **[needs human]** check: on a slow or disconnected folder, the other
+    spaces stay responsive and the lens's title shows the generic folder
+    before its own icon (append to the B33 row in section V).
+- [x] **B41. Load the Shortcuts preview's icons on the icon worker (app,
+  platform).**
+  - Why: `space_preview` calls `icon_now` for every item, so opening the
+    Shortcuts page on a 50,000-file lens loads every icon on the UI thread
+    (found in B33).
+  - `win32/icons.rs`: `IconUser::SettingsPreview(u64)`; and `icon_ready`, a
+    cached-or-generic lookup that asks for nothing.
+  - `app/settings_session.rs` `space_preview`: begin a
+    `SettingsPreview(space)` scene, ask `icon_for` for at most
+    `PREVIEW_ICON_LIMIT` items, use `icon_ready` for the rest, and end the
+    scene. `Event::IconsLoaded` refreshes the open settings form when the
+    user is the scoped space's preview.
+  - Tests: `icon_ready` asks for nothing; a preview scene queues no more than
+    `PREVIEW_ICON_LIMIT`; a preview icon reaching the cache refreshes the
+    form. Record the release timing of building a 50,000-item preview.
+  - **[needs human]** check: with a big lens, the Shortcuts page opens without
+    a stall, its first icons fill in, and scrolling past the limit shows the
+    generic folder/file icons.
+- [x] **B42. Free a stopped watch's finished listing on the worker
+  (platform).**
+  - Why: `FolderWatch::unwatch` can drop the last reference to a finished
+    `FolderListing` on the UI thread, about 5 ms for a big lens. It is rare,
+    but it is the one list the worker does not free (found in B37).
+  - Add a `retired` map shared with the worker. `unwatch` moves the slot's
+    `SharedListing` there instead of dropping it; `Worker::remove` takes it
+    and frees it on the watch thread. A failed remove packet leaves it for
+    `stop`, where the process is ending.
+  - Tests: retiring a slot moves its listing out of `listings`; the worker's
+    take leaves the map empty.
+  - Done when: the gates pass; say in the commit body why no behavior
+    changes.
+- [x] **B43. Warm Explorer's type names off the UI thread (platform,
+  app).**
+  - Why: grouping by Type calls `type_name` for every distinct extension
+    while `sync_grouping` walks a 50,000-item lens on the UI thread. On a
+    seven-extension folder that is 13.6 ms the first time, over the
+    Performance rule's 8 ms; the grouping walk alone is about 3.6 ms
+    (measured 2026-11-01, release; found in B37).
+  - `win32/desktop_items.rs`: keep the thread-local cache as the fast path,
+    and add a process-wide cache that both threads fill and read. A miss
+    loads once, then fills both.
+  - `prewarm_type_names(entries)` loads each distinct extension (and the
+    folder name) once. `win32/folder_list.rs` `list_folder` calls it after
+    listing, so the watch worker pays the shell calls for a lens.
+  - Tests: distinct keys dedupe case and share the folder key; a name warmed
+    on another thread is read on this one without loading shell. Add a
+    cross-thread warm and the re-timed groupings to the release timing test.
+  - Done when: after a worker listing, `sync_grouping` for every key is under
+    8 ms, and the timings are recorded.
+
 - [x] **P19. Make the size-column test pass on newer Windows (test).**
   **[urgent]** `cargo test --workspace` fails on Windows build 26300, so the
   gates are red before any change: `scene::tests::

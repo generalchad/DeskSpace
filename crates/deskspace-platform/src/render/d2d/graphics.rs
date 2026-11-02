@@ -52,6 +52,9 @@ pub(super) struct Graphics {
 }
 
 thread_local! {
+    // Process state: the Direct2D factories and brushes, shared by every
+    // painter on this thread. Windows' window procedures get no context
+    // pointer. `graphics` fills it and `release_graphics` drops it before OLE.
     pub(super) static GRAPHICS: RefCell<Option<Rc<Graphics>>> = const { RefCell::new(None) };
 }
 

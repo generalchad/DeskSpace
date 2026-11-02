@@ -4,9 +4,10 @@ use super::*;
 
 /// Renders the items `ids` of `scene` together into one premultiplied bitmap,
 /// keeping their relative positions and scaling the whole group by `scale`
-/// about `origin` (scene coordinates). Used for drag images, so a group drag
-/// shows every selected item laid out as Explorer shows it. Needs COM on this
-/// thread (for WIC).
+/// about `origin` (scene coordinates). Each item goes through the space's own
+/// `draw_item`, so icons, labels, and colors match the space. Used for drag
+/// images, so a group drag shows every selected item laid out as Explorer
+/// shows it. Needs COM on this thread (for WIC).
 pub(crate) fn render_items(
     scene: &SpaceScene,
     ids: &[u64],

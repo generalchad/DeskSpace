@@ -617,11 +617,17 @@ unsafe fn finish(window: HWND) {
             destroy(window);
             return;
         }
-        move_to(window, rect);
         if outcome == Outcome::Hidden {
+            // Hidden first: moved while still shown, the window flashed at
+            // its rest rect for a frame, holding the last frame's sliver,
+            // whenever a hide's last frame still showed.
             let _ = ShowWindow(window, SW_HIDE);
-        } else if !IsWindowVisible(window).as_bool() {
-            show(window);
+            move_to(window, rect);
+        } else {
+            move_to(window, rect);
+            if !IsWindowVisible(window).as_bool() {
+                show(window);
+            }
         }
         // After the hide, so nothing stepped aside shows around a gone space.
         show_backing(window, Backing::WHOLE);

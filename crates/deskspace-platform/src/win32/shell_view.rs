@@ -17,8 +17,9 @@ use windows::Win32::UI::Shell::{
 use windows::core::Interface;
 
 thread_local! {
-    /// Created on first use; released by `release` before OLE is
-    /// uninitialized.
+    // Process state: the cached shell-window enumerator, shared by every lookup
+    // on the OLE thread. Created on first use and released by `release` before
+    // OLE is uninitialized.
     static SHELL_WINDOWS: RefCell<Option<IShellWindows>> = const { RefCell::new(None) };
 }
 

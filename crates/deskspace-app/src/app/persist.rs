@@ -39,6 +39,7 @@ impl App {
         if !outcome.is_applied() {
             tracing::debug!(?outcome, "command not applied");
         }
+        super::lens::free_off_thread(self.config.desktop.take_retired_items());
         outcome
     }
 
@@ -94,6 +95,20 @@ impl App {
             Self::clear_timer(ui, Timer::Autosave);
         }
         let _ = self.write_config();
+    }
+
+    /// The shutdown work behind `Event::CloseRequested`: stop the input
+    /// hooks, drop unsaved edits, and write the final configuration.
+    pub(super) fn on_close_requested(&mut self, ui: &mut Ui) {
+        self.hotkeys.unregister_all(ui);
+        // A rename in progress and unapplied settings edits are discarded.
+        self.cancel_edit(ui);
+        self.cancel_settings(ui);
+        // A config the debug window made read-only must take this last save
+        // and stay writable (ROADMAP D14).
+        self.restore_config_writable();
+        self.flush_save_on_close(ui);
+        self.remove_desktop_verbs();
     }
 
     /// Applies `command`, then, when it applied, repaints what it changed

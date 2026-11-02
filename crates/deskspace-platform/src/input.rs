@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
-use deskspace_core::SpaceId;
-use deskspace_core::source::FolderEntry;
+use deskspace_core::{LensList, SpaceId};
 
 use crate::ui::{FieldValue, LogLevel};
 
@@ -75,11 +74,13 @@ pub enum WatchKey {
 }
 
 /// What a watched folder held when its last change settled. The worker lists
-/// the folder itself, so the app never does IO for a watch.
+/// the folder and builds a lens's item list itself, so the app never does IO or
+/// sorts for a watch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FolderListing {
-    /// The folder's entries, as the worker just read them.
-    Listed(Vec<FolderEntry>),
+    /// The folder's contents, as a lens's finished list. A watch that builds
+    /// no list (the Desktop's) posts an empty one.
+    Listed(LensList),
     /// The folder is missing or cannot be read; the worker keeps retrying.
     Unavailable,
     /// The folder was renamed or moved to `to` on the same volume, outside
@@ -339,6 +340,9 @@ pub enum Event {
     Wake {
         id: usize,
     },
+    /// The icon worker has loaded icons. `IconCache::take_loaded` collects
+    /// them and names the windows to draw again.
+    IconsLoaded,
     /// A mouse button went down outside every space (on the desktop, another
     /// app, or the taskbar). Only reported while `Ui::watch_outside_clicks`
     /// is on.
@@ -350,6 +354,12 @@ pub enum Event {
     /// Another launch asked this instance to show its spaces (the desktop
     /// right-click "Show spaces" entry, or a shortcut).
     ShowSpaces,
+    /// Another launch asked for a new space on the pointer's monitor (the
+    /// desktop right-click "New space" entry, or `--new-space`).
+    NewSpace,
+    /// Another launch asked to open Settings (the desktop right-click
+    /// "DeskSpace Settings" entry, or `--settings` while running).
+    OpenSettings,
     /// A folder watched with `Ui::watch_folder` changed. The app re-reads the
     /// folder and reconciles what it draws. M2 watches the Desktop folder for
     /// the desktop layer; M4 reuses it for a lens's bound folder.

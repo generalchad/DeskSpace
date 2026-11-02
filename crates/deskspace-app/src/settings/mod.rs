@@ -350,11 +350,9 @@ pub enum FieldEffect {
     Appearance,
     /// The grid changed; re-flow and repaint.
     Layout,
-    /// The lens's view changed; list its folder again.
+    /// The lens's rules changed; its worker builds its list again, without
+    /// reading the folder.
     Lens,
-    /// The lens's filters changed; filter the listing it already has again,
-    /// without reading the folder (W35).
-    Refilter,
     /// Only pending (unapplied) settings changed.
     Pending,
 }

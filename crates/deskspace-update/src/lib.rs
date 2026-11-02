@@ -40,13 +40,9 @@ const FETCH_TIMEOUT: Duration = Duration::from_secs(30);
 /// Where to send a user who wants to download manually.
 const RELEASES_URL: &str = "https://github.com/generalchad/DeskSpace/releases";
 /// The minisign public key the feed's installer signature is verified against.
-///
-/// TODO(maintainer): replace with the project's minisign public key. Generate a
-/// keypair once with `minisign -G`, keep the private key in the
-/// `DESKSPACE_MINISIGN_KEY` GitHub Actions secret (used by `release.yml`), and
-/// paste the public key (the contents of `minisign.pub`) here. Until this is
-/// set, `check` returns `UpdateError::NotConfigured`.
-const UPDATE_PUBKEY: &str = "";
+/// The private half is the `DESKSPACE_MINISIGN_KEY` GitHub Actions secret used
+/// by `release.yml` and `icons.yml`; rotate both together.
+const UPDATE_PUBKEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDIxNkQ0MkE4NDJDMkQzQ0YKUldUUDA4SkNxRUp0SVowUk9rQlE0TnVSdkQrZk1ubVZWN01sSU5Yd3dnU2VGTFJ1T080cG01UWsK";
 
 #[derive(Debug, Error)]
 pub enum UpdateError {

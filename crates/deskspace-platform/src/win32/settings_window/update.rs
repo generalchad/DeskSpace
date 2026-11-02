@@ -99,14 +99,51 @@ pub(super) enum Update {
     Repaint(HWND),
 }
 
+/// The header controls and the header they should show.
+struct HeaderUpdate {
+    title: Option<HWND>,
+    switch: Option<HWND>,
+    button: Option<HWND>,
+    header: Option<SettingsHeader>,
+}
+
+/// The controls to update after a plan is made, collected so no state borrow
+/// is held while control messages run.
+struct UpdatePlan {
+    updates: Vec<Update>,
+    apply: Option<HWND>,
+    rail: Option<(HWND, Vec<NavRow>, bool, usize)>,
+    page: Option<usize>,
+    pages: Vec<HWND>,
+    scopes: Option<(HWND, Vec<SettingsScope>, bool, usize)>,
+    header: Option<HeaderUpdate>,
+}
+
 /// Refreshes control values, labels, and enabled state from `form`. Returns
 /// false when `form` has a different shape and the window must be rebuilt.
 /// The panes, the header, and the shown page are touched only when they
 /// change, because a slider drag sends an update per tick.
 pub(crate) fn update(hwnd: HWND, form: &SettingsForm) -> bool {
-    // SAFETY: the borrow below only reads/writes state and creates brushes;
-    // control messages are sent after it ends.
-    let plan = unsafe {
+    // SAFETY: `plan_update` only borrows the window's state and handles.
+    let Some(plan) = (unsafe { plan_update(hwnd, form) }) else {
+        return false;
+    };
+    // SAFETY: every handle in the plan is a live control of this window.
+    unsafe {
+        update_pages(plan.updates, plan.apply, form);
+        update_panes(plan.rail, plan.page, plan.pages, plan.scopes);
+        update_header(plan.header);
+        with_state(hwnd, |state| state.updating = false);
+    }
+    true
+}
+
+/// Collects the changes `form` makes, or `None` when the window must be
+/// rebuilt because its shape changed.
+unsafe fn plan_update(hwnd: HWND, form: &SettingsForm) -> Option<UpdatePlan> {
+    // SAFETY: the borrow only reads/writes state and creates brushes; control
+    // messages are sent after it ends.
+    unsafe {
         with_state(hwnd, |state| {
             if !state.form.same_shape(form) {
                 return None;
@@ -136,12 +173,12 @@ pub(crate) fn update(hwnd: HWND, form: &SettingsForm) -> bool {
             });
             let new_header = form.nav.header.clone();
             let old_header = state.form.nav.header.as_ref();
-            let header = (old_header != new_header.as_ref()).then_some((
-                state.header_title,
-                state.header_switch,
-                state.header_button,
-                new_header,
-            ));
+            let header = (old_header != new_header.as_ref()).then_some(HeaderUpdate {
+                title: state.header_title,
+                switch: state.header_switch,
+                button: state.header_button,
+                header: new_header,
+            });
             state.nav_rows = new_rows.clone();
             state.scope_rows = new_scopes;
             state.form = form.clone();
@@ -149,22 +186,22 @@ pub(crate) fn update(hwnd: HWND, form: &SettingsForm) -> bool {
             let rail = state
                 .list
                 .map(|list| (list, new_rows, rebuild, selected_row));
-            Some((
+            Some(UpdatePlan {
                 updates,
-                state.apply,
+                apply: state.apply,
                 rail,
                 page,
-                state.pages.clone(),
+                pages: state.pages.clone(),
                 scopes,
                 header,
-            ))
+            })
         })
         .flatten()
-    };
-    let Some((updates, apply, rail, page, pages, scopes, header)) = plan else {
-        return false;
-    };
+    }
+}
 
+/// Applies the planned field updates and the Apply button's state.
+unsafe fn update_pages(updates: Vec<Update>, apply: Option<HWND>, form: &SettingsForm) {
     // SAFETY: every handle is a live control of this window.
     unsafe {
         for update in updates {
@@ -208,6 +245,18 @@ pub(crate) fn update(hwnd: HWND, form: &SettingsForm) -> bool {
         if let Some(apply) = apply {
             let _ = EnableWindow(apply, form.apply_enabled);
         }
+    }
+}
+
+/// Rebuilds or selects the rail and scopes pane, and shows the named page.
+unsafe fn update_panes(
+    rail: Option<(HWND, Vec<NavRow>, bool, usize)>,
+    page: Option<usize>,
+    pages: Vec<HWND>,
+    scopes: Option<(HWND, Vec<SettingsScope>, bool, usize)>,
+) {
+    // SAFETY: every handle is a live control of this window.
+    unsafe {
         if let Some((list, rows, rebuild, selected_row)) = rail {
             if rebuild {
                 fill_list(list, rows.iter().map(NavRow::label));
@@ -223,12 +272,22 @@ pub(crate) fn update(hwnd: HWND, form: &SettingsForm) -> bool {
             }
             sync_selection(list, rebuild, selected);
         }
-        if let Some((title, switch, button, header)) = header {
-            apply_header(title, switch, button, header.as_ref());
-        }
-        with_state(hwnd, |state| state.updating = false);
     }
-    true
+}
+
+/// Shows the header's title, button, and switch.
+unsafe fn update_header(header: Option<HeaderUpdate>) {
+    if let Some(header) = header {
+        // SAFETY: every handle is a live control of this window.
+        unsafe {
+            apply_header(
+                header.title,
+                header.switch,
+                header.button,
+                header.header.as_ref(),
+            );
+        }
+    }
 }
 
 fn plan_field(old: &Field, controls: &mut FieldControls, new: &Field, updates: &mut Vec<Update>) {

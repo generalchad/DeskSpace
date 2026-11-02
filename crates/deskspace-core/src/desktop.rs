@@ -5,6 +5,7 @@ use crate::geometry::Rect;
 use crate::id::{ItemId, SpaceId};
 use crate::item::Item;
 use crate::layout::{GridSpec, position_items};
+use crate::lens_build::{ITEM_ID_BLOCK, ItemIdBlock};
 use crate::space::{Space, SpaceLook};
 use crate::theme::Theme;
 
@@ -28,7 +29,24 @@ pub struct Desktop {
     /// The highest item id handed out this session, in a space or the layer.
     #[serde(skip)]
     item_high_water: HighWater,
+    /// Item lists a command replaced, for the app to free off the UI thread.
+    #[serde(skip)]
+    retired: Retired,
 }
+
+/// Item lists waiting to be freed. Freeing a big lens's list takes longer than
+/// a frame's budget, so a command leaves it here rather than dropping it. Like
+/// `HighWater`, it is bookkeeping, and never makes two desktops unequal.
+#[derive(Debug, Clone, Default)]
+struct Retired(Vec<Vec<Item>>);
+
+impl PartialEq for Retired {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for Retired {}
 
 /// The highest id handed out this session, so an id freed by a delete is not
 /// given to a newer space or item, and an undo can put the old one back
@@ -94,6 +112,27 @@ impl Desktop {
         let id = self.next_item_id();
         self.item_high_water.0 = id.0;
         id
+    }
+
+    /// Reserves a block of item ids for a watch's worker, which names new lens
+    /// items where it cannot reach this model. Only bookkeeping changes, so
+    /// this is no `Command`.
+    pub fn reserve_item_ids(&mut self) -> ItemIdBlock {
+        let next = self.next_item_id().0;
+        let end = next.saturating_add(ITEM_ID_BLOCK);
+        self.item_high_water.0 = end - 1;
+        ItemIdBlock { next, end }
+    }
+
+    pub(crate) fn retire_items(&mut self, items: Vec<Item>) {
+        if !items.is_empty() {
+            self.retired.0.push(items);
+        }
+    }
+
+    /// Takes the item lists commands have replaced, to free off the UI thread.
+    pub fn take_retired_items(&mut self) -> Vec<Vec<Item>> {
+        std::mem::take(&mut self.retired.0)
     }
 
     /// Raises the high-water marks to cover `space` and its items, which came

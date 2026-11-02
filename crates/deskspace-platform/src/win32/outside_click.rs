@@ -28,7 +28,12 @@ use crate::win32::{desktop_shell, messages, runtime};
 const MENU_CLASS: &str = "#32768";
 
 thread_local! {
+    // Process state: the low-level mouse hook, while outside clicks are
+    // watched. A hook procedure gets no context; `watch` installs it and
+    // `stop` removes it.
     static HOOK: Cell<Option<HHOOK>> = const { Cell::new(None) };
+    // Process state: the controller window a press is reported to. A hook
+    // procedure gets no context; `watch` sets it and `stop` clears it.
     static CONTROLLER: Cell<Option<HWND>> = const { Cell::new(None) };
 }
 

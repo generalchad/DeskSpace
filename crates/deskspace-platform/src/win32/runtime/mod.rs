@@ -118,6 +118,9 @@ struct Runtime {
 }
 
 thread_local! {
+    // Process state: the single UI runtime, because window procedures get no
+    // context pointer. `run` sets it and takes it back on teardown after the
+    // message loop ends.
     static RUNTIME: RefCell<Option<Runtime>> = const { RefCell::new(None) };
 }
 
@@ -131,6 +134,11 @@ fn with_runtime<R>(f: impl FnOnce(&mut Runtime) -> R) -> Option<R> {
             None
         }
     })
+}
+
+/// The controller window, once the runtime is up.
+pub(crate) fn controller_window() -> Option<HWND> {
+    with_runtime(|runtime| runtime.controller)
 }
 
 /// Delivers `event` to the handler, or queues it if the handler is already

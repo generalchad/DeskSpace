@@ -10,7 +10,6 @@ use deskspace_platform::{
 use crate::settings::STATUS_BUTTONS;
 
 use super::drag::Drag;
-use super::files::ShortcutSource;
 use super::selection::marquee_selection;
 
 use super::{App, RESIZE_BORDER, Surface, Timer, WHEEL_DELTA};
@@ -148,39 +147,9 @@ impl PointerState {
 
 impl App {
     pub(super) fn on_space_event(&mut self, ui: &mut Ui, id: SpaceId, event: SpaceEvent) {
-        // The chrome-less desktop layer reuses the space window: id 0 is it,
-        // any other id a real space. A space window can outlive its space by
-        // one queued event, so ignore anything they report.
         let surface = Surface::of(id);
-        let exists = match surface {
-            Surface::Space(id) => self.config.desktop.space(id).is_some(),
-            Surface::Desktop => self.layer_active(),
-        };
-        if !exists {
+        if !self.prepare_space_event(ui, surface, &event) {
             return;
-        }
-        // Clicking anywhere commits a rename in progress before the click is
-        // handled, as clicking away from a title does elsewhere; so does the
-        // mouse's back button, which empties the lens the rename is in.
-        if self.edit.is_active()
-            && matches!(
-                &event,
-                SpaceEvent::MouseDown { .. }
-                    | SpaceEvent::DoubleClick { .. }
-                    | SpaceEvent::BackButton
-            )
-        {
-            self.finish_rename(ui, true);
-        }
-        // A space is part of the desktop, and never takes activation, so a
-        // click here is made to behave like one on the desktop: focus it and
-        // clear its icon selection.
-        if matches!(&event, SpaceEvent::MouseDown { .. }) {
-            // A new press starts over; one on the Back button sets it again.
-            self.pointer.back_press = None;
-            self.dismiss_info_tip(ui);
-            self.refresh_shell_display(ui);
-            ui.on_desktop_click();
         }
         match event {
             SpaceEvent::MouseDown {
@@ -195,137 +164,82 @@ impl App {
                 y,
                 button: MouseButton::Right,
                 ..
-            } => {
-                let point = Point::new(x, y);
-                self.pointer.right_dragged = false;
-                // A row can be scrolled under the header, and a press on the
-                // header is for the header's menu, so it leaves the selection.
-                if self.details_header_column(surface, point).is_none() {
-                    self.select_at(ui, surface, point);
-                    self.pointer.right_press = self
-                        .surface_item_at(surface, point)
-                        .map(|item| (surface, item, point));
-                }
-            }
-            SpaceEvent::MouseMove { x, y } => {
-                let point = Point::new(x, y);
-                if !self.right_drag_to(ui, point) && !self.drag_to(ui, point) {
-                    if let Surface::Space(id) = surface {
-                        self.update_cursor(ui, id, point);
-                    }
-                    self.update_hover(ui, surface, point);
-                }
-            }
+            } => self.begin_right_press(ui, surface, Point::new(x, y)),
+            SpaceEvent::MouseMove { x, y } => self.on_pointer_move(ui, surface, Point::new(x, y)),
             SpaceEvent::Wheel { x, y, delta, ctrl } => {
-                if ctrl {
-                    self.adjust_icon_size(ui, surface, delta);
-                } else if let Surface::Space(id) = surface {
-                    self.scroll_by(ui, id, Point::new(x, y), delta);
-                }
+                self.on_wheel(ui, surface, Point::new(x, y), delta, ctrl);
             }
             SpaceEvent::MouseUp {
                 button: MouseButton::Left,
                 ..
             } => self.end_drag(ui),
-            SpaceEvent::CaptureLost => {
-                self.pointer.right_press = None;
-                self.pointer.right_dragged = false;
-                self.cancel_column_gesture(ui);
-                self.end_drag(ui);
-            }
+            SpaceEvent::CaptureLost => self.on_capture_lost(ui),
             SpaceEvent::MouseUp {
                 x,
                 y,
                 button: MouseButton::Right,
-            } => {
-                let point = Point::new(x, y);
-                self.pointer.right_press = None;
-                // A right drag ends in the shell's own Move / Copy / Create
-                // shortcut menu, so only a plain right click opens DeskSpace's.
-                if self.pointer.right_dragged {
-                    self.pointer.right_dragged = false;
-                } else if let (Surface::Space(id), Some(_)) =
-                    (surface, self.details_header_column(surface, point))
-                {
-                    self.show_details_header_menu(ui, id, point);
-                } else {
-                    match self.surface_item_at(surface, point) {
-                        Some(item) => self.show_item_menu(ui, surface, item, point),
-                        None => self.show_surface_menu(ui, surface, point),
-                    }
-                }
-            }
-            // A double-click's second press arrives as the double-click
-            // alone, so on the Back button it goes up again, as two clicks
-            // would, rather than fold the space.
-            SpaceEvent::DoubleClick { x, y } => {
-                let point = Point::new(x, y);
-                let back = matches!(surface, Surface::Space(id) if self.back_button_clicked(ui, id, point));
-                if !back {
-                    self.double_click(ui, surface, point);
-                }
-            }
-            SpaceEvent::BackButton => {
-                if let Surface::Space(id) = surface {
-                    self.browse_up(ui, id);
-                }
-            }
-            SpaceEvent::MouseLeave => {
-                self.dismiss_info_tip(ui);
-                let mut repaint = false;
-                if self
-                    .pointer
-                    .hovered
-                    .is_some_and(|(owner, _)| owner == surface)
-                {
-                    self.pointer.hovered = None;
-                    repaint = true;
-                }
-                if self
-                    .pointer
-                    .status_hover
-                    .is_some_and(|(owner, _)| owner == surface)
-                {
-                    self.pointer.status_hover = None;
-                    repaint = true;
-                }
-                if self
-                    .pointer
-                    .title_hover
-                    .is_some_and(|owner| Surface::of(owner) == surface)
-                {
-                    self.pointer.title_hover = None;
-                    repaint = true;
-                }
-                if repaint {
-                    self.refresh_surface(ui, surface);
-                }
-            }
+            } => self.end_right_press(ui, surface, Point::new(x, y)),
+            SpaceEvent::DoubleClick { x, y } => self.on_double_click(ui, surface, Point::new(x, y)),
+            SpaceEvent::BackButton => self.on_back_button(ui, surface),
+            SpaceEvent::MouseLeave => self.on_pointer_leave(ui, surface),
             SpaceEvent::FilesDropped {
                 x,
                 y,
                 paths,
                 action,
-            } => {
-                let at = Point::new(x, y);
-                self.drop_onto(ui, surface, at, |app, ui, space| {
-                    app.add_dropped(ui, space, at, paths, action);
-                });
-            }
+            } => self.on_files_dropped(ui, surface, Point::new(x, y), paths, action),
             SpaceEvent::ShellItemsDropped { x, y, items } => {
-                let at = Point::new(x, y);
-                let sources = items.into_iter().map(ShortcutSource::Shell).collect();
-                self.drop_onto(ui, surface, at, |app, ui, space| {
-                    app.add_shortcuts(ui, space, at, sources);
-                });
+                self.on_shell_items_dropped(ui, surface, Point::new(x, y), items);
             }
-            SpaceEvent::DpiChanged { .. } => {
-                if let Surface::Space(id) = surface {
-                    self.on_dpi_changed(ui, id);
-                }
-            }
+            SpaceEvent::DpiChanged { .. } => self.on_surface_dpi_changed(ui, surface),
             _ => {}
         }
+    }
+
+    /// Prepares a space event, or returns false when its surface is gone. It
+    /// commits a rename under the click and makes a press act like a desktop click.
+    fn prepare_space_event(&mut self, ui: &mut Ui, surface: Surface, event: &SpaceEvent) -> bool {
+        // The chrome-less desktop layer reuses the space window: id 0 is it,
+        // any other id a real space. A space window can outlive its space by
+        // one queued event, so ignore anything they report.
+        let exists = match surface {
+            Surface::Space(id) => self.config.desktop.space(id).is_some(),
+            Surface::Desktop => self.layer_active(),
+        };
+        if !exists {
+            return false;
+        }
+        // Clicking anywhere commits a rename in progress before the click is
+        // handled, as clicking away from a title does elsewhere; so does the
+        // mouse's back button, which empties the lens the rename is in.
+        if self.edit.is_active()
+            && matches!(
+                event,
+                SpaceEvent::MouseDown { .. }
+                    | SpaceEvent::DoubleClick { .. }
+                    | SpaceEvent::BackButton
+            )
+        {
+            self.finish_rename(ui, true);
+        }
+        // A space is part of the desktop, and never takes activation, so a
+        // click here is made to behave like one on the desktop: focus it and
+        // clear its icon selection.
+        if matches!(event, SpaceEvent::MouseDown { .. }) {
+            // A new press starts over; one on the Back button sets it again.
+            self.pointer.back_press = None;
+            self.dismiss_info_tip(ui);
+            self.refresh_shell_display(ui);
+            ui.on_desktop_click();
+        }
+        true
+    }
+
+    fn on_capture_lost(&mut self, ui: &mut Ui) {
+        self.pointer.right_press = None;
+        self.pointer.right_dragged = false;
+        self.cancel_column_gesture(ui);
+        self.end_drag(ui);
     }
 
     /// If `point` is on space `id`'s Back button, makes the lens current,
@@ -349,6 +263,12 @@ impl App {
         }
         self.browse_up(ui, id);
         true
+    }
+
+    fn on_back_button(&mut self, ui: &mut Ui, surface: Surface) {
+        if let Surface::Space(id) = surface {
+            self.browse_up(ui, id);
+        }
     }
 
     /// If `point` is on a status-bar view button, switches the space to that
@@ -513,6 +433,18 @@ impl App {
         self.refresh_surface(ui, surface);
     }
 
+    fn begin_right_press(&mut self, ui: &mut Ui, surface: Surface, point: Point) {
+        self.pointer.right_dragged = false;
+        // A row can be scrolled under the header, and a press on the
+        // header is for the header's menu, so it leaves the selection.
+        if self.details_header_column(surface, point).is_none() {
+            self.select_at(ui, surface, point);
+            self.pointer.right_press = self
+                .surface_item_at(surface, point)
+                .map(|item| (surface, item, point));
+        }
+    }
+
     /// Selects the item under `point` (or nothing) without starting a drag,
     /// as a right-click does before its menu opens. Right-clicking an item
     /// that is already part of a multi-selection keeps the selection.
@@ -552,6 +484,41 @@ impl App {
         self.drag_item_out(ui, surface, item);
         self.pointer.drag_image = None;
         true
+    }
+
+    fn end_right_press(&mut self, ui: &mut Ui, surface: Surface, point: Point) {
+        self.pointer.right_press = None;
+        // A right drag ends in the shell's own Move / Copy / Create shortcut
+        // menu, so only a plain right click opens DeskSpace's.
+        if self.pointer.right_dragged {
+            self.pointer.right_dragged = false;
+        } else if let (Surface::Space(id), Some(_)) =
+            (surface, self.details_header_column(surface, point))
+        {
+            self.show_details_header_menu(ui, id, point);
+        } else {
+            match self.surface_item_at(surface, point) {
+                Some(item) => self.show_item_menu(ui, surface, item, point),
+                None => self.show_surface_menu(ui, surface, point),
+            }
+        }
+    }
+
+    fn on_pointer_move(&mut self, ui: &mut Ui, surface: Surface, point: Point) {
+        if !self.right_drag_to(ui, point) && !self.drag_to(ui, point) {
+            if let Surface::Space(id) = surface {
+                self.update_cursor(ui, id, point);
+            }
+            self.update_hover(ui, surface, point);
+        }
+    }
+
+    fn on_wheel(&mut self, ui: &mut Ui, surface: Surface, point: Point, delta: i32, ctrl: bool) {
+        if ctrl {
+            self.adjust_icon_size(ui, surface, delta);
+        } else if let Surface::Space(id) = surface {
+            self.scroll_by(ui, id, point, delta);
+        }
     }
 
     pub(super) fn update_cursor(&self, ui: &mut Ui, id: SpaceId, point: Point) {
@@ -643,6 +610,48 @@ impl App {
             self.refresh_surface(ui, Surface::of(owner));
         }
         self.refresh_surface(ui, surface);
+    }
+
+    fn on_pointer_leave(&mut self, ui: &mut Ui, surface: Surface) {
+        self.dismiss_info_tip(ui);
+        let mut repaint = false;
+        if self
+            .pointer
+            .hovered
+            .is_some_and(|(owner, _)| owner == surface)
+        {
+            self.pointer.hovered = None;
+            repaint = true;
+        }
+        if self
+            .pointer
+            .status_hover
+            .is_some_and(|(owner, _)| owner == surface)
+        {
+            self.pointer.status_hover = None;
+            repaint = true;
+        }
+        if self
+            .pointer
+            .title_hover
+            .is_some_and(|owner| Surface::of(owner) == surface)
+        {
+            self.pointer.title_hover = None;
+            repaint = true;
+        }
+        if repaint {
+            self.refresh_surface(ui, surface);
+        }
+    }
+
+    /// A double-click's second press arrives as the double-click alone, so on
+    /// the Back button it goes up again, as two clicks would, rather than fold
+    /// the space.
+    fn on_double_click(&mut self, ui: &mut Ui, surface: Surface, point: Point) {
+        let back = matches!(surface, Surface::Space(id) if self.back_button_clicked(ui, id, point));
+        if !back {
+            self.double_click(ui, surface, point);
+        }
     }
 
     pub(super) fn double_click(&mut self, ui: &mut Ui, surface: Surface, point: Point) {

@@ -1,6 +1,7 @@
 //! `App` view: space windows, scenes, layout, and the desktop layer (R1).
 
 use std::collections::{HashMap, HashSet};
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -31,7 +32,7 @@ use crate::storage::path_key;
 
 use super::animation::Arrival;
 use super::rename::EditTarget;
-use super::{App, Surface, Timer};
+use super::{App, IconUser, Surface, Timer};
 
 /// How often, while takeover is on, to re-hide Explorer's icon layer in case
 /// it recreated it without broadcasting `TaskbarCreated`.
@@ -602,8 +603,21 @@ impl App {
         {
             return;
         }
-        let mut type_of =
-            |item: &Item| type_name(&item.path, item.kind == ItemKind::Folder).unwrap_or_default();
+        // One shell lookup per extension: this walks every item of a lens on the
+        // UI thread, and `type_name` builds its cache key for each call.
+        let mut by_extension: HashMap<OsString, String> = HashMap::new();
+        let mut type_of = |item: &Item| {
+            if item.kind == ItemKind::Folder {
+                return type_name(&item.path, true).unwrap_or_default();
+            }
+            let extension = item.path.extension().unwrap_or_default();
+            if let Some(name) = by_extension.get(extension) {
+                return name.clone();
+            }
+            let name = type_name(&item.path, false).unwrap_or_default();
+            by_extension.insert(extension.to_owned(), name.clone());
+            name
+        };
         let groups = crate::grouping::groups(
             space.items(),
             group,
@@ -901,6 +915,7 @@ impl App {
             metrics: self.surface_metrics(Surface::Desktop),
             scale: 1.0,
         };
+        self.icons.begin_scene(IconUser::DesktopLayer);
         let mut scene = desktop_layer_scene(
             self.config.desktop.layer(),
             rect.origin(),
@@ -908,6 +923,7 @@ impl App {
             view,
             &mut self.icons,
         );
+        self.icons.end_scene();
         self.show_edit(&mut scene, Surface::Desktop);
         ui.set_desktop_layer_rect(rect);
         ui.set_desktop_layer_scene(scene);
@@ -961,8 +977,10 @@ impl App {
         let title_icon = self
             .space_icons
             .space_icon(space, palette.title_text, space.title_height);
+        self.icons.begin_scene(IconUser::Space(id.0));
         let mut scene =
             space_scene_with_details(space, look, view, row_cells, &mut self.icons, title_icon);
+        self.icons.end_scene();
         let rect = space.visible_rect();
         self.show_edit(&mut scene, Surface::Space(id));
         ui.set_space_rect(id.0, rect);
@@ -984,6 +1002,18 @@ impl App {
             }
         }
         scene.caret_visible = self.edit.caret_visible();
+    }
+
+    /// The work behind `Event::SystemThemeChanged`: re-read Windows' look and
+    /// repaint what it changes.
+    pub(super) fn on_system_theme_changed(&mut self, ui: &mut Ui) {
+        self.system.refresh();
+        ui.set_ui_dark(self.ui_dark());
+        // The desktop view can change its icon size with the theme;
+        // refresh its display options, then restyle for dark mode.
+        self.refresh_shell_display(ui);
+        self.restyle_all(ui);
+        self.refresh_settings(ui);
     }
 
     /// Re-applies every space's style and repaints them and the desktop
@@ -1148,6 +1178,13 @@ impl App {
         self.reflow_space(ui, id);
         self.refresh_desktop_layer(ui);
         self.schedule_save(ui);
+    }
+
+    /// `on_dpi_changed` for a space event, which may name the desktop layer.
+    pub(super) fn on_surface_dpi_changed(&mut self, ui: &mut Ui, surface: Surface) {
+        if let Surface::Space(id) = surface {
+            self.on_dpi_changed(ui, id);
+        }
     }
 
     pub(super) fn refresh_tray(&self, ui: &mut Ui) {

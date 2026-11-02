@@ -32,6 +32,9 @@ struct Exports {
 }
 
 fn exports() -> Option<&'static Exports> {
+    // Process state: the uxtheme exports, looked up once. They live for the
+    // process and every themed menu asks for them; first use fills it, and it
+    // is never cleared.
     static EXPORTS: OnceLock<Option<Exports>> = OnceLock::new();
     EXPORTS
         .get_or_init(|| {
