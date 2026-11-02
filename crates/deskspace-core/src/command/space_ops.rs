@@ -1,10 +1,12 @@
 //! Commands that create, remove, move, size, and restyle spaces.
 
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use super::CommandOutcome;
 use crate::desktop::Desktop;
 use crate::geometry::{Point, Rect};
+use crate::grouping::Grouping;
 use crate::icon::SpaceIcon;
 use crate::id::SpaceId;
 use crate::layout::{
@@ -198,6 +200,7 @@ impl Desktop {
         &mut self,
         id: SpaceId,
         metrics: ViewMetrics,
+        grouping: Option<Arc<Grouping>>,
         layout: GridSpec,
         bounds: Rect,
     ) -> CommandOutcome {
@@ -208,7 +211,7 @@ impl Desktop {
             space.user_sized = false;
             arrange_space(space, layout);
             if space.view.places_by_order() {
-                let size = fit_size(space, metrics);
+                let size = fit_size(space, metrics, grouping);
                 space.rect.width = size.width;
                 space.rect.height = size.height;
             } else {

@@ -1021,14 +1021,13 @@ impl App {
     /// The command that fits space `id` to its contents, with the cells it is
     /// drawn with.
     pub(super) fn fit_command(&self, id: SpaceId) -> Command {
-        let view = self
-            .config
-            .desktop
-            .space(id)
-            .map_or_else(SpaceView::default, |space| space.view().clone());
+        let space = self.config.desktop.space(id);
+        let view = space.map_or_else(SpaceView::default, |space| space.view().clone());
+        let grouping = space.and_then(|space| self.shown_grouping(space));
         Command::FitToContents {
             id,
             metrics: ViewMetrics::for_view(&view, self.layout_for(id), space_dpi(id.0)),
+            grouping,
         }
     }
 

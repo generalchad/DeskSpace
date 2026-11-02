@@ -354,8 +354,9 @@ ones a variant's doc cannot show.
   space grows to fit its items, never past its work area; an icon view that
   is capped reflows into whole columns and scrolls (D23). A view that places
   items by order keeps its size otherwise, so the command sizes it once from
-  the `ViewMetrics` it carries (`fit_size`), and `Space::can_fit` keeps the
-  choice on offer. `KeepSize` sets it without moving the rect. The app sends
+  the `ViewMetrics` it carries and the space's grouping, so headers count and
+  folded items do not (`fit_size`), and `Space::can_fit` keeps the choice on
+  offer. `KeepSize` sets it without moving the rect. The app sends
   `KeepSize` before re-flowing a self-sizing space whose icon factor changed
   (`App::keep_size_on_zoom`: a zoom, the icon-size setting, a preset, or
   Explorer's own size, never a DPI move), so an icon-size change keeps every

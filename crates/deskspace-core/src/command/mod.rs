@@ -12,9 +12,11 @@ mod space_ops;
 mod touched;
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::desktop::Desktop;
 use crate::geometry::{Point, Rect, Size};
+use crate::grouping::Grouping;
 use crate::icon::SpaceIcon;
 use crate::id::{ItemId, SpaceId};
 use crate::item::{Item, ItemFacts};
@@ -123,9 +125,12 @@ pub enum Command {
     /// Drops a user size so the space grows to fit its items again. A view
     /// that places items by order sizes the space once, from `metrics`: the
     /// cells the space is drawn with, which only the app can work out.
+    /// `grouping` is the space's group order and folded groups, so the fit
+    /// counts their headers and leaves folded items out.
     FitToContents {
         id: SpaceId,
         metrics: ViewMetrics,
+        grouping: Option<Arc<Grouping>>,
     },
     /// Keeps a space at its current size from now on, as if the user had sized
     /// it, so later re-flows change its columns rather than its rect. An
@@ -325,9 +330,11 @@ impl Desktop {
                 to,
                 metrics,
             } => self.apply_resize_space(id, edges, to, metrics, layout, bounds),
-            Command::FitToContents { id, metrics } => {
-                self.apply_fit_to_contents(id, metrics, layout, bounds)
-            }
+            Command::FitToContents {
+                id,
+                metrics,
+                grouping,
+            } => self.apply_fit_to_contents(id, metrics, grouping, layout, bounds),
             Command::KeepSize { id } => self.apply_keep_size(id),
             Command::Reflow { id } => self.apply_reflow(id, layout),
             Command::SortSpace { id, rule } => self.apply_sort_space(id, rule, layout),
@@ -571,6 +578,7 @@ mod tests {
             Command::FitToContents {
                 id,
                 metrics: ViewMetrics::for_grid(desktop.layout),
+                grouping: None,
             },
             bounds(),
         );
@@ -612,7 +620,14 @@ mod tests {
             ViewMetrics::for_view(&SpaceView::default().with_mode(mode), desktop.layout, 1.0);
         assert!(
             desktop
-                .apply(Command::FitToContents { id, metrics }, bounds())
+                .apply(
+                    Command::FitToContents {
+                        id,
+                        metrics,
+                        grouping: None
+                    },
+                    bounds()
+                )
                 .is_applied()
         );
         let space = desktop.space(id).unwrap();
@@ -635,6 +650,69 @@ mod tests {
             assert!(rect.height < tall.height, "{mode:?}: {rect:?}");
             assert_eq!(scroll, 0, "{mode:?}: every row shows");
             assert_eq!(rect.origin(), tall.origin(), "{mode:?}");
+        }
+    }
+
+    /// Fits the space as `grouping` shows it and returns its rect and how far
+    /// it can still scroll.
+    fn fit_grouped(
+        desktop: &mut Desktop,
+        id: SpaceId,
+        mode: ViewMode,
+        grouping: Grouping,
+    ) -> (Rect, i32) {
+        let metrics =
+            ViewMetrics::for_view(&SpaceView::default().with_mode(mode), desktop.layout, 1.0);
+        let grouping = Arc::new(grouping);
+        assert!(
+            desktop
+                .apply(
+                    Command::FitToContents {
+                        id,
+                        metrics,
+                        grouping: Some(Arc::clone(&grouping)),
+                    },
+                    bounds()
+                )
+                .is_applied()
+        );
+        let space = desktop.space(id).unwrap();
+        let layout = ViewLayout::for_space(space, metrics).with_grouping(Some(grouping));
+        (space.rect, layout.max_scroll(space.content_rect().size()))
+    }
+
+    #[test]
+    fn fitting_a_grouped_space_counts_headers_and_leaves_folded_items_out() {
+        for mode in [ViewMode::Details, ViewMode::List] {
+            let groups = || {
+                vec![
+                    ("A".to_owned(), vec![0, 1]),
+                    ("B".to_owned(), vec![2, 3]),
+                    ("C".to_owned(), vec![4, 5]),
+                ]
+            };
+            let tall = Rect::new(10, 10, 500, 700);
+            let (mut desktop, id) = space_in_view(mode, tall, 6);
+            let (shown, scroll) = fit_grouped(
+                &mut desktop,
+                id,
+                mode,
+                Grouping::new(groups(), 6, |_| false),
+            );
+            assert_eq!(scroll, 0, "{mode:?}: every group and its items show");
+
+            let (mut desktop, id) = space_in_view(mode, tall, 6);
+            let (folded, folded_scroll) = fit_grouped(
+                &mut desktop,
+                id,
+                mode,
+                Grouping::new(groups(), 6, |name| name == "A"),
+            );
+            assert_eq!(folded_scroll, 0, "{mode:?}: the shown rows still fit");
+            assert!(
+                folded.height < shown.height,
+                "{mode:?}: a folded group takes less room: {folded:?} vs {shown:?}"
+            );
         }
     }
 
@@ -877,7 +955,14 @@ mod tests {
         let metrics = ViewMetrics::for_grid(desktop.layout);
         assert!(
             desktop
-                .apply(Command::FitToContents { id, metrics }, small)
+                .apply(
+                    Command::FitToContents {
+                        id,
+                        metrics,
+                        grouping: None
+                    },
+                    small
+                )
                 .is_applied()
         );
         let rect = desktop.space(id).unwrap().rect;

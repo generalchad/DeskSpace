@@ -5119,3 +5119,21 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Update `layout_for`, `effective_layout`, and the two tests that call it.
   - Done when: the same tests pass with no change to their asserted values.
     Behavior does not change.
+
+- [x] **P6. Fit a grouped space to its groups (fix).** `fit_size`
+  (`view_layout.rs`) builds a `ViewLayout` with no grouping. A grouped space
+  therefore falls short by its header rows and scrolls, a folded group still
+  counts, and a grouped List is measured sideways though it stacks downward.
+  - `Command::FitToContents` gains `grouping: Option<Arc<Grouping>>`, and
+    `fit_size` takes it and calls `.with_grouping(grouping)` on its layout. This
+    is simpler than carrying a finished extent, as the task first suggested:
+    `ViewLayout` stays the one place that does the geometry.
+  - `App::fit_command` passes `self.shown_grouping(space)`. The compiler lists
+    the rest; tests pass `None`.
+  - Tests in `command/mod.rs`, copying the fit test near `ViewMetrics::for_view`
+    there: a grouped Details and a grouped List, each fitted, have
+    `max_scroll == 0`; a folded group makes the fit shorter.
+  - `CONTEXT.md` section 4, the `FitToContents` paragraph: name the grouping.
+  - **[needs human]** check: group a space by Type in Details and in List,
+    choose Fit to contents: no scroll and no clipped row. Fold a group and fit
+    again: it shrinks.

@@ -1736,24 +1736,6 @@ Who takes what:
 
 Any order, except that P3 and P4 go before S5.
 
-- [ ] **P6. Fit a grouped space to its groups (fix).** `fit_size`
-  (`view_layout.rs`) builds a `ViewLayout` with no grouping. A grouped space
-  therefore falls short by its header rows and scrolls, a folded group still
-  counts, and a grouped List is measured sideways though it stacks downward.
-  - `Command::FitToContents` gains `grouping: Option<Arc<Grouping>>`, and
-    `fit_size` takes it and calls `.with_grouping(grouping)` on its layout. This
-    is simpler than carrying a finished extent, as the task first suggested:
-    `ViewLayout` stays the one place that does the geometry.
-  - `App::fit_command` passes `self.shown_grouping(space)`. The compiler lists
-    the rest; tests pass `None`.
-  - Tests in `command/mod.rs`, copying the fit test near `ViewMetrics::for_view`
-    there: a grouped Details and a grouped List, each fitted, have
-    `max_scroll == 0`; a folded group makes the fit shorter.
-  - `CONTEXT.md` section 4, the `FitToContents` paragraph: name the grouping.
-  - **[needs human]** check: group a space by Type in Details and in List,
-    choose Fit to contents: no scroll and no clipped row. Fold a group and fit
-    again: it shrinks.
-
 - [ ] **P7. A resize minimum that follows the view (fix).**
   `apply_resize_space` uses `GridSpec::min_space_size`, one icon cell, in every
   view. A Details or Content space cannot shrink to one row, and a space fitted
@@ -2267,6 +2249,7 @@ each id is in `archive/TASKS-done.md`.
 | C11 (D22) | On a space and a lens, at 100 % and 150 %, with "Snap resized spaces to whole columns and rows" on: in the icon views a resize still lands on whole icon cells; in Small icons, List, and Tiles it lands on those views' own cells; in Details and Content only the height fits whole rows, the width follows the 16 px "Snap to grid" step, and the header is not clipped. With the status bar on, the last row is whole. The resize starts after a short dead zone (about half a row) in every view. Turn the setting off: the dragged size stays, snapped only to "Snap to grid". |
 | C12 (D23) | Right-click an item in a space: "Fit to contents" sits above Explorer's own entries and is greyed on a locked space and on one that already fits. Choose it on a resized icon-view space: the space fits its items, stays inside the work area (it scrolls if they do not fit), and Ctrl+Z reads "Undo Fit to contents". A desktop item's menu has no Fit entry. |
 | P2 (info tip) | Hover an item until its tip shows, then press F2: the tip goes and the rename box is uncovered, on a space and on a loose desktop icon with takeover on. |
+| P6 (grouped fit) | Group a space by Type in Details and in List, choose Fit to contents: no scroll and no clipped row. Fold a group and fit again: it shrinks. |
 
 ## Found while working
 
