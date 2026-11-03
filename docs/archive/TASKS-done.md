@@ -5804,3 +5804,25 @@ until I5-I6 all land, so no partial build hides the desktop.
   bottom of a Details space whose columns pass the edge. Scene tests. **[needs
   human]** check: it shows only when the columns pass the edge, with vertical
   scrolling on and off.
+
+- [x] **N1. Reference theme files that must keep loading (config).**
+  **(junior)** C10a has landed, so nothing waits.
+  - Add `crates/deskspace-config/tests/packs/themes/` holding:
+    - `minimal.deskspace-theme.toml`: `format = 1` and a `name` only.
+    - `full.deskspace-theme.toml`: every `Theme` field set away from its default,
+      plus `gap` and `padding`. Write it with `ThemeFile::save` from a throwaway
+      test, commit the output, and delete the throwaway test.
+    - `hostile.deskspace-theme.toml`: every number out of range (too high in some,
+      too low in others), an unknown key in each table, and a very long `name`.
+    - `newer.deskspace-theme.toml`: `format = 99`, plus a key no build knows.
+    - `wrong-type.deskspace-theme.toml`: `corner_radius = "round"`.
+  - Add an integration test, `crates/deskspace-config/tests/theme_files.rs`, so it
+    sees only the public API:
+    - `minimal` loads as the defaults.
+    - `full` loads with exactly the values written.
+    - `hostile` loads with each value at the edge of its range.
+    - `newer` loads.
+    - `wrong-type` returns an error and does not panic.
+  - The test file's `//!` header states rule 4 above.
+  - Done when: the gates pass, and changing a `Theme` field's serde name in a
+    scratch edit makes the test fail. Revert that edit.

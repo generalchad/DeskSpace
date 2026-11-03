@@ -1,0 +1,55 @@
+format = 1
+name = "Reference full"
+author = "DeskSpace contributors"
+
+[look]
+gap = 4
+padding = 20
+
+[look.theme]
+mode = "dark"
+ui_mode = "light"
+backdrop = "solid"
+corner_radius = 16
+tint_opacity = 60
+title_shading = 45
+show_border = false
+border_width = 3
+border_source = "custom"
+border_opacity = 80
+show_shadow = false
+shadow_size = 30
+shadow_opacity = 60
+label_lines = 1
+label_size = 130
+icon_size = 150
+overlay_size = 60
+label_shadow = "on"
+custom_colors = true
+show_marquee_border = false
+preset = "custom"
+use_accent = true
+
+[look.theme.border_color]
+r = 17
+g = 34
+b = 51
+a = 255
+
+[look.theme.tint]
+r = 32
+g = 64
+b = 96
+a = 255
+
+[look.theme.text]
+r = 240
+g = 224
+b = 208
+a = 255
+
+[look.theme.marquee_color]
+r = 51
+g = 102
+b = 153
+a = 255

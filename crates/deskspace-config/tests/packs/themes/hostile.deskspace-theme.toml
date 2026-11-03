@@ -1,0 +1,24 @@
+format = 1
+name = "Hostile reference file with a name far longer than any real theme needs, repeated to make sure a long string still loads without truncation or failure: hostile hostile hostile hostile hostile hostile hostile hostile hostile hostile hostile hostile hostile hostile hostile hostile hostile hostile hostile hostile hostile hostile hostile hostile hostile hostile hostile hostile hostile hostile."
+
+[look]
+gap = 100000
+padding = -5
+unknown_key = "ignored"
+
+[look.theme]
+mode = "dark"
+corner_radius = 200
+tint_opacity = 250
+title_shading = 250
+show_border = true
+border_width = 0
+border_opacity = 250
+show_shadow = true
+shadow_size = 0
+shadow_opacity = 250
+label_lines = 0
+label_size = 5
+icon_size = 5
+overlay_size = 250
+unknown_key = true

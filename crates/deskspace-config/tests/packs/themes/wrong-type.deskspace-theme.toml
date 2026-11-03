@@ -1,0 +1,9 @@
+# `corner_radius` accepts a number or a legacy style string, so "round" is a
+# valid value for it. The string in `tint_opacity` is the wrong type the test
+# expects: a number field cannot read a string.
+format = 1
+name = "Wrong type"
+
+[look.theme]
+corner_radius = "round"
+tint_opacity = "round"

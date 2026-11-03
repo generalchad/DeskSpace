@@ -1,0 +1,10 @@
+format = 99
+name = "Future format"
+
+[look]
+gap = 8
+future_key = "ignored"
+
+[look.theme]
+mode = "light"
+future_key = true
