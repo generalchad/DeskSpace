@@ -5826,3 +5826,18 @@ until I5-I6 all land, so no partial build hides the desktop.
   - The test file's `//!` header states rule 4 above.
   - Done when: the gates pass, and changing a `Theme` field's serde name in a
     scratch edit makes the test fail. Revert that edit.
+
+- [x] **N2. Harden theme-file reading and writing (config).** **(junior)** After
+  N1.
+  - In `ThemeFile::load`, read the length (`std::fs::metadata`) before reading the
+    file. Refuse a file over `MAX_THEME_BYTES` with a new `ConfigError` variant
+    that names the path and the limit. Set the limit at 64 KiB, and record the
+    `full` reference file's size in the constant's doc, so the margin is visible.
+  - After loading, cut `name` and `author` to 100 characters, on a character
+    boundary. Never fail on them.
+  - `ThemeFile::save` uses `std::fs::write`, so a crash mid-save can leave half a
+    file. Pull the temp-write-and-rename out of `ConfigStore::save` (`store.rs`)
+    into a private `write_atomic(path, text)`, with its comment, and call it from
+    both. `ConfigStore::save`'s tests must pass unchanged.
+  - Tests in `theme_file.rs`: an oversized file is refused, a long name is cut,
+    and a multi-byte name is cut without splitting a character.

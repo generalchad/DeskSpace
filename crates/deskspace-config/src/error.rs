@@ -12,6 +12,12 @@ pub enum ConfigError {
     },
     #[error("failed to serialize configuration: {0}")]
     Serialize(#[from] toml::ser::Error),
+    #[error("{path} is {size} bytes, over the {limit}-byte limit")]
+    TooLarge {
+        path: std::path::PathBuf,
+        size: u64,
+        limit: u64,
+    },
     #[error("failed to parse configuration: {0}")]
     Parse(#[from] toml::de::Error),
     #[error("icon set at {path} is not usable: {reason}")]

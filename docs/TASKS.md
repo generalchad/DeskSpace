@@ -340,8 +340,8 @@ three tiers, safest first:
    New behaviour of this kind is built in, through the internal tables
    (`EFFECTS`, `VIEW_MODES`, and the `Paginate` J2 proposes).
 
-N2 is ready now and is marked **(junior)**. The tasks marked
-**[needs decision]** carry a recommendation, and their parts wait for it.
+The remaining tasks are marked **[needs decision]**; each carries a
+recommendation, and its parts wait for it.
 
 Rules for every N task:
 
@@ -358,21 +358,6 @@ Rules for every N task:
    so never edit or delete one; add new ones when the format changes.
 5. **A verb calls an existing `App` method.** It is never a second way to change
    the model.
-
-- [ ] **N2. Harden theme-file reading and writing (config).** **(junior)** After
-  N1.
-  - In `ThemeFile::load`, read the length (`std::fs::metadata`) before reading the
-    file. Refuse a file over `MAX_THEME_BYTES` with a new `ConfigError` variant
-    that names the path and the limit. Set the limit at 64 KiB, and record the
-    `full` reference file's size in the constant's doc, so the margin is visible.
-  - After loading, cut `name` and `author` to 100 characters, on a character
-    boundary. Never fail on them.
-  - `ThemeFile::save` uses `std::fs::write`, so a crash mid-save can leave half a
-    file. Pull the temp-write-and-rename out of `ConfigStore::save` (`store.rs`)
-    into a private `write_atomic(path, text)`, with its comment, and call it from
-    both. `ConfigStore::save`'s tests must pass unchanged.
-  - Tests in `theme_file.rs`: an oversized file is refused, a long name is cut,
-    and a multi-byte name is cut without splitting a character.
 
 - [ ] **N3. One loader for every pack kind (config).** **[needs decision]**
   After N2. This should land before any second kind (N4, T40), so the second

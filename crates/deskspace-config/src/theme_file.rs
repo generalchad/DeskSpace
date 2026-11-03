@@ -16,6 +16,13 @@ use crate::error::ConfigError;
 /// The theme-file format this build writes.
 pub const FORMAT: u32 = 1;
 
+/// The largest theme file `load` reads: 64 KiB. The `full` reference file is
+/// 799 bytes (2026-11-03), so real files have a wide margin.
+pub const MAX_THEME_BYTES: u64 = 64 * 1024;
+
+/// The longest `name` or `author` `load` keeps, in characters.
+const MAX_TEXT_CHARS: usize = 100;
+
 /// One shared look. `look` is the whole theme plus the grid spacing and
 /// padding, the same unit a customized space stores.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -41,7 +48,19 @@ impl Default for ThemeFile {
 impl ThemeFile {
     /// Reads and clamps the theme at `path`. A newer format loads with a
     /// warning rather than failing, so an older build still shows the look.
+    /// A file over [`MAX_THEME_BYTES`] is refused before it is parsed, and a
+    /// long `name` or `author` is cut rather than rejected.
     pub fn load(path: &Path) -> Result<Self, ConfigError> {
+        let size = std::fs::metadata(path)
+            .map_err(|source| ConfigError::io(path, source))?
+            .len();
+        if size > MAX_THEME_BYTES {
+            return Err(ConfigError::TooLarge {
+                path: path.to_owned(),
+                size,
+                limit: MAX_THEME_BYTES,
+            });
+        }
         let text = std::fs::read_to_string(path).map_err(|source| ConfigError::io(path, source))?;
         let mut theme: Self = toml::from_str(&text)?;
         if theme.format > FORMAT {
@@ -52,18 +71,22 @@ impl ThemeFile {
                 "theme file is newer than this build"
             );
         }
+        theme.name = cut_to_limit(&theme.name);
+        theme.author = theme.author.as_deref().map(cut_to_limit);
         theme.look = theme.look.clamped();
         Ok(theme)
     }
 
     /// Writes the theme at `path`, creating its folder.
     pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|source| ConfigError::io(parent, source))?;
-        }
         let text = toml::to_string_pretty(self)?;
-        std::fs::write(path, text).map_err(|source| ConfigError::io(path, source))
+        crate::store::write_atomic(path, &text)
     }
+}
+
+/// `text` cut to [`MAX_TEXT_CHARS`] characters, never inside one.
+fn cut_to_limit(text: &str) -> String {
+    text.chars().take(MAX_TEXT_CHARS).collect()
 }
 
 #[cfg(test)]
@@ -118,5 +141,45 @@ mod tests {
         let theme = ThemeFile::load(&path).unwrap();
         assert_eq!(theme.format, 99);
         assert_eq!(theme.name, "Future");
+    }
+
+    #[test]
+    fn an_oversized_file_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = theme_path(&dir);
+        let padding = " ".repeat(MAX_THEME_BYTES as usize);
+        std::fs::write(&path, format!("name = \"Huge\"\n{padding}")).unwrap();
+
+        let error = ThemeFile::load(&path).unwrap_err();
+        match error {
+            ConfigError::TooLarge { size, limit, .. } => {
+                assert!(size > limit);
+                assert_eq!(limit, MAX_THEME_BYTES);
+            }
+            other => panic!("expected TooLarge, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_long_name_and_author_are_cut() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = theme_path(&dir);
+        let long = "x".repeat(MAX_TEXT_CHARS + 50);
+        std::fs::write(&path, format!("name = \"{long}\"\nauthor = \"{long}\"\n")).unwrap();
+
+        let theme = ThemeFile::load(&path).unwrap();
+        assert_eq!(theme.name, "x".repeat(MAX_TEXT_CHARS));
+        assert_eq!(theme.author, Some("x".repeat(MAX_TEXT_CHARS)));
+    }
+
+    #[test]
+    fn a_multibyte_name_is_cut_without_splitting_a_character() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = theme_path(&dir);
+        let long = "é".repeat(MAX_TEXT_CHARS + 50);
+        std::fs::write(&path, format!("name = \"{long}\"\n")).unwrap();
+
+        let theme = ThemeFile::load(&path).unwrap();
+        assert_eq!(theme.name, "é".repeat(MAX_TEXT_CHARS));
     }
 }

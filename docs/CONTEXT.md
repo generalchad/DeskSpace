@@ -520,9 +520,12 @@ default in `Default`.
 - `ThemeFile` (`theme_file.rs`, F-58) is the shared-look file: `format = 1`,
   a `name`, an optional `author`, and a `[look]` table holding a `SpaceLook`.
   Missing fields default, out-of-range values clamp on load, unknown keys are
-  ignored, and a newer `format` loads with a warning. `themes_dir()` is a
-  `themes` folder beside the config, so a scratch `--config` has its own.
-  The file dialogs and settings buttons follow (C10b, C10c).
+  ignored, and a newer `format` loads with a warning. A file over 64 KiB is
+  refused before it is parsed, a long `name` or `author` is cut to 100
+  characters, and saves share the config's atomic temp-write-and-rename.
+  `themes_dir()` is a `themes` folder beside the config, so a scratch
+  `--config` has its own. The file dialogs and settings buttons follow (C10b,
+  C10c).
 - `window.icon_downloads` (D16) is `Ask` by default: the app reads a set
   from the cache first, and only `Allowed` downloads a missing one (the
   signed file). `Ask` shows one question a session and saves the answer;

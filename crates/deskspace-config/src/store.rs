@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -149,24 +150,30 @@ impl ConfigStore {
     }
 
     pub fn save(&self, config: &Config) -> Result<(), ConfigError> {
-        if let Some(parent) = self.path.parent() {
-            std::fs::create_dir_all(parent).map_err(|source| ConfigError::io(parent, source))?;
-        }
         let text = Self::serialize(config)?;
-        let temp = self.path.with_extension("toml.tmp");
-        let mut file =
-            std::fs::File::create(&temp).map_err(|source| ConfigError::io(temp.clone(), source))?;
-        file.write_all(text.as_bytes())
-            .map_err(|source| ConfigError::io(temp.clone(), source))?;
-        // A rename can reach the disk before the data it points at, so without
-        // the flush a power cut after a save could leave an empty config.
-        file.sync_all()
-            .map_err(|source| ConfigError::io(temp.clone(), source))?;
-        drop(file);
-        std::fs::rename(&temp, &self.path)
-            .map_err(|source| ConfigError::io(self.path.clone(), source))?;
-        Ok(())
+        write_atomic(&self.path, &text)
     }
+}
+
+/// Writes `text` to `path` through a sibling temp file and a rename, creating
+/// the folder. A rename can reach the disk before the data it points at, so
+/// without the flush a power cut after a save could leave an empty file.
+pub(crate) fn write_atomic(path: &Path, text: &str) -> Result<(), ConfigError> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|source| ConfigError::io(parent, source))?;
+    }
+    let mut temp_name = path.file_name().map(OsString::from).unwrap_or_default();
+    temp_name.push(".tmp");
+    let temp = path.with_file_name(temp_name);
+    let mut file =
+        std::fs::File::create(&temp).map_err(|source| ConfigError::io(temp.clone(), source))?;
+    file.write_all(text.as_bytes())
+        .map_err(|source| ConfigError::io(temp.clone(), source))?;
+    file.sync_all()
+        .map_err(|source| ConfigError::io(temp.clone(), source))?;
+    drop(file);
+    std::fs::rename(&temp, path).map_err(|source| ConfigError::io(path, source))?;
+    Ok(())
 }
 
 impl Default for ConfigStore {

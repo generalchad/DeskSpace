@@ -81,9 +81,10 @@ fn full_loads_with_exactly_the_values_written() {
 #[test]
 fn hostile_loads_with_each_value_at_the_edge_of_its_range() {
     let theme = ThemeFile::load(&reference("hostile.deskspace-theme.toml")).unwrap();
-    assert!(
-        theme.name.len() > 200,
-        "the long name still loads without truncation"
+    assert_eq!(
+        theme.name.chars().count(),
+        100,
+        "the long name still loads, cut to its limit"
     );
     let look = theme.look;
     assert_eq!(look.gap, GAP_RANGE.1);
