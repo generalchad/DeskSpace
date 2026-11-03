@@ -14,7 +14,10 @@ its section.
 **Pick a task:** these are ready for any contributor, now that human checks
 are collected in section V instead of blocking:
 - section P's "Juniors and interns" list, the best place for a first task;
-- section S (S9-S12), C10, and K8, without waiting for their checks;
+- section K (K8-K16), each a pure move with rules that leave nothing to
+  design;
+- section N's tasks marked **(junior)**, and O4, which needs no code;
+- section S (S9-S12) and C10, without waiting for their checks;
 - anything else not marked **[needs decision]**, "still to design", or in
   section D.
 
@@ -1440,6 +1443,106 @@ Rules for every K task:
     the other callers do not change.
   - Done when: `mod.rs` is well under 800 lines of non-test code and the K rules
     above hold.
+
+K10-K16 split the files `ALLOWED` listed as "none yet" (line counts are non-test
+lines, measured 2026-11-03). Each lands alone, in any order, but read the
+"Collides with" line first: a task there edits the same functions, so take one
+at a time and rebase the other. Function names, not line numbers, say what
+moves.
+
+- [ ] **K10. Split `win32/folder_watch.rs`.** 1,278 lines. Turn it into
+  `win32/folder_watch/mod.rs` plus:
+  - `worker.rs`: `Worker` and its `impl` (from `run` to `drain_canceled`), with
+    their tests.
+  - `folder.rs`: `CanceledRead`, `Folder`, `OpenFolder`, `open_folder`,
+    `follows_to`, `OpenFailure`, `final_path`, and `is_timeout`, with their tests.
+  - `timing.rs`: `Bursts` and `Coalescer`, which are pure, with their tests, and
+    `millis`.
+  - `mod.rs` keeps the constants, `SharedListing`, `retire_listing`, `LensUpdate`,
+    `FolderWatch` and its `Drop`, `PendingWatch`, and `ActiveWatch`.
+  - This module runs a thread and an I/O completion port. A pure move changes
+    neither, but ask a senior to review: a missed `pub(super)` that makes you
+    reach for a wrapper is not a pure move any more. Stop and ask instead.
+  - Done when: `mod.rs` is under about 500 lines and the K rules above hold.
+
+- [ ] **K11. Split `app/view.rs`.** 1,253 lines. Turn it into `app/view/mod.rs`
+  plus:
+  - `system_look.rs`: `SystemLook` and its `impl`.
+  - `cache.rs`: `ViewCache`, `CachedGrouping`, `StampHasher`, and
+    `grouping_stamp`, with their tests.
+  - `look.rs`: `Cells`, `LayoutScale`, and the `App` methods from `theme_for` to
+    `metrics_of` (the look, scale, and layout accessors), with their tests.
+  - `layer.rs`: `LayerState`, and the `App` methods from `refresh_shell_display`
+    to `refresh_desktop_layer` (the desktop layer and takeover), with their tests.
+  - `mod.rs` keeps `sync_windows*`, `view_for`, grouping, the refresh, restyle,
+    and reflow methods, the view changes, and `changed_in_place`.
+  - Collides with: P14c (`base_layout`, `Cells`) and P15f.
+  - Done when: `mod.rs` is under about 600 lines and the K rules above hold.
+
+- [ ] **K12. Split `scene.rs`.** 1,163 lines. Turn it into `scene/mod.rs` plus:
+  - `details.rs`: `DETAILS_CELL_PAD`, `DetailsCellText`, and the functions from
+    `details_view` to `details_cells`, plus `details_scroll_thumb`, with their
+    tests.
+  - `status.rs`: the `STATUS_*` constants and the functions from `status_bar` to
+    `status_tip`, with their tests.
+  - `chrome.rs`: the `TITLE_ICON_*`, `BACK_BUTTON_*`, and `SCROLL_THUMB_*`
+    constants, `title_icon_rect` to `title_icon_request`, `title_tip`, and
+    `thumb_end_margin`, `scroll_thumb`, and `thumb_span`, with their tests.
+  - `mod.rs` keeps `SurfaceLook`, `ViewState`, the style functions, the space,
+    layer, and drag scenes, `group_headers`, `item_layout`, the cell and label
+    functions, and the text shadow helpers.
+  - Many tests build a whole scene and check one part of it. Those stay in
+    `mod.rs`; move only a test that calls a moved function directly.
+  - Collides with: P15f, P16c.
+  - Done when: `mod.rs` is under about 700 lines and the K rules above hold.
+
+- [ ] **K13. Split `app/menus.rs`.** 1,131 lines. Turn it into `app/menus/mod.rs`
+  plus:
+  - `new_space.rs`: the `App` methods from `create_space` to `space_rects`, and
+    the free functions `new_space_command` and `gap_at`, with their tests.
+  - `entries.rs`: the free functions that build entry lists, from `menu_item` to
+    `lens_view_after`, except the two above, with their tests. They take plain
+    data, so their tests need no `Ui`.
+  - `mod.rs` keeps the `App` methods that show menus and act on a choice.
+  - Done when: `mod.rs` is under about 700 lines and the K rules above hold, and
+    the "new menu entry" recipe above names the right file for each step.
+
+- [ ] **K14. Move the ids and preset tables out of `app.rs`.**
+  **[needs decision]** 1,024 lines. Its `ALLOWED` reason is "by design", because
+  the recipes send you to `app.rs` for `MenuId` and the presets. Recommended:
+  move `Timer`, `MenuId`, `NewShortcut`, `NEW_SHORTCUT_ENTRIES`, and every
+  `*_PRESETS` and `*_MENU_IDS` table into a new `app/ids.rs`, re-exported from
+  `app.rs`, which leaves about 690 lines. The alternative is to keep it whole and
+  record why in `ALLOWED`.
+  - If approved: `app.rs` stays `app.rs` (it already declares the `app/`
+    modules), so add `mod ids;` and `pub(crate) use ids::*;`. Move `MenuId`'s
+    tests with it.
+  - Update the file map's `app.rs` row and the menu recipe to name `app/ids.rs`.
+
+- [ ] **K15. Split `app/files.rs`.** 986 lines. Turn it into `app/files/mod.rs`
+  plus:
+  - `delete.rs`: the `App` methods from `delete_selected_items` to
+    `delete_item_question`, with their tests.
+  - `shortcuts.rs`: `add_shortcuts`, `create_shortcuts`, `write_shortcut`,
+    `is_link_file`, `link_copy_name`, `shortcut_file_name`, and `ShortcutSource`,
+    with their tests. Section L's rule holds: `add_shortcuts` stays the one way
+    to add a shortcut.
+  - `mod.rs` keeps `paths_to_transfer`, `StoredFiles`, and the drop handling.
+  - This code moves and deletes user files. A pure move is safe, but ask a senior
+    to review the diff.
+  - Done when: `mod.rs` is under about 500 lines and the K rules above hold.
+
+- [ ] **K16. Split `render/d2d/mod.rs`.** 959 lines. Add:
+  - `chrome.rs`: `Painter::draw_details_header`, `draw_group_headers`, and
+    `draw_status`, with `SORT_UP_GLYPH`, `SORT_DOWN_GLYPH`, and
+    `DROP_MARK_WIDTH_RATIO`. Child modules can add `impl Painter` blocks, so no
+    signature changes.
+  - Move `draw_transition` and `draw_blur_mask` into the existing `effects.rs`
+    (405 lines), which already holds an animation's resources.
+  - `mod.rs` keeps the device functions, `DrawContext`, `FrameResources`,
+    `Painter`'s paint path, `draw_scene`, `draw_items`, and the bitmap cache.
+  - Collides with: P15f (paint clipping) and anything in section T.
+  - Done when: `mod.rs` is under about 700 lines and the K rules above hold.
 
 ## Q. Move the why next to the code (shrink `CONTEXT.md` section 6)
 
