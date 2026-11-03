@@ -356,6 +356,14 @@ pub fn space_scene_with_details(
             view.scroll,
             theme.effective_corner_radius() as i32,
         ),
+        scroll_thumb_x: details_scroll_thumb(
+            space,
+            content.width,
+            layout.padding,
+            scale,
+            view.scroll_x,
+            theme.effective_corner_radius() as i32,
+        ),
     }
 }
 
@@ -508,6 +516,7 @@ pub fn desktop_layer_scene(
         check_boxes_persistent: view.check_boxes_persistent,
         marquee: view.marquee,
         scroll_thumb: None,
+        scroll_thumb_x: None,
     }
 }
 
@@ -1083,11 +1092,8 @@ fn scroll_thumb(
             if track_height <= 0 {
                 return None;
             }
-            let thumb_height = (track_height * viewport / extent)
-                .max(SCROLL_THUMB_MIN_HEIGHT)
-                .min(track_height);
-            let travel = track_height - thumb_height;
-            let offset = travel * scroll.clamp(0, max_scroll) / max_scroll;
+            let (offset, thumb_height) =
+                thumb_span(track_height, viewport, extent, scroll, max_scroll);
             Some(Rect::new(
                 space.rect().width - SCROLL_THUMB_MARGIN - SCROLL_THUMB_WIDTH,
                 track_top + offset,
@@ -1096,24 +1102,63 @@ fn scroll_thumb(
             ))
         }
         ScrollAxis::Horizontal => {
-            let track_left = SCROLL_THUMB_MARGIN;
             let track_width = viewport - SCROLL_THUMB_MARGIN - end_margin;
             if track_width <= 0 {
                 return None;
             }
-            let thumb_width = (track_width * viewport / extent)
-                .max(SCROLL_THUMB_MIN_HEIGHT)
-                .min(track_width);
-            let travel = track_width - thumb_width;
-            let offset = travel * scroll.clamp(0, max_scroll) / max_scroll;
+            let (offset, thumb_width) =
+                thumb_span(track_width, viewport, extent, scroll, max_scroll);
             Some(Rect::new(
-                track_left + offset,
+                SCROLL_THUMB_MARGIN + offset,
                 content_bottom - SCROLL_THUMB_MARGIN - SCROLL_THUMB_WIDTH,
                 thumb_width,
                 SCROLL_THUMB_WIDTH,
             ))
         }
     }
+}
+
+/// The bar along the bottom of a Details space whose columns pass its right
+/// edge, showing how far they are scrolled sideways. `None` when the columns
+/// fit, in any other view, and while folded. The rows' own bar stops short of
+/// the bottom (`thumb_end_margin`), so the two never touch.
+fn details_scroll_thumb(
+    space: &Space,
+    content_width: i32,
+    padding: i32,
+    scale: f32,
+    scroll_x: i32,
+    corner_radius: i32,
+) -> Option<Rect> {
+    if space.folded() || space.view().mode != ViewMode::Details {
+        return None;
+    }
+    let columns = details_columns(space.view(), content_width, padding, 0, 0, scale);
+    let max_scroll = details_max_scroll(&columns, content_width, padding);
+    let track_width = content_width - SCROLL_THUMB_MARGIN - thumb_end_margin(corner_radius);
+    if max_scroll == 0 || track_width <= 0 {
+        return None;
+    }
+    let extent = content_width + max_scroll;
+    let (offset, thumb_width) =
+        thumb_span(track_width, content_width, extent, scroll_x, max_scroll);
+    let content_bottom = space.content_rect().bottom() - space.rect().y;
+    Some(Rect::new(
+        SCROLL_THUMB_MARGIN + offset,
+        content_bottom - SCROLL_THUMB_MARGIN - SCROLL_THUMB_WIDTH,
+        thumb_width,
+        SCROLL_THUMB_WIDTH,
+    ))
+}
+
+/// A thumb's offset along a `track` and its length, for a `viewport` onto
+/// `extent` of content scrolled by `scroll`, at most `max_scroll`.
+fn thumb_span(track: i32, viewport: i32, extent: i32, scroll: i32, max_scroll: i32) -> (i32, i32) {
+    let length = (track * viewport / extent)
+        .max(SCROLL_THUMB_MIN_HEIGHT)
+        .min(track);
+    let offset = (track - length) * scroll.clamp(0, max_scroll) / max_scroll;
+    (offset, length)
 }
 
 #[cfg(test)]
@@ -2598,6 +2643,88 @@ mod tests {
             &mut IconCache::new(),
         );
         assert_eq!(scene.scroll_thumb, None);
+    }
+
+    /// A Details space of Name and Date modified (400 px) columns, `width` wide.
+    fn details_space_of(width: i32, held_name: Option<u16>) -> Space {
+        let mut desktop = Desktop::new();
+        let id = crate::fixtures::create_space(&mut desktop, "Wide", Rect::new(0, 0, width, 200));
+        crate::fixtures::apply(&mut desktop, Command::KeepSize { id });
+        crate::fixtures::add_item(&mut desktop, id, "C:/missing/report.txt");
+        let view = SpaceView {
+            mode: ViewMode::Details,
+            ..two_column_details().with_name_held(held_name)
+        };
+        crate::fixtures::apply(&mut desktop, Command::SetSpaceView { id, view });
+        desktop.space(id).unwrap().clone()
+    }
+
+    #[test]
+    fn the_sideways_thumb_shows_only_when_the_columns_pass_the_edge() {
+        let theme = Theme::default();
+        let thumb_x = |space: &Space, scroll_x| {
+            space_scene(
+                space,
+                surface_look(&theme, &theme.palette(true)),
+                ViewState {
+                    scroll_x,
+                    ..ViewState::default()
+                },
+                &mut IconCache::new(),
+            )
+            .scroll_thumb_x
+        };
+        let wide = details_space_of(360, Some(300));
+        let start = thumb_x(&wide, 0).expect("the columns pass the edge");
+        let end = thumb_x(&wide, i32::MAX).expect("clamped, not hidden");
+        assert_eq!(start.height, SCROLL_THUMB_WIDTH);
+        assert_eq!(start.x, SCROLL_THUMB_MARGIN);
+        assert!(end.x > start.x);
+        assert_eq!(start.width, end.width);
+        assert_eq!(
+            end.right(),
+            wide.content_rect().width - thumb_end_margin(theme.effective_corner_radius() as i32),
+        );
+        assert_eq!(
+            start.y,
+            wide.content_rect().bottom() - wide.rect().y - SCROLL_THUMB_MARGIN - SCROLL_THUMB_WIDTH
+        );
+
+        assert_eq!(
+            thumb_x(&details_space_of(1200, None), 0),
+            None,
+            "the columns fit"
+        );
+        assert_eq!(thumb_x(&list_space(), 0), None, "not a Details view");
+    }
+
+    #[test]
+    fn the_sideways_thumb_stays_clear_of_the_rows_thumb() {
+        let theme = Theme::default();
+        let mut desktop = Desktop::new();
+        let id = crate::fixtures::create_space(&mut desktop, "Both", Rect::new(0, 0, 360, 120));
+        crate::fixtures::apply(&mut desktop, Command::KeepSize { id });
+        for index in 0..20 {
+            crate::fixtures::add_item(&mut desktop, id, &format!("C:/missing/{index}.txt"));
+        }
+        let view = SpaceView {
+            mode: ViewMode::Details,
+            ..two_column_details().with_name_held(Some(300))
+        };
+        crate::fixtures::apply(&mut desktop, Command::SetSpaceView { id, view });
+        let space = desktop.space(id).unwrap().clone();
+        let scene = space_scene(
+            &space,
+            surface_look(&theme, &theme.palette(true)),
+            ViewState::default(),
+            &mut IconCache::new(),
+        );
+        let (rows, columns) = (scene.scroll_thumb.unwrap(), scene.scroll_thumb_x.unwrap());
+        assert!(rows.bottom() <= columns.y, "the rows' bar ends above");
+        assert!(
+            columns.right() <= rows.x,
+            "the columns' bar ends left of it"
+        );
     }
 
     #[test]

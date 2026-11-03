@@ -584,18 +584,22 @@ impl Painter {
                 if scene.details.is_some() {
                     self.draw_details_header(ctx, prepared, width, content_top);
                 }
-                if scene.chrome
-                    && let Some(thumb) = scene.scroll_thumb
-                {
-                    let thumb = to_rect_f(thumb);
-                    let thumb_radius = (thumb.right - thumb.left) / 2.0;
-                    fill_rounded(
-                        target,
-                        brush,
-                        thumb,
-                        thumb_radius,
-                        scene.item_text.fade(SCROLL_THUMB_ALPHA),
-                    );
+                if scene.chrome {
+                    for thumb in [scene.scroll_thumb, scene.scroll_thumb_x]
+                        .into_iter()
+                        .flatten()
+                    {
+                        let thumb = to_rect_f(thumb);
+                        let thumb_radius =
+                            (thumb.right - thumb.left).min(thumb.bottom - thumb.top) / 2.0;
+                        fill_rounded(
+                            target,
+                            brush,
+                            thumb,
+                            thumb_radius,
+                            scene.item_text.fade(SCROLL_THUMB_ALPHA),
+                        );
+                    }
                 }
             }
 

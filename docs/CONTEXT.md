@@ -1125,10 +1125,11 @@ section numbers stable.
   A lens listing invalidates every entry whose `modified` changed. Nothing
   watches the files in spaces, so one whose icon changed in place keeps the
   old one.
-- **The scroll indicator is display-only.** Spaces scroll with the wheel,
-  Home/End/PageUp/PageDown, and by keeping a keyboard-selected item in view,
-  but the indicator cannot be dragged, and wheel events need Windows' "scroll
-  inactive windows" setting.
+- **The scroll indicators are display-only.** A Details space whose columns
+  pass its edge has a second one along the bottom (`scroll_thumb_x`). Spaces
+  scroll with the wheel, Home/End/PageUp/PageDown, and by keeping a
+  keyboard-selected item in view, but the indicators cannot be dragged, and
+  wheel events need Windows' "scroll inactive windows" setting.
 - **Inline rename has no IME or clipboard support.** The hook handles the
   active layout's printable characters and navigation keys only; composition
   (Japanese, Chinese, ...) is deferred. An item rename goes through the shell,

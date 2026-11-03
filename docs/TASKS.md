@@ -1560,12 +1560,6 @@ Small first. Each lands alone unless it says "After".
   - **[needs human]** check: three Extra large columns fit where Explorer's do.
     Update W12's row.
 
-- [ ] **P15d. A second scroll indicator (feature).** After: P15b. Part of P15. By the
-  "new visual" recipe, next to the indicator `scene.rs` already builds, along the
-  bottom of a Details space whose columns pass the edge. Scene tests. **[needs
-  human]** check: it shows only when the columns pass the edge, with vertical
-  scrolling on and off.
-
 - [ ] **P16c. "Size all columns to fit" (feature).** After: P16a, P16b. Part of P16. In
   the Details header menu, by the menu recipe. It records one undo entry, like Choose
   columns. Take the widths from plain data in a function, and test it. **[needs
@@ -1624,8 +1618,7 @@ These are in the order we would take them. Each lands alone.
 
 - [ ] **P15. Scroll Details sideways.** Columns past the space's width are cut off
   (`scene.rs` `details_columns`), and W30 makes that easy to reach: every column on
-  takes 560 px at 96 DPI. The design is ROADMAP D24. P15d is in the junior list,
-  and P15f is the part that remains here:
+  takes 560 px at 96 DPI. The design is ROADMAP D24. P15f is the part that remains:
   - [ ] **P15f.** After: P15b. Go through what holds an x and may not read those
     rects: the rename box, the marquee, the drag drop index, and paint clipping cells
     at the content's edge. Fix each or show it needs nothing, and scroll Name into
@@ -1995,6 +1988,7 @@ for a machine that has it.
 | P8 (label size) | Set the label size to 160 % and look at Small icons, List, Details, Tiles, and Content, normal and compact: no clipped text, at 100 % and 150 %. |
 | P23 (new space on start) | With DeskSpace not running, `deskspace --config <scratch> --new-space` starts with one more space than the config holds. With it running, the same command adds one space and starts no second process. |
 | P25 (space cap) | Drop items on a space until it reaches the bottom of the monitor: it stops and scrolls. Ctrl+Z puts it back. |
+| P15d (Details indicator) | Over a Details space with every column on, at 100 % and 150 %: a thin bar shows along the bottom, and slides right as you scroll sideways. Widen the space until the columns fit: it goes. With enough items to scroll vertically, both bars show without touching, and with few items only the bottom one does. Other views show no bottom bar unless they scroll that way. |
 | P20 (lens rename undo) | Rename an item in a lens, Ctrl+Z: it stays selected. Ctrl+Y: still selected. |
 | P15c (Details sideways) | Shift+wheel over a Details space with every column on, at 100 % and 150 %: the columns scroll sideways and the header stays with them. |
 | P15e (Details sideways) | On a mouse with a tilt wheel, over a Details space with every column on at 100 % and 150 %: tilting right scrolls the columns right and tilting left scrolls them left, with the header following. In other views the tilt does nothing. |

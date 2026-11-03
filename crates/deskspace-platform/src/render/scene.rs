@@ -170,6 +170,8 @@ pub struct SpaceScene {
     pub marquee: Option<Rect>,
     /// The scroll position indicator, when the content overflows.
     pub scroll_thumb: Option<Rect>,
+    /// The sideways indicator of a Details space whose columns pass its edge.
+    pub scroll_thumb_x: Option<Rect>,
 }
 
 /// How an item cell places its icon and label (W16).

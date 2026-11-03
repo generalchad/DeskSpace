@@ -5798,3 +5798,9 @@ until I5-I6 all land, so no partial build hides the desktop.
 
 - [x] **P15e. After: P15b. The tilt wheel: `WM_MOUSEHWHEEL` in the space window
   (`win32/space_window.rs`, or `mouse.rs` after K8).**
+
+- [x] **P15d. A second scroll indicator (feature).** After: P15b. Part of P15. By the
+  "new visual" recipe, next to the indicator `scene.rs` already builds, along the
+  bottom of a Details space whose columns pass the edge. Scene tests. **[needs
+  human]** check: it shows only when the columns pass the edge, with vertical
+  scrolling on and off.
