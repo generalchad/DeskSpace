@@ -325,6 +325,163 @@ drop side is `win32/drop_target.rs` (`DragKind`, `drag_kind`, `DropPlan`,
       check: save a customized space's look, load it on Global and on another
       space, Cancel undoes the load.
 
+## N. Packs and automation (extensions)
+
+How people extend DeskSpace without forking it (review, 2026-11-03). There are
+three tiers, safest first:
+
+1. **Packs:** files of data the app loads, checks, and clamps. Themes (C10)
+   are the first; icon sets (section S) already work this way. Colour schemes
+   (N4) and animation effects (T40) are next.
+2. **Verbs:** commands a script hands to the running instance (R16, N5), for
+   scripts, hotkey tools, and Explorer's "Send to".
+3. **Code:** native code DeskSpace has to trust. In-process plugins are a
+   non-goal (R16): a crashing plugin with takeover on breaks the user's desktop.
+   New behaviour of this kind is built in, through the internal tables
+   (`EFFECTS`, `VIEW_MODES`, and the `Paginate` J2 proposes).
+
+N1 and N2 are ready now, and their parts are marked **(junior)**. The tasks marked
+**[needs decision]** carry a recommendation, and their parts wait for it.
+
+Rules for every N task:
+
+1. **A pack is data.** It never holds code, scripts, shaders, a path DeskSpace
+   runs, or a URL DeskSpace fetches. Images in packs wait for a decision.
+2. **A pack file is untrusted.** Check its size before parsing, clamp every
+   value, cap every string and list, ignore unknown keys, and load a newer
+   `format` with a warning. One bad value never fails the whole file. Each
+   kind gets a hostile-file test.
+3. **Packs reach the network only through `deskspace_update::fetch_signed`**,
+   as icon sets do (section S, rule 2).
+4. **A shared file must keep loading.** Once a format is shared, a renamed
+   field breaks other people's files. N1's reference files must load forever,
+   so never edit or delete one; add new ones when the format changes.
+5. **A verb calls an existing `App` method.** It is never a second way to change
+   the model.
+
+- [ ] **N1. Reference theme files that must keep loading (config).**
+  **(junior)** C10a has landed, so nothing waits.
+  - Add `crates/deskspace-config/tests/packs/themes/` holding:
+    - `minimal.deskspace-theme.toml`: `format = 1` and a `name` only.
+    - `full.deskspace-theme.toml`: every `Theme` field set away from its default,
+      plus `gap` and `padding`. Write it with `ThemeFile::save` from a throwaway
+      test, commit the output, and delete the throwaway test.
+    - `hostile.deskspace-theme.toml`: every number out of range (too high in some,
+      too low in others), an unknown key in each table, and a very long `name`.
+    - `newer.deskspace-theme.toml`: `format = 99`, plus a key no build knows.
+    - `wrong-type.deskspace-theme.toml`: `corner_radius = "round"`.
+  - Add an integration test, `crates/deskspace-config/tests/theme_files.rs`, so it
+    sees only the public API:
+    - `minimal` loads as the defaults.
+    - `full` loads with exactly the values written.
+    - `hostile` loads with each value at the edge of its range.
+    - `newer` loads.
+    - `wrong-type` returns an error and does not panic.
+  - The test file's `//!` header states rule 4 above.
+  - Done when: the gates pass, and changing a `Theme` field's serde name in a
+    scratch edit makes the test fail. Revert that edit.
+
+- [ ] **N2. Harden theme-file reading and writing (config).** **(junior)** After
+  N1.
+  - In `ThemeFile::load`, read the length (`std::fs::metadata`) before reading the
+    file. Refuse a file over `MAX_THEME_BYTES` with a new `ConfigError` variant
+    that names the path and the limit. Set the limit at 64 KiB, and record the
+    `full` reference file's size in the constant's doc, so the margin is visible.
+  - After loading, cut `name` and `author` to 100 characters, on a character
+    boundary. Never fail on them.
+  - `ThemeFile::save` uses `std::fs::write`, so a crash mid-save can leave half a
+    file. Pull the temp-write-and-rename out of `ConfigStore::save` (`store.rs`)
+    into a private `write_atomic(path, text)`, with its comment, and call it from
+    both. `ConfigStore::save`'s tests must pass unchanged.
+  - Tests in `theme_file.rs`: an oversized file is refused, a long name is cut,
+    and a multi-byte name is cut without splitting a character.
+
+- [ ] **N3. One loader for every pack kind (config).** **[needs decision]**
+  After N2. This should land before any second kind (N4, T40), so the second
+  kind does not copy the first.
+  - Recommended:
+    - `deskspace-config/src/pack.rs` holds `PackHeader { format, name, author }`,
+      which each kind's file includes with `#[serde(flatten)]`.
+    - `read_capped(path, max)` is N2's size check, moved there.
+    - `list(dir, extension)` returns each pack's path and header, sorted by
+      name. It skips a file that fails to parse, with a `warn`.
+    - `PackKind` is an enum with one row per kind (folder name and file
+      extension). It starts with `Theme` alone; each later kind adds its own
+      variant.
+    - `ConfigStore::pack_dir(kind)` replaces `themes_dir`.
+  - The alternative is a loader per kind: simpler now, copied later.
+  - Tests: N1's reference files still load (flattening must not change the
+    format), a listing sorts and skips a broken file, and the cap holds.
+  - If C10c has landed, its "Themes" choice reads `list`.
+
+- [ ] **N4. Colour schemes.** **[needs decision]** A colour scheme changes
+  colours and nothing else, so it can go on top of any theme. The review
+  recommended an overlay type on 2026-11-03; option (c) below is that overlay,
+  and (a) replaces it as the recommendation, because (c) copies every `Theme`
+  field.
+  - Options:
+    - **(a) Recommended:** a `ColorScheme` type in core holding only the colour
+      fields. The exact list is part of the decision; proposed: `tint`, `text`,
+      `marquee_color`, `border_color`, `border_source`, and `use_accent`.
+      `Theme::colors()` and `Theme::with_colors(&ColorScheme)` read and write
+      them, and applying one turns `custom_colors` on.
+    - **(b)** A theme file whose `[look]` holds only some keys, merged over the
+      current look as TOML tables before parsing. It needs no new type, and any
+      subset works. But no type says what a colour scheme is, and a misspelt key
+      silently applies nothing.
+    - **(c)** An overlay struct with every `Theme` field optional. It copies all
+      of `Theme`'s fields, a second list to keep in step, so it is not
+      recommended.
+  - The parts, if (a) is chosen:
+    - [ ] **N4a (junior, core).** `ColorScheme` with `#[serde(default)]`,
+      `Theme::colors` and `with_colors`. Tests: a round trip through `Theme`, and
+      applying a scheme leaves every other field unchanged.
+    - [ ] **N4b (junior, config).** After N3. A `.deskspace-colors.toml` kind
+      through N3's loader, and reference files in N1's folder.
+    - [ ] **N4c (app).** After C10c. "Save colours…" and "Load colours…" on the
+      Colors page, built as C10c builds its buttons. Loading is a previewed edit
+      that Cancel undoes. **[needs human]** check: save the colours of one space,
+      load them on another with a different theme; only the colours change.
+    - [ ] **N4d (junior, docs).** README: what a colour scheme is, and where the
+      files go.
+
+- [ ] **N5. Verbs: scripting the running instance.** **[needs decision]**
+  R16 (section D) holds the questions. This is a proposal that settles them,
+  for the maintainer to approve:
+  - **Transport:** `WM_COPYDATA` to the controller window, found by class as
+    `signal_show_spaces` (`win32/desktop_entry.rs`) finds it today. Use a fixed
+    `dwData` tag and one UTF-8 verb line, capped at 4 KiB, sent with
+    `SendMessageTimeoutW`, so a hung instance cannot hang the script.
+  - **Trust:** UIPI already blocks a sender with lower integrity. The
+    controller also refuses a message whose sender window is missing, or whose
+    process is in another session.
+  - **One type:** a `Verb` enum in `deskspace-platform/src/input.rs`, beside
+    `Event`, and an `Event::Verb(Verb)`. `cli.rs` parses `--verb <name> [args]`
+    into it. A `VERBS` table (name, arguments, help) drives parsing and the
+    error that lists the known verbs.
+  - **Never break users:** `--show` and `--new-space` stay flags and become
+    verbs inside. The `SHOW_SPACES` and `NEW_SPACE` messages stay decoded,
+    since an older install's desktop verb may still send them.
+  - The parts, after approval:
+    - [ ] **N5a (junior, platform, pure).** `Verb`, `VERBS`,
+      `Verb::parse(&[String])`, and `Verb::to_args`, starting with `Show` and
+      `NewSpace`. Tests: round trips, an unknown verb, missing and extra
+      arguments.
+    - [ ] **N5b (senior, platform).** After N5a. `signal_verb(&Verb) -> bool`
+      over `WM_COPYDATA`, and decoding in `controller.rs`, with the payload
+      check in a pure `decode_verb(&[u8])`. Tests for empty, oversized,
+      non-UTF-8, and unknown payloads.
+    - [ ] **N5c (junior, app).** After N5b. `--show` and `--new-space` go
+      through verbs, and `bootstrap.rs` hands off any verb the same way. P23's
+      row in section V must still pass.
+    - [ ] **N5d (junior, app).** After N5c. `hide` and `settings`, one commit
+      each. `apply-theme <path>` follows after C10c. A verb is a row in `VERBS`
+      plus an arm in the app calling the method the menu calls.
+    - [ ] **N5e (junior, docs).** README: a "Scripting" section with examples.
+  - **[needs human]** check, with N5c: a desktop verb, a shortcut with `--show`,
+    and a PowerShell script all reach a running instance. With none running,
+    `--show` and `--new-space` still start DeskSpace, as today.
+
 ## U. Undo and redo (ROADMAP D11, M2)
 
 Read D11 first; it is the spec. Do the tasks in order, one commit each. The
@@ -1327,6 +1484,64 @@ ash, and looks the same at every DPI. One commit each, in order.
   and gone beyond 60 px. The scale is 4 × scale px, so the paper
   shimmers above the fire.
 
+### Effects as data
+
+Most effects only set a few fields of a `TransitionFrame` from how far along
+they are (review, 2026-11-03), so they can be written as data: Roll moves the
+rect toward the rolled one, Fade sets the opacity, Gradient sweeps the mask, and
+Fly moves the rect toward an edge. As data, built-ins shrink to rows, and a user
+effect becomes a pack (section N). Effects that draw their own art stay native
+code: Dissolve's noise, CRT, Burn, Bounce's physics, and the planned Scroll, Magic
+lamp, and Black hole. T34 is the design; T35-T39 move the built-ins one at a time
+with no visible change; T40 opens it to users.
+
+- [ ] **T34. A recipe type for simple effects (design).** **[needs decision]**
+  Today `frame` (`render/transition.rs`) has one match arm per effect.
+  Recommended:
+  - A pure `Recipe` in `deskspace-core/src/animation.rs`, with serde, so packs
+    can carry one:
+    - `rect: RectMotion { Rest, Roll, Fly }`, reusing `Geometry`'s rolled rect
+      and `fly_rect`;
+    - `opacity: Ramp`;
+    - `mask: MaskMotion { None, Gradient { feather } }`;
+    - `pixelate: Option<Ramp>`.
+  - A `Ramp { from, to, start, end, curve }` maps progress (0 to 1) to a value.
+    It holds before `start` and after `end`, and is clamped on load.
+    `curve: Curve { Linear, EaseIn, EaseOut, EaseInOut }` is a pure function
+    with tests.
+  - `EffectSpec` gains `recipe: Option<Recipe>`. `frame` plays the recipe when
+    the row has one, and keeps its arm when the row does not.
+  - To settle: whether `Curve` is the progress curve T24 (open) plans to add to
+    each row, so the two land as one type, and whether `Detail` and `Direction` reach a recipe as parameters
+    or stay native-only.
+  - Done when: the maintainer approves a shape, and this entry is replaced by
+    it.
+
+- [ ] **T35-T39. Move one built-in effect to a recipe each.** **(junior)**
+  After T34. In this order, one commit each: **T35** Fade, **T36** Roll, **T37**
+  Fly, **T38** Gradient, **T39** Pixelate.
+  - First copy the effect's current arm into the test module as
+    `reference_frame`. Then give the row its recipe, and delete the arm.
+  - Test: the recipe's frame equals the reference at progress 0, 0.1, … 1, both
+    ways (in and out), for every `Direction` the effect uses, at two detail
+    levels where it uses `Detail`. Compare floats within 1e-4.
+  - The look must not change, so these add no section V row. If the test cannot
+    pass without changing the recipe type, stop and ask; T34 missed something.
+  - Commit as `refactor: play <effect> from a recipe (T3n)`.
+
+- [ ] **T40. Effects from files.** **[needs decision]** After N3 and T35-T39.
+  A `.deskspace-effect.toml` pack holds a `PackHeader` and a `Recipe`. To
+  settle:
+  - how a user effect is stored in a kind's settings, given that its file can
+    go missing. Recommended: by file name, falling back to Fade with a
+    warning, as an unknown key already does;
+  - where loaded effects sit in each kind's list, and how Fold's "Offers"
+    limit treats them;
+  - whether DeskSpace ships example effect files.
+
+  Then split it into tasks here. **[needs human]** check, with the last part:
+  a hand-written effect plays in, plays out, and reverses mid-play.
+
 ## X. The debug window (ROADMAP D14, F-61)
 
 Every planned task here is done (`archive/TASKS-done.md`); what remains
@@ -1378,14 +1593,32 @@ order, after B11 and B12 (the strip adds scene and paint arguments).
   (`#[serde(default)]`, page 0) and clamped when pages shrink (decided by
   the maintainer, 2026-10-29). Pages are a view over the same `items`, so
   `ItemId`s and drag semantics are unchanged. Tests.
+  - W16 has landed, so pages split the view layout (`view_layout.rs`,
+    `ViewLayout`), not the old icon grid. That holds in every view, Details and
+    List included.
+  - **[needs decision]** (review, 2026-11-03): how a space splits into pages
+    is a rule of its own, separate from how the strip looks. Recommended:
+    `TabSettings.paginate: Paginate` (`#[serde(default)]`), whose first and
+    only variant is `Fit` (fill a page, then start the next). Each later rule
+    is a variant (J6), so the compiler points at every place to wire up.
+    `page_items` takes the rule; `ViewLayout` stays rule-free.
 - [ ] **J3. Render the strip.** `SpaceScene`/`SpaceStyle` carry the strip
   (edge, size, page count, current page, labels); the painter draws it and
   the window hit-tests a click to a page. Only the current page's cells are
   drawn and hit-tested.
+  - The strip's colours come from the space's `Palette`, as the header and
+    status bar do, so themes and colour schemes (section N) restyle it with
+    no work here. Add a strip-style field to `Theme` only when a second style
+    (dots, numbers) is designed, never ahead of it.
 - [ ] **J4. Per-space Tabs settings section (app).** Enable, orientation, and
   size, through the per-space settings path.
 - [ ] **J5. Space menu.** Enable/disable tabs, previous/next page, and a page
   list.
+- [ ] **J6. Pages by group.** After J2 (with `Paginate`) and J5. `Paginate::ByGroup`:
+  one page per group of the space's grouping (`deskspace-core/src/grouping.rs`),
+  labelled with the group's name. A space that is not grouped falls back to
+  `Fit`. Tests: pages follow the groups, and changing the grouping clamps the
+  current page as J2 does.
 
 ## K. Split the large files (readability)
 
@@ -1672,6 +1905,25 @@ Small first. Each lands alone unless it says "After".
   P16. Measure Explorer's limit on a List column's width, and whether a change
   re-flows. Record it in P16e, with the date.
 
+- [ ] **P27. Archive section W's finished-phase notes (docs).** Every W task is
+  done, yet section W still carries guidance for running them side by side.
+  That makes this file long for every new reader.
+  - Move these, verbatim, to the end of `archive/TASKS-done.md` under a heading
+    "Section W's phase notes (moved 2026-mm-dd)": "Phase 4: views, sort rules,
+    and lens settings"; from "Interleaving", the two definitions and "Work that
+    collides when run in parallel" with its list; and "Phase 5 tasks".
+  - Keep everything else in section W. "Runtime orders the code must survive"
+    (rename the heading above it to "Runtime orders"), "Performance", and
+    "Safety and security" still bind any new lens task. Keep "Phase 5: lens and view extras" too,
+    since those two sit under it. Cut its first bullet list, which is about
+    task order, to one sentence: "Read ROADMAP D17 and D18 first; they are the
+    spec."
+  - Before deleting anything, search the repository (`docs/`, `crates/`,
+    `scripts/`) for each heading's name. Where something cites a moved heading,
+    point it at the archive.
+  - Change no other section. Commit as `docs: archive section W's phase notes
+    (P27)`.
+
 ### Seniors only
 
 These are in the order we would take them. Each lands alone.
@@ -1841,7 +2093,22 @@ the ROADMAP decision ids (`D1`-`D9`).
   together by the handler tests. Design a row per field (id, page, kind,
   read, write-and-clamp, `Effect`), as `HOTKEY_BINDINGS` does for hotkeys, so
   the setting recipe becomes one row. Decide how option tables, look versus
-  Global scope, and greyed-out rules (`MatchExplorer`) fit. After B10.
+  Global scope, and greyed-out rules (`MatchExplorer`) fit. B10 has landed,
+  and so have the W tasks that held it back (section W, "Interleaving"), so
+  nothing blocks it now. Every themeable or animatable option pays the
+  three-place cost, so this comes before the pack kinds in section N add
+  options. The split (review, 2026-11-03):
+  - **R14a (senior, design).** **[needs decision]** The row type, written up
+    here for the maintainer, with one real field moved as the proof (an
+    `icon_size`-like range field in a look page). Settle the questions above,
+    plus how a row names its `Effect`, and whether a label lives in the row
+    (R18 wants it to).
+  - **R14b… (junior, one page per commit).** After R14a. Move one settings page
+    at a time, in the order `pages.rs` builds them. `field::` ids keep their
+    values (never renumber). The handler tests keep passing until R14z.
+  - **R14z (junior).** Replace the handler tests with one row-table test, delete
+    the arms left in `apply.rs`, and rewrite the "new global setting" recipe as
+    "add a row".
 - **R16. Scripting verbs: an out-of-process extension point (F-59).**
   Extensions today mean editing the source. Design a small, stable verb set
   (`new-space`, `show`, `hide`, `settings`, `apply-theme <file>`, ...) that
@@ -1854,7 +2121,8 @@ the ROADMAP decision ids (`D1`-`D9`).
   never accept a verb from an elevated or remote caller). C9's `--new-space`
   should be built as the first verb if this lands first. No in-process plugin
   loading: native plugins in a shell-integrated app cost more stability and
-  security than they are worth now.
+  security than they are worth now. A proposal that settles these, and its
+  split into tasks, is N5 (section N).
 - **R18. Translation design (F-60, ROADMAP M9).** The format and where
   catalogs live are decided (ROADMAP D20: Fluent, embedded, and a test that
   every key the code uses has English text). Settle:
@@ -1897,6 +2165,27 @@ section 3). It only reads: it changes a scratch config and its own
 backdrop window, never a Windows setting. A check whose branch this
 machine's settings do not select (Transparency effects on or off, a 150 %
 monitor) is reported as **not covered**, never passed.
+
+- [ ] **O4. Sort section V into what a script can judge (no code).**
+  **(junior)** Section V holds about 160 rows, and v0.3 waits on the ones it
+  covers. A person's time goes further if the scriptable rows are taken off
+  their list first.
+  - Read each row. Mark it `(script)` after its id in the first column if
+    everything it asks could be judged from what the harness already reads:
+    - window rects, styles, z-order, and cloak state;
+    - what a click at a point reaches;
+    - the config file after an action;
+    - a pixel's colour over `Show-Backdrop`.
+
+    Mark it `(part script)` if only some of it could. Leave taste, motion,
+    Windows 10, and other DPIs unmarked.
+  - Do the lens rows (W ids) first; v0.3 ships them.
+  - Then write one O task per group of marked rows that need the same new
+    harness ability (for example "send a key with `SendInput`" or "drop a file
+    with OLE"), naming the rows. Each task copies O1-O3's shape in the archive.
+  - Change nothing else in a row, and run no check (O tasks run them).
+  - Done when: every row is marked or left unmarked on purpose, and the
+    groups are written as tasks.
 
 - **R20. Test the app without Win32 (`ENGINEERING.md` section 3).**
   `deskspace-platform` is about 55 % of the code (2026-10-21) and holds two
