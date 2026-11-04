@@ -14,7 +14,10 @@ its section.
 **Pick a task:** these are ready for any contributor, now that human checks
 are collected in section V instead of blocking:
 - section P's "Juniors and interns" list, the best place for a first task;
-- section S (S9-S12), C10, and K8, without waiting for their checks;
+- section K (K9-K16), each a pure move with rules that leave nothing to
+  design;
+- O4, which needs no code;
+- section S (S9-S12), without waiting for their checks;
 - anything else not marked **[needs decision]**, "still to design", or in
   section D.
 
@@ -101,7 +104,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Controller window (tray, hotkeys, timers, `WM_APP` dispatch) | `deskspace-platform/src/win32/controller.rs` |
 | `WM_APP` message ids | `deskspace-platform/src/win32/messages.rs` |
 | Keys (spaces are never focused) | `deskspace-platform/src/win32/keyboard.rs` (`fn watched_key`) |
-| Space window procedure, DWM, shadow window | `deskspace-platform/src/win32/{space_window,dwm,shadow_window}.rs`, `render/shadow.rs` |
+| Space window procedure, DWM, shadow window | `deskspace-platform/src/win32/space_window/` (`mod.rs`, `zorder.rs`, `mouse.rs`, `frame.rs`), `dwm.rs`, `shadow_window.rs`, `render/shadow.rs` |
 | An animation effect | `deskspace-core/src/animation.rs` (the tables), `deskspace-platform/src/render/transition.rs` (frame math), `render/d2d/` (drawing), `win32/space_animation.rs` (playing it on a window), `win32/overlay.rs` (windows beside the space); the recipe is section T |
 | Drawing | `deskspace-platform/src/render/scene.rs`, `render/d2d/` (`mod.rs` the `Painter`, `effects.rs` an animation's resources, `prepared.rs` the `PreparedScene`, `drag_image.rs` the drag image) |
 | The zoom pop-up window and its layout | `deskspace-platform/src/win32/zoom_bar.rs`, `render/zoom_bar.rs`, `render/d2d/zoom_bar.rs` |
@@ -283,44 +286,125 @@ drop side is `win32/drop_target.rs` (`DragKind`, `drag_kind`, `DropPlan`,
     It grows with the remaining Explorer item settings (hidden/protected
     files once F-22 exists).
 
-- [ ] **C10. Theme files: save, load, and share a look (F-58).**
-  Distinct from C6: C6 is built-in named *item* presets; C10 is a file
-  holding a whole look, so people can share themes without forking.
-  - Design (recommended by review, 2026-10-16; approved by the
-    maintainer, 2026-10-29):
-    - A theme file is a `SpaceLook` (the whole `Theme` plus grid spacing and
-      padding), because `SpaceLook` is already the unit of "a look": it
-      round-trips through serde, defaults missing fields, and clamps on load.
-      `ui_mode` is ignored on apply, as it is for a space. `preset` (Match
-      Explorer / Custom) travels with a theme, since it decides icon size
-      and spacing, which are part of how a theme looks.
-    - Format: TOML, extension `.deskspace-theme.toml`, with `format = 1`,
-      `name`, an optional `author`, and a `[look]` table. A file with a newer
-      `format` loads with a warning, unknown keys ignored, as `Config` does.
-    - Location: a `themes` folder beside the config file (so a scratch
-      `--config` has its own), listed in Settings; "Save theme…" and "Load
-      theme…" also take any path through the standard file dialogs.
-    - Applying: in the Global scope it writes `config.theme` and the grid's
-      `gap` / `padding`; in a space's scope it is a `SetSpaceLook { custom:
-      true }`. Either way it is a previewed edit that Cancel undoes, like any
-      other settings change.
-  - Three commits:
-    - [x] **C10a (config, pure):** `deskspace-config/src/theme_file.rs` with
-      `ThemeFile { format, name, author, look: SpaceLook }`, `load(path)` and
-      `save(path)` returning `ConfigError`, and `themes_dir()` on
-      `ConfigStore`. Tests: round trip, missing fields default, out-of-range
-      values clamp, unknown keys ignored, a newer `format` loads. Landed in
-      `feat: add the theme-file format (C10a)`.
-    - [x] **C10b (platform):** `Ui::pick_save_path(filter, default_name)` over
-      `IFileSaveDialog`, beside `Ui::pick_files`, and a filter argument on
-      the open side if it has none. Landed in
-      `feat: expose the save dialog and filtered open dialog (C10b)`.
-    - **C10c (app):** two buttons on the Colors page ("Save theme…", "Load
-      theme…"): two `ButtonAction` variants and their arms in
-      `App::on_settings_button` (the "new global setting" recipe's button
-      path), and a "Themes" `Choice` listing `themes_dir()`. **[needs human]**
-      check: save a customized space's look, load it on Global and on another
-      space, Cancel undoes the load.
+## N. Packs and automation (extensions)
+
+How people extend DeskSpace without forking it (review, 2026-11-03). There are
+three tiers, safest first:
+
+1. **Packs:** files of data the app loads, checks, and clamps. Themes (C10)
+   are the first; icon sets (section S) already work this way. Colour schemes
+   (N4) and animation effects (T40) are next.
+2. **Verbs:** commands a script hands to the running instance (R16, N5), for
+   scripts, hotkey tools, and Explorer's "Send to".
+3. **Code:** native code DeskSpace has to trust. In-process plugins are a
+   non-goal (R16): a crashing plugin with takeover on breaks the user's desktop.
+   New behaviour of this kind is built in, through the internal tables
+   (`EFFECTS`, `VIEW_MODES`, and the `Paginate` J2 proposes).
+
+The remaining tasks are marked **[needs decision]**; each carries a
+recommendation, and its parts wait for it.
+
+Rules for every N task:
+
+1. **A pack is data.** It never holds code, scripts, shaders, a path DeskSpace
+   runs, or a URL DeskSpace fetches. Images in packs wait for a decision.
+2. **A pack file is untrusted.** Check its size before parsing, clamp every
+   value, cap every string and list, ignore unknown keys, and load a newer
+   `format` with a warning. One bad value never fails the whole file. Each
+   kind gets a hostile-file test.
+3. **Packs reach the network only through `deskspace_update::fetch_signed`**,
+   as icon sets do (section S, rule 2).
+4. **A shared file must keep loading.** Once a format is shared, a renamed
+   field breaks other people's files. N1's reference files must load forever,
+   so never edit or delete one; add new ones when the format changes.
+5. **A verb calls an existing `App` method.** It is never a second way to change
+   the model.
+
+- [ ] **N3. One loader for every pack kind (config).** **[needs decision]**
+  After N2. This should land before any second kind (N4, T40), so the second
+  kind does not copy the first.
+  - Recommended:
+    - `deskspace-config/src/pack.rs` holds `PackHeader { format, name, author }`,
+      which each kind's file includes with `#[serde(flatten)]`.
+    - `read_capped(path, max)` is N2's size check, moved there.
+    - `list(dir, extension)` returns each pack's path and header, sorted by
+      name. It skips a file that fails to parse, with a `warn`.
+    - `PackKind` is an enum with one row per kind (folder name and file
+      extension). It starts with `Theme` alone; each later kind adds its own
+      variant.
+    - `ConfigStore::pack_dir(kind)` replaces `themes_dir`.
+  - The alternative is a loader per kind: simpler now, copied later.
+  - Tests: N1's reference files still load (flattening must not change the
+    format), a listing sorts and skips a broken file, and the cap holds.
+  - If C10c has landed, its "Themes" choice reads `list`.
+
+- [ ] **N4. Colour schemes.** **[needs decision]** A colour scheme changes
+  colours and nothing else, so it can go on top of any theme. The review
+  recommended an overlay type on 2026-11-03; option (c) below is that overlay,
+  and (a) replaces it as the recommendation, because (c) copies every `Theme`
+  field.
+  - Options:
+    - **(a) Recommended:** a `ColorScheme` type in core holding only the colour
+      fields. The exact list is part of the decision; proposed: `tint`, `text`,
+      `marquee_color`, `border_color`, `border_source`, and `use_accent`.
+      `Theme::colors()` and `Theme::with_colors(&ColorScheme)` read and write
+      them, and applying one turns `custom_colors` on.
+    - **(b)** A theme file whose `[look]` holds only some keys, merged over the
+      current look as TOML tables before parsing. It needs no new type, and any
+      subset works. But no type says what a colour scheme is, and a misspelt key
+      silently applies nothing.
+    - **(c)** An overlay struct with every `Theme` field optional. It copies all
+      of `Theme`'s fields, a second list to keep in step, so it is not
+      recommended.
+  - The parts, if (a) is chosen:
+    - [ ] **N4a (junior, core).** `ColorScheme` with `#[serde(default)]`,
+      `Theme::colors` and `with_colors`. Tests: a round trip through `Theme`, and
+      applying a scheme leaves every other field unchanged.
+    - [ ] **N4b (junior, config).** After N3. A `.deskspace-colors.toml` kind
+      through N3's loader, and reference files in N1's folder.
+    - [ ] **N4c (app).** After C10c. "Save colours…" and "Load colours…" on the
+      Colors page, built as C10c builds its buttons. Loading is a previewed edit
+      that Cancel undoes. **[needs human]** check: save the colours of one space,
+      load them on another with a different theme; only the colours change.
+    - [ ] **N4d (junior, docs).** README: what a colour scheme is, and where the
+      files go.
+
+- [ ] **N5. Verbs: scripting the running instance.** **[needs decision]**
+  R16 (section D) holds the questions. This is a proposal that settles them,
+  for the maintainer to approve:
+  - **Transport:** `WM_COPYDATA` to the controller window, found by class as
+    `signal_show_spaces` (`win32/desktop_entry.rs`) finds it today. Use a fixed
+    `dwData` tag and one UTF-8 verb line, capped at 4 KiB, sent with
+    `SendMessageTimeoutW`, so a hung instance cannot hang the script.
+  - **Trust:** UIPI already blocks a sender with lower integrity. The
+    controller also refuses a message whose sender window is missing, or whose
+    process is in another session.
+  - **One type:** a `Verb` enum in `deskspace-platform/src/input.rs`, beside
+    `Event`, and an `Event::Verb(Verb)`. `cli.rs` parses `--verb <name> [args]`
+    into it. A `VERBS` table (name, arguments, help) drives parsing and the
+    error that lists the known verbs.
+  - **Never break users:** `--show` and `--new-space` stay flags and become
+    verbs inside. The `SHOW_SPACES` and `NEW_SPACE` messages stay decoded,
+    since an older install's desktop verb may still send them.
+  - The parts, after approval:
+    - [ ] **N5a (junior, platform, pure).** `Verb`, `VERBS`,
+      `Verb::parse(&[String])`, and `Verb::to_args`, starting with `Show` and
+      `NewSpace`. Tests: round trips, an unknown verb, missing and extra
+      arguments.
+    - [ ] **N5b (senior, platform).** After N5a. `signal_verb(&Verb) -> bool`
+      over `WM_COPYDATA`, and decoding in `controller.rs`, with the payload
+      check in a pure `decode_verb(&[u8])`. Tests for empty, oversized,
+      non-UTF-8, and unknown payloads.
+    - [ ] **N5c (junior, app).** After N5b. `--show` and `--new-space` go
+      through verbs, and `bootstrap.rs` hands off any verb the same way. P23's
+      row in section V must still pass.
+    - [ ] **N5d (junior, app).** After N5c. `hide` and `settings`, one commit
+      each. `apply-theme <path>` follows after C10c. A verb is a row in `VERBS`
+      plus an arm in the app calling the method the menu calls.
+    - [ ] **N5e (junior, docs).** README: a "Scripting" section with examples.
+  - **[needs human]** check, with N5c: a desktop verb, a shortcut with `--show`,
+    and a PowerShell script all reach a running instance. With none running,
+    `--show` and `--new-space` still start DeskSpace, as today.
 
 ## U. Undo and redo (ROADMAP D11, M2)
 
@@ -531,9 +615,8 @@ Work that collides when run in parallel:
     `build_header` creates the title it draws.
   - R14 (table-driven settings fields) would rewrite the pages W10, W20,
     W23, W35, and W38 build. Do not start R14 while those are open.
-  - Section K: `win32/space_window.rs` is already over the 800-line
-    guideline. Put new hit tests and paint code in `app/pointer.rs` and
-    `render/d2d/`, not there.
+  - Section K: `win32/space_window/` is split (K8); put new hit tests and
+    paint code in `app/pointer.rs` and `render/d2d/`, not in its `mod.rs`.
   - T (animations): the title icon (W9), status bar (W19), headers (W18,
     W37), and Back button (W43) paint through the normal paint path, so
     animations snapshot them for free. Each task's check includes one
@@ -1324,6 +1407,64 @@ ash, and looks the same at every DPI. One commit each, in order.
   and gone beyond 60 px. The scale is 4 × scale px, so the paper
   shimmers above the fire.
 
+### Effects as data
+
+Most effects only set a few fields of a `TransitionFrame` from how far along
+they are (review, 2026-11-03), so they can be written as data: Roll moves the
+rect toward the rolled one, Fade sets the opacity, Gradient sweeps the mask, and
+Fly moves the rect toward an edge. As data, built-ins shrink to rows, and a user
+effect becomes a pack (section N). Effects that draw their own art stay native
+code: Dissolve's noise, CRT, Burn, Bounce's physics, and the planned Scroll, Magic
+lamp, and Black hole. T34 is the design; T35-T39 move the built-ins one at a time
+with no visible change; T40 opens it to users.
+
+- [ ] **T34. A recipe type for simple effects (design).** **[needs decision]**
+  Today `frame` (`render/transition.rs`) has one match arm per effect.
+  Recommended:
+  - A pure `Recipe` in `deskspace-core/src/animation.rs`, with serde, so packs
+    can carry one:
+    - `rect: RectMotion { Rest, Roll, Fly }`, reusing `Geometry`'s rolled rect
+      and `fly_rect`;
+    - `opacity: Ramp`;
+    - `mask: MaskMotion { None, Gradient { feather } }`;
+    - `pixelate: Option<Ramp>`.
+  - A `Ramp { from, to, start, end, curve }` maps progress (0 to 1) to a value.
+    It holds before `start` and after `end`, and is clamped on load.
+    `curve: Curve { Linear, EaseIn, EaseOut, EaseInOut }` is a pure function
+    with tests.
+  - `EffectSpec` gains `recipe: Option<Recipe>`. `frame` plays the recipe when
+    the row has one, and keeps its arm when the row does not.
+  - To settle: whether `Curve` is the progress curve T24 (open) plans to add to
+    each row, so the two land as one type, and whether `Detail` and `Direction` reach a recipe as parameters
+    or stay native-only.
+  - Done when: the maintainer approves a shape, and this entry is replaced by
+    it.
+
+- [ ] **T35-T39. Move one built-in effect to a recipe each.** **(junior)**
+  After T34. In this order, one commit each: **T35** Fade, **T36** Roll, **T37**
+  Fly, **T38** Gradient, **T39** Pixelate.
+  - First copy the effect's current arm into the test module as
+    `reference_frame`. Then give the row its recipe, and delete the arm.
+  - Test: the recipe's frame equals the reference at progress 0, 0.1, … 1, both
+    ways (in and out), for every `Direction` the effect uses, at two detail
+    levels where it uses `Detail`. Compare floats within 1e-4.
+  - The look must not change, so these add no section V row. If the test cannot
+    pass without changing the recipe type, stop and ask; T34 missed something.
+  - Commit as `refactor: play <effect> from a recipe (T3n)`.
+
+- [ ] **T40. Effects from files.** **[needs decision]** After N3 and T35-T39.
+  A `.deskspace-effect.toml` pack holds a `PackHeader` and a `Recipe`. To
+  settle:
+  - how a user effect is stored in a kind's settings, given that its file can
+    go missing. Recommended: by file name, falling back to Fade with a
+    warning, as an unknown key already does;
+  - where loaded effects sit in each kind's list, and how Fold's "Offers"
+    limit treats them;
+  - whether DeskSpace ships example effect files.
+
+  Then split it into tasks here. **[needs human]** check, with the last part:
+  a hand-written effect plays in, plays out, and reverses mid-play.
+
 ## X. The debug window (ROADMAP D14, F-61)
 
 Every planned task here is done (`archive/TASKS-done.md`); what remains
@@ -1375,14 +1516,32 @@ order, after B11 and B12 (the strip adds scene and paint arguments).
   (`#[serde(default)]`, page 0) and clamped when pages shrink (decided by
   the maintainer, 2026-10-29). Pages are a view over the same `items`, so
   `ItemId`s and drag semantics are unchanged. Tests.
+  - W16 has landed, so pages split the view layout (`view_layout.rs`,
+    `ViewLayout`), not the old icon grid. That holds in every view, Details and
+    List included.
+  - **[needs decision]** (review, 2026-11-03): how a space splits into pages
+    is a rule of its own, separate from how the strip looks. Recommended:
+    `TabSettings.paginate: Paginate` (`#[serde(default)]`), whose first and
+    only variant is `Fit` (fill a page, then start the next). Each later rule
+    is a variant (J6), so the compiler points at every place to wire up.
+    `page_items` takes the rule; `ViewLayout` stays rule-free.
 - [ ] **J3. Render the strip.** `SpaceScene`/`SpaceStyle` carry the strip
   (edge, size, page count, current page, labels); the painter draws it and
   the window hit-tests a click to a page. Only the current page's cells are
   drawn and hit-tested.
+  - The strip's colours come from the space's `Palette`, as the header and
+    status bar do, so themes and colour schemes (section N) restyle it with
+    no work here. Add a strip-style field to `Theme` only when a second style
+    (dots, numbers) is designed, never ahead of it.
 - [ ] **J4. Per-space Tabs settings section (app).** Enable, orientation, and
   size, through the per-space settings path.
 - [ ] **J5. Space menu.** Enable/disable tabs, previous/next page, and a page
   list.
+- [ ] **J6. Pages by group.** After J2 (with `Paginate`) and J5. `Paginate::ByGroup`:
+  one page per group of the space's grouping (`deskspace-core/src/grouping.rs`),
+  labelled with the group's name. A space that is not grouped falls back to
+  `Fit`. Tests: pages follow the groups, and changing the grouping clamps the
+  current page as J2 does.
 
 ## K. Split the large files (readability)
 
@@ -1412,22 +1571,6 @@ Rules for every K task:
   `git diff --stat` shows mostly moved lines; and the file map above names
   the new files.
 
-- [ ] **K8. Split `win32/space_window.rs`.** About 1,200 lines of non-test
-  code (measured 2026-10-27), past the guideline since T12. Turn it into
-  `win32/space_window/mod.rs` plus:
-  - `zorder.rs`: the z-order pinning (`set_on_top`,
-    `on_window_pos_changing`, `insert_after`, `window_above`) with their
-    tests.
-  - `mouse.rs`: the mouse handlers (`on_mouse_move`, `on_mouse_leave`,
-    `on_mouse_wheel`, `on_button_down`, `on_button_up`) and their helpers
-    (`to_desktop`, `Modifiers`, `modifiers`, `button_for`, the `MK_*`
-    constants).
-  - `frame.rs`: `Frame` and `update_region`, with their tests.
-  - `mod.rs` keeps `SpaceState`, `Backing`, creation, the `set_*` and
-    `show*` functions, `paint`, `with_state`, and the window procedure.
-  - Done when: `mod.rs` is under about 800 lines of non-test code and the
-    K rules above hold.
-
 - [ ] **K9. Split `win32/icons.rs`.** 793 lines of non-test code (measured
   2026-11-02), and the next change would pass the guideline, so it goes before P24.
   Turn it into `win32/icons/mod.rs` plus:
@@ -1440,6 +1583,106 @@ Rules for every K task:
     the other callers do not change.
   - Done when: `mod.rs` is well under 800 lines of non-test code and the K rules
     above hold.
+
+K10-K16 split the files `ALLOWED` listed as "none yet" (line counts are non-test
+lines, measured 2026-11-03). Each lands alone, in any order, but read the
+"Collides with" line first: a task there edits the same functions, so take one
+at a time and rebase the other. Function names, not line numbers, say what
+moves.
+
+- [ ] **K10. Split `win32/folder_watch.rs`.** 1,278 lines. Turn it into
+  `win32/folder_watch/mod.rs` plus:
+  - `worker.rs`: `Worker` and its `impl` (from `run` to `drain_canceled`), with
+    their tests.
+  - `folder.rs`: `CanceledRead`, `Folder`, `OpenFolder`, `open_folder`,
+    `follows_to`, `OpenFailure`, `final_path`, and `is_timeout`, with their tests.
+  - `timing.rs`: `Bursts` and `Coalescer`, which are pure, with their tests, and
+    `millis`.
+  - `mod.rs` keeps the constants, `SharedListing`, `retire_listing`, `LensUpdate`,
+    `FolderWatch` and its `Drop`, `PendingWatch`, and `ActiveWatch`.
+  - This module runs a thread and an I/O completion port. A pure move changes
+    neither, but ask a senior to review: a missed `pub(super)` that makes you
+    reach for a wrapper is not a pure move any more. Stop and ask instead.
+  - Done when: `mod.rs` is under about 500 lines and the K rules above hold.
+
+- [ ] **K11. Split `app/view.rs`.** 1,253 lines. Turn it into `app/view/mod.rs`
+  plus:
+  - `system_look.rs`: `SystemLook` and its `impl`.
+  - `cache.rs`: `ViewCache`, `CachedGrouping`, `StampHasher`, and
+    `grouping_stamp`, with their tests.
+  - `look.rs`: `Cells`, `LayoutScale`, and the `App` methods from `theme_for` to
+    `metrics_of` (the look, scale, and layout accessors), with their tests.
+  - `layer.rs`: `LayerState`, and the `App` methods from `refresh_shell_display`
+    to `refresh_desktop_layer` (the desktop layer and takeover), with their tests.
+  - `mod.rs` keeps `sync_windows*`, `view_for`, grouping, the refresh, restyle,
+    and reflow methods, the view changes, and `changed_in_place`.
+  - Collides with: P14c (`base_layout`, `Cells`) and P15f.
+  - Done when: `mod.rs` is under about 600 lines and the K rules above hold.
+
+- [ ] **K12. Split `scene.rs`.** 1,163 lines. Turn it into `scene/mod.rs` plus:
+  - `details.rs`: `DETAILS_CELL_PAD`, `DetailsCellText`, and the functions from
+    `details_view` to `details_cells`, plus `details_scroll_thumb`, with their
+    tests.
+  - `status.rs`: the `STATUS_*` constants and the functions from `status_bar` to
+    `status_tip`, with their tests.
+  - `chrome.rs`: the `TITLE_ICON_*`, `BACK_BUTTON_*`, and `SCROLL_THUMB_*`
+    constants, `title_icon_rect` to `title_icon_request`, `title_tip`, and
+    `thumb_end_margin`, `scroll_thumb`, and `thumb_span`, with their tests.
+  - `mod.rs` keeps `SurfaceLook`, `ViewState`, the style functions, the space,
+    layer, and drag scenes, `group_headers`, `item_layout`, the cell and label
+    functions, and the text shadow helpers.
+  - Many tests build a whole scene and check one part of it. Those stay in
+    `mod.rs`; move only a test that calls a moved function directly.
+  - Collides with: P15f, P16c.
+  - Done when: `mod.rs` is under about 700 lines and the K rules above hold.
+
+- [ ] **K13. Split `app/menus.rs`.** 1,131 lines. Turn it into `app/menus/mod.rs`
+  plus:
+  - `new_space.rs`: the `App` methods from `create_space` to `space_rects`, and
+    the free functions `new_space_command` and `gap_at`, with their tests.
+  - `entries.rs`: the free functions that build entry lists, from `menu_item` to
+    `lens_view_after`, except the two above, with their tests. They take plain
+    data, so their tests need no `Ui`.
+  - `mod.rs` keeps the `App` methods that show menus and act on a choice.
+  - Done when: `mod.rs` is under about 700 lines and the K rules above hold, and
+    the "new menu entry" recipe above names the right file for each step.
+
+- [ ] **K14. Move the ids and preset tables out of `app.rs`.**
+  **[needs decision]** 1,024 lines. Its `ALLOWED` reason is "by design", because
+  the recipes send you to `app.rs` for `MenuId` and the presets. Recommended:
+  move `Timer`, `MenuId`, `NewShortcut`, `NEW_SHORTCUT_ENTRIES`, and every
+  `*_PRESETS` and `*_MENU_IDS` table into a new `app/ids.rs`, re-exported from
+  `app.rs`, which leaves about 690 lines. The alternative is to keep it whole and
+  record why in `ALLOWED`.
+  - If approved: `app.rs` stays `app.rs` (it already declares the `app/`
+    modules), so add `mod ids;` and `pub(crate) use ids::*;`. Move `MenuId`'s
+    tests with it.
+  - Update the file map's `app.rs` row and the menu recipe to name `app/ids.rs`.
+
+- [ ] **K15. Split `app/files.rs`.** 986 lines. Turn it into `app/files/mod.rs`
+  plus:
+  - `delete.rs`: the `App` methods from `delete_selected_items` to
+    `delete_item_question`, with their tests.
+  - `shortcuts.rs`: `add_shortcuts`, `create_shortcuts`, `write_shortcut`,
+    `is_link_file`, `link_copy_name`, `shortcut_file_name`, and `ShortcutSource`,
+    with their tests. Section L's rule holds: `add_shortcuts` stays the one way
+    to add a shortcut.
+  - `mod.rs` keeps `paths_to_transfer`, `StoredFiles`, and the drop handling.
+  - This code moves and deletes user files. A pure move is safe, but ask a senior
+    to review the diff.
+  - Done when: `mod.rs` is under about 500 lines and the K rules above hold.
+
+- [ ] **K16. Split `render/d2d/mod.rs`.** 959 lines. Add:
+  - `chrome.rs`: `Painter::draw_details_header`, `draw_group_headers`, and
+    `draw_status`, with `SORT_UP_GLYPH`, `SORT_DOWN_GLYPH`, and
+    `DROP_MARK_WIDTH_RATIO`. Child modules can add `impl Painter` blocks, so no
+    signature changes.
+  - Move `draw_transition` and `draw_blur_mask` into the existing `effects.rs`
+    (405 lines), which already holds an animation's resources.
+  - `mod.rs` keeps the device functions, `DrawContext`, `FrameResources`,
+    `Painter`'s paint path, `draw_scene`, `draw_items`, and the bitmap cache.
+  - Collides with: P15f (paint clipping) and anything in section T.
+  - Done when: `mod.rs` is under about 700 lines and the K rules above hold.
 
 ## Q. Move the why next to the code (shrink `CONTEXT.md` section 6)
 
@@ -1568,6 +1811,25 @@ Small first. Each lands alone unless it says "After".
 - [ ] **P16d. Measure Explorer's List column (no code).** **[needs human]** Part of
   P16. Measure Explorer's limit on a List column's width, and whether a change
   re-flows. Record it in P16e, with the date.
+
+- [ ] **P27. Archive section W's finished-phase notes (docs).** Every W task is
+  done, yet section W still carries guidance for running them side by side.
+  That makes this file long for every new reader.
+  - Move these, verbatim, to the end of `archive/TASKS-done.md` under a heading
+    "Section W's phase notes (moved 2026-mm-dd)": "Phase 4: views, sort rules,
+    and lens settings"; from "Interleaving", the two definitions and "Work that
+    collides when run in parallel" with its list; and "Phase 5 tasks".
+  - Keep everything else in section W. "Runtime orders the code must survive"
+    (rename the heading above it to "Runtime orders"), "Performance", and
+    "Safety and security" still bind any new lens task. Keep "Phase 5: lens and view extras" too,
+    since those two sit under it. Cut its first bullet list, which is about
+    task order, to one sentence: "Read ROADMAP D17 and D18 first; they are the
+    spec."
+  - Before deleting anything, search the repository (`docs/`, `crates/`,
+    `scripts/`) for each heading's name. Where something cites a moved heading,
+    point it at the archive.
+  - Change no other section. Commit as `docs: archive section W's phase notes
+    (P27)`.
 
 ### Seniors only
 
@@ -1738,7 +2000,22 @@ the ROADMAP decision ids (`D1`-`D9`).
   together by the handler tests. Design a row per field (id, page, kind,
   read, write-and-clamp, `Effect`), as `HOTKEY_BINDINGS` does for hotkeys, so
   the setting recipe becomes one row. Decide how option tables, look versus
-  Global scope, and greyed-out rules (`MatchExplorer`) fit. After B10.
+  Global scope, and greyed-out rules (`MatchExplorer`) fit. B10 has landed,
+  and so have the W tasks that held it back (section W, "Interleaving"), so
+  nothing blocks it now. Every themeable or animatable option pays the
+  three-place cost, so this comes before the pack kinds in section N add
+  options. The split (review, 2026-11-03):
+  - **R14a (senior, design).** **[needs decision]** The row type, written up
+    here for the maintainer, with one real field moved as the proof (an
+    `icon_size`-like range field in a look page). Settle the questions above,
+    plus how a row names its `Effect`, and whether a label lives in the row
+    (R18 wants it to).
+  - **R14b… (junior, one page per commit).** After R14a. Move one settings page
+    at a time, in the order `pages.rs` builds them. `field::` ids keep their
+    values (never renumber). The handler tests keep passing until R14z.
+  - **R14z (junior).** Replace the handler tests with one row-table test, delete
+    the arms left in `apply.rs`, and rewrite the "new global setting" recipe as
+    "add a row".
 - **R16. Scripting verbs: an out-of-process extension point (F-59).**
   Extensions today mean editing the source. Design a small, stable verb set
   (`new-space`, `show`, `hide`, `settings`, `apply-theme <file>`, ...) that
@@ -1751,7 +2028,8 @@ the ROADMAP decision ids (`D1`-`D9`).
   never accept a verb from an elevated or remote caller). C9's `--new-space`
   should be built as the first verb if this lands first. No in-process plugin
   loading: native plugins in a shell-integrated app cost more stability and
-  security than they are worth now.
+  security than they are worth now. A proposal that settles these, and its
+  split into tasks, is N5 (section N).
 - **R18. Translation design (F-60, ROADMAP M9).** The format and where
   catalogs live are decided (ROADMAP D20: Fluent, embedded, and a test that
   every key the code uses has English text). Settle:
@@ -1767,7 +2045,7 @@ the ROADMAP decision ids (`D1`-`D9`).
   field's label belongs in its row.
 - **R19. A space window handle instead of `unsafe fn` contracts.** About
   twenty functions in `win32/space_animation.rs` and
-  `win32/space_window.rs` are `unsafe fn` only for "`window` is a live
+  `win32/space_window/` are `unsafe fn` only for "`window` is a live
   space window of this thread, and no state borrow is held", each call
   repeating `// SAFETY: the caller's contract.` Design a handle that only
   the runtime makes for a live space window, whose methods are safe.
@@ -1775,7 +2053,7 @@ the ROADMAP decision ids (`D1`-`D9`).
   the handle), how the desktop layer and a dying window fit, what
   `WM_NCDESTROY` invalidates, and how the handle stays on its thread.
   Then split it into one-commit tasks by module here. It touches
-  `window_state.rs` and every window module, so plan it with K8.
+  `window_state.rs` and every window module, so plan it after K8.
 
 ## O. On-screen checks a script can do
 
@@ -1794,6 +2072,27 @@ section 3). It only reads: it changes a scratch config and its own
 backdrop window, never a Windows setting. A check whose branch this
 machine's settings do not select (Transparency effects on or off, a 150 %
 monitor) is reported as **not covered**, never passed.
+
+- [ ] **O4. Sort section V into what a script can judge (no code).**
+  **(junior)** Section V holds about 160 rows, and v0.3 waits on the ones it
+  covers. A person's time goes further if the scriptable rows are taken off
+  their list first.
+  - Read each row. Mark it `(script)` after its id in the first column if
+    everything it asks could be judged from what the harness already reads:
+    - window rects, styles, z-order, and cloak state;
+    - what a click at a point reaches;
+    - the config file after an action;
+    - a pixel's colour over `Show-Backdrop`.
+
+    Mark it `(part script)` if only some of it could. Leave taste, motion,
+    Windows 10, and other DPIs unmarked.
+  - Do the lens rows (W ids) first; v0.3 ships them.
+  - Then write one O task per group of marked rows that need the same new
+    harness ability (for example "send a key with `SendInput`" or "drop a file
+    with OLE"), naming the rows. Each task copies O1-O3's shape in the archive.
+  - Change nothing else in a row, and run no check (O tasks run them).
+  - Done when: every row is marked or left unmarked on purpose, and the
+    groups are written as tasks.
 
 - **R20. Test the app without Win32 (`ENGINEERING.md` section 3).**
   `deskspace-platform` is about 55 % of the code (2026-10-21) and holds two
@@ -1995,6 +2294,7 @@ for a machine that has it.
 | P22 | Open "From installed apps…" from a space's Shortcuts page and from the custom shortcut dialog: it lists apps with icons. Close it, wait for the background refresh (with `--debug`, "cached the installed apps"), and open it again: the apps and icons still show, with no failure or stall. Do it twice in a row. |
 | P21 | In a debug build with `--debug` open, preview Bounce repeatedly on a space: the animation stays smooth (no hitch once a second), and the debug panel updates again once it stops. |
 | P10 | U5's and U7's rows still pass: undo and redo of deletes, pastes, moves, and renames behave as before. The rollback itself is test-carried, because the gap between the check and the failing step is too short to hit by hand. |
+| C10c (F-58) | With a scratch config, customize a space's look, then Colors > "Save theme…" and name the file (with or without the suffix). Load it on Global and on another space, once through "Load theme…" and once from the Themes list after closing and reopening Settings: the look, icon spacing, and padding change, and the Dark/Light setting does not. A load on a space that follows Global turns its "Customize this space" switch on. Cancel puts the old look back; Apply keeps it over a restart. With no theme files the Themes list is disabled and says so; a broken or oversized file is reported and changes nothing; saving over an existing theme asks before replacing it. |
 
 ## Found while working
 

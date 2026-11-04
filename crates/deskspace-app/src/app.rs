@@ -469,6 +469,22 @@ impl Preview {
         }
     }
 
+    fn look_all() -> Self {
+        Self {
+            restyle_all: true,
+            relayout_all: true,
+            ..Self::default()
+        }
+    }
+
+    fn look(id: SpaceId) -> Self {
+        Self {
+            restyle: vec![id],
+            relayout: vec![id],
+            ..Self::default()
+        }
+    }
+
     fn restyle(id: SpaceId) -> Self {
         Self {
             restyle: vec![id],

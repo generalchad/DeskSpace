@@ -158,6 +158,11 @@ pub mod field {
     pub const LENSES_TITLE_MODE: u32 = 136;
     pub const LENSES_GROUP: u32 = 156;
     pub const LENSES_GROUP_ORDER: u32 = 157;
+
+    // Theme files (C10c): the list on the Colors page and its two actions.
+    pub const THEMES: u32 = 158;
+    pub const SAVE_THEME: u32 = 159;
+    pub const LOAD_THEME: u32 = 160;
 }
 
 /// The pages, in build order. The first `LOOK_PAGE_COUNT` hold look settings,

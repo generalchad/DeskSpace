@@ -520,9 +520,13 @@ default in `Default`.
 - `ThemeFile` (`theme_file.rs`, F-58) is the shared-look file: `format = 1`,
   a `name`, an optional `author`, and a `[look]` table holding a `SpaceLook`.
   Missing fields default, out-of-range values clamp on load, unknown keys are
-  ignored, and a newer `format` loads with a warning. `themes_dir()` is a
-  `themes` folder beside the config, so a scratch `--config` has its own.
-  The file dialogs and settings buttons follow (C10b, C10c).
+  ignored, and a newer `format` loads with a warning. A file over 64 KiB is
+  refused before it is parsed, a long `name` or `author` is cut to 100
+  characters, and saves share the config's atomic temp-write-and-rename.
+  `themes_dir()` is a `themes` folder beside the config, so a scratch
+  `--config` has its own. The Colors page uses the file dialogs (C10b) to
+  save and load one, and lists the folder's files when the window opens
+  (C10c).
 - `window.icon_downloads` (D16) is `Ask` by default: the app reads a set
   from the cache first, and only `Allowed` downloads a missing one (the
   signed file). `Ask` shows one question a session and saves the answer;
@@ -643,7 +647,7 @@ one arm in `App::on_event`, whose match is exhaustive.
   resource (`app_icon`); each window owns its big and small sizes, and the
   debug window's copy carries its badge.
 
-### Space windows (`win32/space_window.rs`, `win32/dwm.rs`)
+### Space windows (`win32/space_window/`, `win32/dwm.rs`)
 
 - **The desktop layer** (`Ui::create_desktop_layer`,
   `set_desktop_layer_rect` / `_scene`, `destroy_desktop_layer`) reuses this
@@ -682,7 +686,8 @@ one arm in `App::on_event`, whose match is exhaustive.
 - Everything else about a space window lives where it happens: `dwm.rs` owns
   the material, corners, and border; `composition.rs` the visual tree and
   the startup choice; `space_animation.rs` and `frame_clock.rs` the frames;
-  `space_window.rs` the backing, resizing, and mouse modifiers; and
+  `space_window/mod.rs` the backing and resizing and `space_window/mouse.rs`
+  the mouse modifiers; and
   `shadow_window.rs` / `render/shadow.rs` the shadow. ROADMAP D12 and D15
   give the decisions.
 
@@ -826,7 +831,11 @@ in `ui.rs`. What spans them:
   page's reset becomes "Match global appearance". Cancel restores each space's
   `SpaceSnapshot` (its look, its view, a lens's folder view, and its title); a space menu edit
   made while the window is open goes into that snapshot, because the menu
-  commits at once. These also commit at once, so Cancel does not undo them:
+  commits at once. Colors also saves the selected look to a theme file and
+  loads one from a file or the `themes` folder; loading is a previewed edit
+  that Cancel undoes, a load on a space customizes it, and a theme never
+  changes `ui_mode`.
+  These also commit at once, so Cancel does not undo them:
   - the Lens page's "Change folder…", which writes the new path into the
     snapshot so Cancel keeps it;
   - the Shortcuts page's X deletes an item after a confirmation

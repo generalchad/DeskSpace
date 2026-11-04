@@ -15,8 +15,8 @@ mod tables;
 mod view_fields;
 
 pub use apply::{
-    apply_animation_edit, apply_field, apply_shadow_edit, customize_space, match_global,
-    reset_appearance, space_edit,
+    apply_animation_edit, apply_field, apply_global_theme, apply_shadow_edit, apply_space_theme,
+    customize_space, look_to_save, match_global, reset_appearance, space_edit,
 };
 pub use ids::{field, page};
 pub use session::{Session, SpaceSnapshot, needs_relayout, needs_restyle};
@@ -28,7 +28,9 @@ pub use tables::{
 
 use std::path::Path;
 
-use deskspace_config::{Config, IconDownloads, NEW_SPACE_SIZE_RANGE, NewSpaceIcon, WindowSettings};
+use deskspace_config::{
+    Config, IconDownloads, NEW_SPACE_SIZE_RANGE, NewSpaceIcon, ThemeFile, WindowSettings,
+};
 use deskspace_core::animation::{
     Animations, DETAIL_RANGE, DURATION_MS_RANGE, Edge, Effect as AnimationEffect, EffectChoice,
     EffectOption, Kind, STAGGER_MS_RANGE, StartupOrder,
@@ -67,6 +69,12 @@ fn index_of<T: PartialEq + Copy>(table: &[(T, &str)], value: T) -> usize {
 
 fn labels<T>(table: &[(T, &'static str)]) -> Vec<&'static str> {
     table.iter().map(|(_, label)| *label).collect()
+}
+
+/// Whether `id` is one of the Colors page's theme controls, which work before
+/// a space is customized.
+fn is_theme_field(id: u32) -> bool {
+    matches!(id, field::THEMES | field::SAVE_THEME | field::LOAD_THEME)
 }
 
 /// The space the session edits, if it still exists; `None` is Global.
@@ -195,10 +203,13 @@ pub fn build_form(
     });
     let editable = space.is_none_or(|space| space.custom());
 
-    let mut pages = look_pages(theme, &grid, system_dark, space.is_some());
+    let mut pages = look_pages(theme, &grid, &session.themes, system_dark, space.is_some());
     if !editable {
         for field in pages.iter_mut().flat_map(|page| page.fields.iter_mut()) {
-            field.enabled = false;
+            // A theme is the whole look, so it can be saved or loaded before a
+            // space is customized; loading one customizes it. Keep a control
+            // that was already disabled (an empty theme list) disabled.
+            field.enabled = is_theme_field(field.id) && field.enabled;
         }
     }
     // Always built, so the form keeps its shape when the scope changes; it
@@ -311,6 +322,10 @@ pub enum ButtonAction {
     /// The Colors page's reset: restore the default look (Global) or copy the
     /// global look (a customized space).
     ResetAppearance,
+    /// The Colors page's "Save theme…": write the current look to a file.
+    SaveTheme,
+    /// The Colors page's "Load theme…": open a file and preview its look.
+    LoadTheme,
     /// The Layout page's "Fit to contents" for the selected space.
     FitToContents,
     /// The General page's "Check for updates now".
@@ -328,6 +343,8 @@ pub enum ButtonAction {
 pub fn button_action(id: u32) -> Option<ButtonAction> {
     match id {
         field::RESET => Some(ButtonAction::ResetAppearance),
+        field::SAVE_THEME => Some(ButtonAction::SaveTheme),
+        field::LOAD_THEME => Some(ButtonAction::LoadTheme),
         field::FIT_CONTENTS => Some(ButtonAction::FitToContents),
         field::CHECK_UPDATES_NOW => Some(ButtonAction::CheckForUpdates),
         field::LENS_OPEN => Some(ButtonAction::OpenLensFolder),
@@ -350,6 +367,8 @@ pub enum FieldEffect {
     Appearance,
     /// The grid changed; re-flow and repaint.
     Layout,
+    /// A whole look changed (a theme file); restyle and re-flow.
+    Look,
     /// The lens's rules changed; its worker builds its list again, without
     /// reading the folder.
     Lens,
@@ -403,7 +422,10 @@ mod tests {
     /// read-only text).
     fn edit_value(kind: &FieldKind) -> Option<FieldValue> {
         match kind {
-            FieldKind::Choice { options, .. } => Some(FieldValue::Choice(options.len() - 1)),
+            // A choice with one option has nothing to edit.
+            FieldKind::Choice { options, .. } => {
+                (options.len() > 1).then(|| FieldValue::Choice(options.len() - 1))
+            }
             FieldKind::Toggle { on } => Some(FieldValue::Toggle(!on)),
             FieldKind::Slider { max, .. } => Some(FieldValue::Slider(*max)),
             FieldKind::Color { .. } => Some(FieldValue::Color(Color::rgb(1, 2, 3))),
@@ -537,6 +559,23 @@ mod tests {
         let built = form(&config, &session);
         assert!(!built.field(field::SHADOW_SIZE).unwrap().enabled);
         assert!(!built.field(field::SHADOW_OPACITY).unwrap().enabled);
+    }
+
+    #[test]
+    fn a_space_following_global_can_still_save_and_load_a_theme() {
+        let (config, id) = config_with_space("Work");
+        let mut session = Session::new(&config);
+        session.select_scope(Some(id), ScopeKind::Space);
+        session.themes.push(ThemeFile {
+            name: "Sunset".to_owned(),
+            ..ThemeFile::default()
+        });
+
+        let built = form(&config, &session);
+        assert!(built.field(field::THEMES).unwrap().enabled);
+        assert!(built.field(field::SAVE_THEME).unwrap().enabled);
+        assert!(built.field(field::LOAD_THEME).unwrap().enabled);
+        assert!(!built.field(field::TINT_OPACITY).unwrap().enabled);
     }
 
     #[test]
@@ -1234,6 +1273,26 @@ mod tests {
         // scope, but greyed because no space is being edited.
         let field = form.field(field::FIT_CONTENTS).expect("present");
         assert!(!field.enabled);
+    }
+
+    #[test]
+    fn a_theme_list_does_not_change_the_form_shape() {
+        let (config, _) = config_with_space("Work");
+        let without = form(&config, &Session::new(&config));
+        let mut themed = Session::new(&config);
+        themed.themes.push(ThemeFile {
+            name: "Sunset".to_owned(),
+            ..ThemeFile::default()
+        });
+        let with = form(&config, &themed);
+
+        assert!(without.same_shape(&with));
+        assert!(!without.field(field::THEMES).unwrap().enabled);
+        assert!(with.field(field::THEMES).unwrap().enabled);
+        assert!(matches!(
+            with.field(field::THEMES).unwrap().kind,
+            FieldKind::Choice { selected: 1, .. }
+        ));
     }
 
     #[test]

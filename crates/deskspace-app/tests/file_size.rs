@@ -35,44 +35,39 @@ struct Allowed {
 /// one is written.
 const ALLOWED: &[Allowed] = &[
     Allowed {
-        path: "deskspace-platform/src/win32/space_window.rs",
-        why: "The space window's procedure, painting, z-order, and mouse handling.",
-        task: "K8",
-    },
-    Allowed {
         path: "deskspace-platform/src/win32/folder_watch.rs",
         why: "The watch worker, its port, and its listings share one thread.",
-        task: NO_TASK,
+        task: "K10",
     },
     Allowed {
         path: "deskspace-app/src/scene.rs",
         why: "One concern (model to SpaceScene) built from small helpers.",
-        task: NO_TASK,
+        task: "K12",
     },
     Allowed {
         path: "deskspace-app/src/app/menus.rs",
         why: "The space, item, and tray menus share their builders.",
-        task: NO_TASK,
+        task: "K13",
     },
     Allowed {
         path: "deskspace-app/src/app.rs",
         why: "App, on_event, MenuId, and the preset tables live here by design.",
-        task: NO_TASK,
+        task: "K14",
     },
     Allowed {
         path: "deskspace-app/src/app/files.rs",
         why: "Drops, delete, prune, and the layer sync share one file path.",
-        task: NO_TASK,
+        task: "K15",
     },
     Allowed {
         path: "deskspace-app/src/app/view.rs",
         why: "Look resolution, refresh, reflow, and the layer cache share state.",
-        task: NO_TASK,
+        task: "K11",
     },
     Allowed {
         path: "deskspace-platform/src/render/d2d/mod.rs",
         why: "One impl, the Painter's paint path.",
-        task: NO_TASK,
+        task: "K16",
     },
 ];
 

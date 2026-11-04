@@ -160,6 +160,13 @@ pub fn apply_field(
     value: FieldValue,
     system_dark: bool,
 ) -> FieldEffect {
+    if let (field::THEMES, FieldValue::Choice(index)) = (id, &value) {
+        let Some(look) = session.theme_look(*index) else {
+            return FieldEffect::None;
+        };
+        apply_global_theme(config, session, &look);
+        return FieldEffect::Look;
+    }
     let mut look = SpaceLook::from_global(&config.theme, &config.desktop.layout);
     let effect = match apply_look_field(&mut look, id, &value, system_dark) {
         Some(effect) => {
@@ -557,6 +564,12 @@ pub fn space_edit(
     if let Some(edit) = lens_edit(config, session, id, &value, profile) {
         return Some(edit);
     }
+    if let (field::THEMES, FieldValue::Choice(index)) = (id, &value) {
+        let id = scope_space(config, session)?.id;
+        let look = session.theme_look(*index)?;
+        return apply_space_theme(config, session, look)
+            .map(|command| (id, command, FieldEffect::Look));
+    }
     let space = scope_space(config, session).filter(|space| space.custom())?;
     let mut look = space
         .look()
@@ -604,10 +617,58 @@ pub fn reset_appearance(config: &mut Config, session: &mut Session) {
     session.dirty = true;
 }
 
+/// The look "Save theme…" writes for `scope`: a customized space's own look,
+/// or the look the space or Global shows now.
+pub fn look_to_save(config: &Config, scope: Option<SpaceId>) -> Option<SpaceLook> {
+    match scope {
+        Some(id) => {
+            let space = config.desktop.space(id)?;
+            Some(
+                space.active_look().cloned().unwrap_or_else(|| {
+                    SpaceLook::from_global(&config.theme, &config.desktop.layout)
+                }),
+            )
+        }
+        None => Some(SpaceLook::from_global(
+            &config.theme,
+            &config.desktop.layout,
+        )),
+    }
+}
+
+/// Applies a whole look to the global settings. `ui_mode` stays as it is: a
+/// theme never changes DeskSpace's own chrome.
+pub fn apply_global_theme(config: &mut Config, session: &mut Session, look: &SpaceLook) {
+    let look = look.clone().clamped();
+    let mut theme = look.theme;
+    theme.ui_mode = config.theme.ui_mode;
+    config.theme = theme;
+    config.desktop.layout.gap = look.gap;
+    config.desktop.layout.padding = look.padding;
+    session.dirty = true;
+}
+
+/// The command that applies a whole look to the selected space, customizing
+/// it if it followed Global.
+pub fn apply_space_theme(
+    config: &Config,
+    session: &mut Session,
+    look: SpaceLook,
+) -> Option<Command> {
+    let space = scope_space(config, session)?;
+    session.dirty = true;
+    Some(Command::SetSpaceLook {
+        id: space.id,
+        custom: true,
+        look: Some(look),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::fixtures::{apply, create_lens, create_space};
+    use deskspace_config::ThemeFile;
     use deskspace_core::Color;
     use deskspace_core::Rect;
 
@@ -1480,5 +1541,190 @@ mod tests {
             Some(Command::SetSpaceLook { custom: true, look: Some(look), .. })
                 if look.theme.corner_radius == 4
         ));
+    }
+
+    /// A theme that differs from the defaults in the look and the grid.
+    fn sunset() -> SpaceLook {
+        SpaceLook {
+            theme: Theme {
+                tint_opacity: 42,
+                icon_size: 150,
+                ..Theme::default()
+            },
+            gap: 3,
+            padding: 7,
+        }
+    }
+
+    fn add_theme(session: &mut Session, look: SpaceLook) {
+        session.themes.push(ThemeFile {
+            name: "Sunset".to_owned(),
+            look,
+            ..ThemeFile::default()
+        });
+    }
+
+    #[test]
+    fn a_theme_list_choice_writes_the_whole_global_look() {
+        let (mut config, mut session) = setup();
+        add_theme(&mut session, sunset());
+        let ui_mode = config.theme.ui_mode;
+
+        let effect = apply_field(
+            &mut config,
+            &mut session,
+            field::THEMES,
+            FieldValue::Choice(1),
+            true,
+        );
+
+        assert_eq!(effect, FieldEffect::Look);
+        assert_eq!(config.theme.tint_opacity, 42);
+        assert_eq!(config.theme.icon_size, 150);
+        assert_eq!(config.desktop.layout.gap, 3);
+        assert_eq!(config.desktop.layout.padding, 7);
+        assert_eq!(config.theme.ui_mode, ui_mode, "chrome mode stays");
+        assert!(session.dirty);
+    }
+
+    #[test]
+    fn the_choose_a_theme_row_changes_nothing() {
+        let (mut config, mut session) = setup();
+        add_theme(&mut session, sunset());
+
+        let effect = apply_field(
+            &mut config,
+            &mut session,
+            field::THEMES,
+            FieldValue::Choice(0),
+            true,
+        );
+
+        assert_eq!(effect, FieldEffect::None);
+        assert_eq!(config.theme, Theme::default());
+    }
+
+    #[test]
+    fn cancel_undoes_a_theme_load() {
+        let (mut config, mut session) = setup();
+        add_theme(&mut session, sunset());
+        let before = config.clone();
+
+        apply_field(
+            &mut config,
+            &mut session,
+            field::THEMES,
+            FieldValue::Choice(1),
+            true,
+        );
+        session.revert(&mut config);
+
+        assert_eq!(config.theme, before.theme);
+        assert_eq!(config.desktop.layout, before.desktop.layout);
+    }
+
+    #[test]
+    fn a_theme_list_choice_customizes_the_selected_space() {
+        let (mut config, id) = config_with_space("Work");
+        let seed = SpaceLook::from_global(&config.theme, &config.desktop.layout);
+        apply(
+            &mut config.desktop,
+            Command::CustomizeSpace { id, on: true, seed },
+        );
+        let mut session = Session::new(&config);
+        session.select_scope(Some(id), ScopeKind::Space);
+        add_theme(&mut session, sunset());
+
+        let (space, command, effect) = space_edit(
+            &config,
+            &mut session,
+            field::THEMES,
+            FieldValue::Choice(1),
+            true,
+            Path::new(""),
+        )
+        .unwrap();
+
+        assert_eq!(space, id);
+        assert_eq!(effect, FieldEffect::Look);
+        assert_eq!(
+            command,
+            Command::SetSpaceLook {
+                id,
+                custom: true,
+                look: Some(sunset())
+            }
+        );
+    }
+
+    #[test]
+    fn a_theme_customizes_a_space_that_followed_global() {
+        let (config, id) = config_with_space("Work");
+        let mut session = Session::new(&config);
+        session.select_scope(Some(id), ScopeKind::Space);
+        add_theme(&mut session, sunset());
+        assert!(!config.desktop.space(id).unwrap().custom());
+
+        let (space, command, effect) = space_edit(
+            &config,
+            &mut session,
+            field::THEMES,
+            FieldValue::Choice(1),
+            true,
+            Path::new(""),
+        )
+        .unwrap();
+
+        assert_eq!(space, id);
+        assert_eq!(effect, FieldEffect::Look);
+        assert_eq!(
+            command,
+            Command::SetSpaceLook {
+                id,
+                custom: true,
+                look: Some(sunset())
+            }
+        );
+    }
+
+    #[test]
+    fn saving_a_space_that_follows_global_writes_the_look_it_shows() {
+        let (mut config, id) = config_with_space("Work");
+        config.theme.tint_opacity = 77;
+        apply(
+            &mut config.desktop,
+            Command::SetSpaceLook {
+                id,
+                custom: false,
+                look: Some(sunset()),
+            },
+        );
+
+        let saved = look_to_save(&config, Some(id)).unwrap();
+        assert_eq!(saved.theme.tint_opacity, 77, "the retained look is ignored");
+        assert_eq!(
+            look_to_save(&config, None).unwrap(),
+            SpaceLook::from_global(&config.theme, &config.desktop.layout)
+        );
+    }
+
+    #[test]
+    fn saving_a_customized_space_writes_its_own_look() {
+        let (mut config, id) = config_with_space("Work");
+        let seed = SpaceLook::from_global(&config.theme, &config.desktop.layout);
+        apply(
+            &mut config.desktop,
+            Command::CustomizeSpace { id, on: true, seed },
+        );
+        apply(
+            &mut config.desktop,
+            Command::SetSpaceLook {
+                id,
+                custom: true,
+                look: Some(sunset()),
+            },
+        );
+
+        assert_eq!(look_to_save(&config, Some(id)), Some(sunset()));
     }
 }

@@ -5804,3 +5804,95 @@ until I5-I6 all land, so no partial build hides the desktop.
   bottom of a Details space whose columns pass the edge. Scene tests. **[needs
   human]** check: it shows only when the columns pass the edge, with vertical
   scrolling on and off.
+
+- [x] **N1. Reference theme files that must keep loading (config).**
+  **(junior)** C10a has landed, so nothing waits.
+  - Add `crates/deskspace-config/tests/packs/themes/` holding:
+    - `minimal.deskspace-theme.toml`: `format = 1` and a `name` only.
+    - `full.deskspace-theme.toml`: every `Theme` field set away from its default,
+      plus `gap` and `padding`. Write it with `ThemeFile::save` from a throwaway
+      test, commit the output, and delete the throwaway test.
+    - `hostile.deskspace-theme.toml`: every number out of range (too high in some,
+      too low in others), an unknown key in each table, and a very long `name`.
+    - `newer.deskspace-theme.toml`: `format = 99`, plus a key no build knows.
+    - `wrong-type.deskspace-theme.toml`: `corner_radius = "round"`.
+  - Add an integration test, `crates/deskspace-config/tests/theme_files.rs`, so it
+    sees only the public API:
+    - `minimal` loads as the defaults.
+    - `full` loads with exactly the values written.
+    - `hostile` loads with each value at the edge of its range.
+    - `newer` loads.
+    - `wrong-type` returns an error and does not panic.
+  - The test file's `//!` header states rule 4 above.
+  - Done when: the gates pass, and changing a `Theme` field's serde name in a
+    scratch edit makes the test fail. Revert that edit.
+
+- [x] **N2. Harden theme-file reading and writing (config).** **(junior)** After
+  N1.
+  - In `ThemeFile::load`, read the length (`std::fs::metadata`) before reading the
+    file. Refuse a file over `MAX_THEME_BYTES` with a new `ConfigError` variant
+    that names the path and the limit. Set the limit at 64 KiB, and record the
+    `full` reference file's size in the constant's doc, so the margin is visible.
+  - After loading, cut `name` and `author` to 100 characters, on a character
+    boundary. Never fail on them.
+  - `ThemeFile::save` uses `std::fs::write`, so a crash mid-save can leave half a
+    file. Pull the temp-write-and-rename out of `ConfigStore::save` (`store.rs`)
+    into a private `write_atomic(path, text)`, with its comment, and call it from
+    both. `ConfigStore::save`'s tests must pass unchanged.
+  - Tests in `theme_file.rs`: an oversized file is refused, a long name is cut,
+    and a multi-byte name is cut without splitting a character.
+
+- [x] **C10. Theme files: save, load, and share a look (F-58).**
+  Distinct from C6: C6 is built-in named *item* presets; C10 is a file
+  holding a whole look, so people can share themes without forking.
+  - Design (recommended by review, 2026-10-16; approved by the
+    maintainer, 2026-10-29):
+    - A theme file is a `SpaceLook` (the whole `Theme` plus grid spacing and
+      padding), because `SpaceLook` is already the unit of "a look": it
+      round-trips through serde, defaults missing fields, and clamps on load.
+      `ui_mode` is ignored on apply, as it is for a space. `preset` (Match
+      Explorer / Custom) travels with a theme, since it decides icon size
+      and spacing, which are part of how a theme looks.
+    - Format: TOML, extension `.deskspace-theme.toml`, with `format = 1`,
+      `name`, an optional `author`, and a `[look]` table. A file with a newer
+      `format` loads with a warning, unknown keys ignored, as `Config` does.
+    - Location: a `themes` folder beside the config file (so a scratch
+      `--config` has its own), listed in Settings; "Save theme…" and "Load
+      theme…" also take any path through the standard file dialogs.
+    - Applying: in the Global scope it writes `config.theme` and the grid's
+      `gap` / `padding`; in a space's scope it is a `SetSpaceLook { custom:
+      true }`. Either way it is a previewed edit that Cancel undoes, like any
+      other settings change.
+  - Three commits:
+    - [x] **C10a (config, pure):** `deskspace-config/src/theme_file.rs` with
+      `ThemeFile { format, name, author, look: SpaceLook }`, `load(path)` and
+      `save(path)` returning `ConfigError`, and `themes_dir()` on
+      `ConfigStore`. Tests: round trip, missing fields default, out-of-range
+      values clamp, unknown keys ignored, a newer `format` loads. Landed in
+      `feat: add the theme-file format (C10a)`.
+    - [x] **C10b (platform):** `Ui::pick_save_path(filter, default_name)` over
+      `IFileSaveDialog`, beside `Ui::pick_files`, and a filter argument on
+      the open side if it has none. Landed in
+      `feat: expose the save dialog and filtered open dialog (C10b)`.
+    - [x] **C10c (app):** two buttons on the Colors page ("Save theme…", "Load
+      theme…"): two `ButtonAction` variants and their arms in
+      `App::on_settings_button` (the "new global setting" recipe's button
+      path), and a "Themes" `Choice` listing `themes_dir()`. **[needs human]**
+      check: save a customized space's look, load it on Global and on another
+      space, Cancel undoes the load.
+
+- [x] **K8. Split `win32/space_window.rs`.** About 1,200 lines of non-test
+  code (measured 2026-10-27), past the guideline since T12. Turn it into
+  `win32/space_window/mod.rs` plus:
+  - `zorder.rs`: the z-order pinning (`set_on_top`,
+    `on_window_pos_changing`, `insert_after`, `window_above`) with their
+    tests.
+  - `mouse.rs`: the mouse handlers (`on_mouse_move`, `on_mouse_leave`,
+    `on_mouse_wheel`, `on_button_down`, `on_button_up`) and their helpers
+    (`to_desktop`, `Modifiers`, `modifiers`, `button_for`, the `MK_*`
+    constants).
+  - `frame.rs`: `Frame` and `update_region`, with their tests.
+  - `mod.rs` keeps `SpaceState`, `Backing`, creation, the `set_*` and
+    `show*` functions, `paint`, `with_state`, and the window procedure.
+  - Done when: `mod.rs` is under about 800 lines of non-test code and the
+    K rules above hold.

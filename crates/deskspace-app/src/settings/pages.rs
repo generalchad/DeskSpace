@@ -18,6 +18,7 @@ use super::{index_of, labels};
 pub(super) fn look_pages(
     theme: &Theme,
     grid: &GridSpec,
+    themes: &[ThemeFile],
     system_dark: bool,
     for_space: bool,
 ) -> Vec<SettingsPage> {
@@ -176,66 +177,84 @@ pub(super) fn look_pages(
     } else {
         "Restore default appearance"
     };
+    let mut colors_fields = vec![
+        Field::heading(field::COLORS_HEADING, "Colors"),
+        Field::toggle(
+            field::CUSTOM_COLORS,
+            "Use custom colors instead of the color mode's",
+            theme.custom_colors,
+        ),
+        Field::color(field::TINT, "Background tint", palette.tint.with_alpha(255))
+            .enabled(theme.custom_colors),
+        Field::color(field::TEXT, "Text", palette.title_text).enabled(theme.custom_colors),
+        Field::toggle(
+            field::USE_ACCENT,
+            "Use Windows accent color for the selection",
+            theme.use_accent,
+        ),
+        Field::choice(
+            field::BORDER_SOURCE,
+            "Border color",
+            &labels(&BORDER_SOURCES),
+            index_of(&BORDER_SOURCES, theme.border_source),
+        )
+        .enabled(theme.show_border),
+        Field::color(
+            field::BORDER_COLOR,
+            "Custom border color",
+            palette.border.with_alpha(255),
+        )
+        .enabled(theme.show_border && theme.border_source == BorderSource::Custom),
+        Field::slider(
+            field::BORDER_OPACITY,
+            "Border opacity",
+            (BORDER_OPACITY_RANGE.0.into(), BORDER_OPACITY_RANGE.1.into()),
+            theme
+                .border_opacity
+                .clamp(BORDER_OPACITY_RANGE.0, BORDER_OPACITY_RANGE.1) as i32,
+        )
+        .suffix(" %")
+        .enabled(theme.show_border),
+        Field::color(
+            field::MARQUEE_COLOR,
+            "Selection box color",
+            theme.marquee_color.with_alpha(255),
+        )
+        .enabled(!theme.use_accent),
+        Field::toggle(
+            field::MARQUEE_BORDER,
+            "Show selection box border",
+            theme.show_marquee_border,
+        ),
+    ];
+    // The row is always built so the page keeps its shape; it is disabled
+    // until the folder holds a theme.
+    let mut theme_options: Vec<&str> = if themes.is_empty() {
+        vec!["No themes found"]
+    } else {
+        vec!["Choose a theme\u{2026}"]
+    };
+    theme_options.extend(themes.iter().map(|theme| theme.name.as_str()));
+    let current = themes
+        .iter()
+        .position(|entry| is_current_look(entry, theme, grid))
+        .map_or(0, |index| index + 1);
+    colors_fields.push(
+        Field::choice(field::THEMES, "Themes", &theme_options, current).enabled(!themes.is_empty()),
+    );
+    colors_fields.push(Field::button(field::SAVE_THEME, "", "Save theme\u{2026}"));
+    colors_fields.push(Field::button(field::LOAD_THEME, "", "Load theme\u{2026}"));
+    colors_fields.push(Field::button(field::RESET, "", reset));
+    colors_fields.push(Field::note(
+        field::COMPATIBILITY_NOTE,
+        "Clear glass at 0% tint and 0% title shading, without a border, \
+         shows only the icons and labels. Acrylic and blur use Windows 11's \
+         own corners, up to 8 px; larger radii apply to clear glass and \
+         solid. Desktop-hosted spaces are drawn opaque.",
+    ));
     let colors_page = SettingsPage {
         title: "Colors".into(),
-        fields: vec![
-            Field::heading(field::COLORS_HEADING, "Colors"),
-            Field::toggle(
-                field::CUSTOM_COLORS,
-                "Use custom colors instead of the color mode's",
-                theme.custom_colors,
-            ),
-            Field::color(field::TINT, "Background tint", palette.tint.with_alpha(255))
-                .enabled(theme.custom_colors),
-            Field::color(field::TEXT, "Text", palette.title_text).enabled(theme.custom_colors),
-            Field::toggle(
-                field::USE_ACCENT,
-                "Use Windows accent color for the selection",
-                theme.use_accent,
-            ),
-            Field::choice(
-                field::BORDER_SOURCE,
-                "Border color",
-                &labels(&BORDER_SOURCES),
-                index_of(&BORDER_SOURCES, theme.border_source),
-            )
-            .enabled(theme.show_border),
-            Field::color(
-                field::BORDER_COLOR,
-                "Custom border color",
-                palette.border.with_alpha(255),
-            )
-            .enabled(theme.show_border && theme.border_source == BorderSource::Custom),
-            Field::slider(
-                field::BORDER_OPACITY,
-                "Border opacity",
-                (BORDER_OPACITY_RANGE.0.into(), BORDER_OPACITY_RANGE.1.into()),
-                theme
-                    .border_opacity
-                    .clamp(BORDER_OPACITY_RANGE.0, BORDER_OPACITY_RANGE.1) as i32,
-            )
-            .suffix(" %")
-            .enabled(theme.show_border),
-            Field::color(
-                field::MARQUEE_COLOR,
-                "Selection box color",
-                theme.marquee_color.with_alpha(255),
-            )
-            .enabled(!theme.use_accent),
-            Field::toggle(
-                field::MARQUEE_BORDER,
-                "Show selection box border",
-                theme.show_marquee_border,
-            ),
-            Field::button(field::RESET, "", reset),
-            Field::note(
-                field::COMPATIBILITY_NOTE,
-                "Clear glass at 0% tint and 0% title shading, without a border, \
-                 shows only the icons and labels. Acrylic and blur use Windows 11's \
-                 own corners, up to 8 px; larger radii apply to clear glass and \
-                 solid. Desktop-hosted spaces are drawn opaque.",
-            ),
-        ],
+        fields: colors_fields,
     };
 
     let advanced_page = SettingsPage {
@@ -273,6 +292,16 @@ pub(super) fn look_pages(
         colors_page,
         advanced_page,
     ]
+}
+
+/// Whether `entry` is the look `theme` and `grid` show now. `ui_mode` is
+/// ignored because a theme never changes DeskSpace's chrome.
+fn is_current_look(entry: &ThemeFile, theme: &Theme, grid: &GridSpec) -> bool {
+    let mut current = theme.clone();
+    current.ui_mode = ThemeMode::System;
+    let mut candidate = entry.look.theme.clone();
+    candidate.ui_mode = ThemeMode::System;
+    current == candidate && entry.look.gap == grid.gap && entry.look.padding == grid.padding
 }
 
 pub(super) fn general_page(config: &Config) -> SettingsPage {
