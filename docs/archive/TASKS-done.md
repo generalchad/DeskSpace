@@ -5896,3 +5896,14 @@ until I5-I6 all land, so no partial build hides the desktop.
     `show*` functions, `paint`, `with_state`, and the window procedure.
   - Done when: `mod.rs` is under about 800 lines of non-test code and the
     K rules above hold.
+
+- [x] **P40. Log why a hotkey could not be registered (fix).** In
+  `Hotkeys::register_all` (`app/hotkeys.rs`), `tracing::warn!(message, "hotkey
+  unavailable")` names its field `message`. That is the name `tracing` gives the
+  event's own text, so the two collide and the reason can be lost from the log.
+  SonarCloud reports it as rule `rust:S6677`.
+  - Name the field `reason` instead: `tracing::warn!(reason = %message, "hotkey
+    unavailable")`. `register` returns its reason as a `String`, so `%` shows it as
+    text.
+  - Done when: the gates pass. Under `-v`, a binding another app already holds
+    logs the reason beside "hotkey unavailable".
