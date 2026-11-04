@@ -14,7 +14,7 @@ its section.
 **Pick a task:** these are ready for any contributor, now that human checks
 are collected in section V instead of blocking:
 - section P's "Juniors and interns" list, the best place for a first task;
-- section K (K8-K16), each a pure move with rules that leave nothing to
+- section K (K9-K16), each a pure move with rules that leave nothing to
   design;
 - O4, which needs no code;
 - section S (S9-S12), without waiting for their checks;
@@ -104,7 +104,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Controller window (tray, hotkeys, timers, `WM_APP` dispatch) | `deskspace-platform/src/win32/controller.rs` |
 | `WM_APP` message ids | `deskspace-platform/src/win32/messages.rs` |
 | Keys (spaces are never focused) | `deskspace-platform/src/win32/keyboard.rs` (`fn watched_key`) |
-| Space window procedure, DWM, shadow window | `deskspace-platform/src/win32/{space_window,dwm,shadow_window}.rs`, `render/shadow.rs` |
+| Space window procedure, DWM, shadow window | `deskspace-platform/src/win32/space_window/` (`mod.rs`, `zorder.rs`, `mouse.rs`, `frame.rs`), `dwm.rs`, `shadow_window.rs`, `render/shadow.rs` |
 | An animation effect | `deskspace-core/src/animation.rs` (the tables), `deskspace-platform/src/render/transition.rs` (frame math), `render/d2d/` (drawing), `win32/space_animation.rs` (playing it on a window), `win32/overlay.rs` (windows beside the space); the recipe is section T |
 | Drawing | `deskspace-platform/src/render/scene.rs`, `render/d2d/` (`mod.rs` the `Painter`, `effects.rs` an animation's resources, `prepared.rs` the `PreparedScene`, `drag_image.rs` the drag image) |
 | The zoom pop-up window and its layout | `deskspace-platform/src/win32/zoom_bar.rs`, `render/zoom_bar.rs`, `render/d2d/zoom_bar.rs` |
@@ -615,9 +615,8 @@ Work that collides when run in parallel:
     `build_header` creates the title it draws.
   - R14 (table-driven settings fields) would rewrite the pages W10, W20,
     W23, W35, and W38 build. Do not start R14 while those are open.
-  - Section K: `win32/space_window.rs` is already over the 800-line
-    guideline. Put new hit tests and paint code in `app/pointer.rs` and
-    `render/d2d/`, not there.
+  - Section K: `win32/space_window/` is split (K8); put new hit tests and
+    paint code in `app/pointer.rs` and `render/d2d/`, not in its `mod.rs`.
   - T (animations): the title icon (W9), status bar (W19), headers (W18,
     W37), and Back button (W43) paint through the normal paint path, so
     animations snapshot them for free. Each task's check includes one
@@ -1572,22 +1571,6 @@ Rules for every K task:
   `git diff --stat` shows mostly moved lines; and the file map above names
   the new files.
 
-- [ ] **K8. Split `win32/space_window.rs`.** About 1,200 lines of non-test
-  code (measured 2026-10-27), past the guideline since T12. Turn it into
-  `win32/space_window/mod.rs` plus:
-  - `zorder.rs`: the z-order pinning (`set_on_top`,
-    `on_window_pos_changing`, `insert_after`, `window_above`) with their
-    tests.
-  - `mouse.rs`: the mouse handlers (`on_mouse_move`, `on_mouse_leave`,
-    `on_mouse_wheel`, `on_button_down`, `on_button_up`) and their helpers
-    (`to_desktop`, `Modifiers`, `modifiers`, `button_for`, the `MK_*`
-    constants).
-  - `frame.rs`: `Frame` and `update_region`, with their tests.
-  - `mod.rs` keeps `SpaceState`, `Backing`, creation, the `set_*` and
-    `show*` functions, `paint`, `with_state`, and the window procedure.
-  - Done when: `mod.rs` is under about 800 lines of non-test code and the
-    K rules above hold.
-
 - [ ] **K9. Split `win32/icons.rs`.** 793 lines of non-test code (measured
   2026-11-02), and the next change would pass the guideline, so it goes before P24.
   Turn it into `win32/icons/mod.rs` plus:
@@ -2062,7 +2045,7 @@ the ROADMAP decision ids (`D1`-`D9`).
   field's label belongs in its row.
 - **R19. A space window handle instead of `unsafe fn` contracts.** About
   twenty functions in `win32/space_animation.rs` and
-  `win32/space_window.rs` are `unsafe fn` only for "`window` is a live
+  `win32/space_window/` are `unsafe fn` only for "`window` is a live
   space window of this thread, and no state borrow is held", each call
   repeating `// SAFETY: the caller's contract.` Design a handle that only
   the runtime makes for a live space window, whose methods are safe.
@@ -2070,7 +2053,7 @@ the ROADMAP decision ids (`D1`-`D9`).
   the handle), how the desktop layer and a dying window fit, what
   `WM_NCDESTROY` invalidates, and how the handle stays on its thread.
   Then split it into one-commit tasks by module here. It touches
-  `window_state.rs` and every window module, so plan it with K8.
+  `window_state.rs` and every window module, so plan it after K8.
 
 ## O. On-screen checks a script can do
 

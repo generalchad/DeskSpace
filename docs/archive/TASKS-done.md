@@ -5880,3 +5880,19 @@ until I5-I6 all land, so no partial build hides the desktop.
       path), and a "Themes" `Choice` listing `themes_dir()`. **[needs human]**
       check: save a customized space's look, load it on Global and on another
       space, Cancel undoes the load.
+
+- [x] **K8. Split `win32/space_window.rs`.** About 1,200 lines of non-test
+  code (measured 2026-10-27), past the guideline since T12. Turn it into
+  `win32/space_window/mod.rs` plus:
+  - `zorder.rs`: the z-order pinning (`set_on_top`,
+    `on_window_pos_changing`, `insert_after`, `window_above`) with their
+    tests.
+  - `mouse.rs`: the mouse handlers (`on_mouse_move`, `on_mouse_leave`,
+    `on_mouse_wheel`, `on_button_down`, `on_button_up`) and their helpers
+    (`to_desktop`, `Modifiers`, `modifiers`, `button_for`, the `MK_*`
+    constants).
+  - `frame.rs`: `Frame` and `update_region`, with their tests.
+  - `mod.rs` keeps `SpaceState`, `Backing`, creation, the `set_*` and
+    `show*` functions, `paint`, `with_state`, and the window procedure.
+  - Done when: `mod.rs` is under about 800 lines of non-test code and the
+    K rules above hold.

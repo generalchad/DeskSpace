@@ -647,7 +647,7 @@ one arm in `App::on_event`, whose match is exhaustive.
   resource (`app_icon`); each window owns its big and small sizes, and the
   debug window's copy carries its badge.
 
-### Space windows (`win32/space_window.rs`, `win32/dwm.rs`)
+### Space windows (`win32/space_window/`, `win32/dwm.rs`)
 
 - **The desktop layer** (`Ui::create_desktop_layer`,
   `set_desktop_layer_rect` / `_scene`, `destroy_desktop_layer`) reuses this
@@ -686,7 +686,8 @@ one arm in `App::on_event`, whose match is exhaustive.
 - Everything else about a space window lives where it happens: `dwm.rs` owns
   the material, corners, and border; `composition.rs` the visual tree and
   the startup choice; `space_animation.rs` and `frame_clock.rs` the frames;
-  `space_window.rs` the backing, resizing, and mouse modifiers; and
+  `space_window/mod.rs` the backing and resizing and `space_window/mouse.rs`
+  the mouse modifiers; and
   `shadow_window.rs` / `render/shadow.rs` the shadow. ROADMAP D12 and D15
   give the decisions.
 

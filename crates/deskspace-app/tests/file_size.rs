@@ -35,11 +35,6 @@ struct Allowed {
 /// one is written.
 const ALLOWED: &[Allowed] = &[
     Allowed {
-        path: "deskspace-platform/src/win32/space_window.rs",
-        why: "The space window's procedure, painting, z-order, and mouse handling.",
-        task: "K8",
-    },
-    Allowed {
         path: "deskspace-platform/src/win32/folder_watch.rs",
         why: "The watch worker, its port, and its listings share one thread.",
         task: "K10",

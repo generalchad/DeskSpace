@@ -12,25 +12,21 @@
 //! Window state lives behind a raw `*mut SpaceState` in `GWLP_USERDATA`
 //! (`window_state`) and is freed exactly once, in `WM_NCDESTROY`.
 
+mod frame;
+mod mouse;
+mod zorder;
+
 use deskspace_core::geometry::Rect;
-use deskspace_core::theme::Backdrop;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
-use windows::Win32::Graphics::Gdi::{
-    CreateRoundRectRgn, InvalidateRect, MapWindowPoints, SetWindowRgn, ValidateRect,
-};
+use windows::Win32::Graphics::Gdi::{InvalidateRect, MapWindowPoints, ValidateRect};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::System::SystemServices::{MK_CONTROL, MK_SHIFT};
 use windows::Win32::UI::Controls::WM_MOUSELEAVE;
-use windows::Win32::UI::Input::KeyboardAndMouse::{
-    ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
-};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, GW_HWNDPREV, GWL_EXSTYLE,
-    GetClientRect, GetParent, GetWindow, GetWindowLongW, GetWindowRect, HTCLIENT, HWND_BOTTOM,
-    HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST, IDC_ARROW, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE,
-    IDC_SIZEWE, IsWindowVisible, KillTimer, LWA_ALPHA, LoadCursorW, MA_NOACTIVATE, SC_MINIMIZE,
+    CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, GetParent, GetWindowRect, HTCLIENT,
+    HWND_BOTTOM, HWND_TOPMOST, IDC_ARROW, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE,
+    IsWindowVisible, KillTimer, LWA_ALPHA, LoadCursorW, MA_NOACTIVATE, SC_MINIMIZE,
     SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetCursor,
-    SetLayeredWindowAttributes, SetTimer, SetWindowPos, ShowWindow, WINDOW_EX_STYLE, WINDOWPOS,
+    SetLayeredWindowAttributes, SetTimer, SetWindowPos, ShowWindow, WINDOW_EX_STYLE,
     WM_CAPTURECHANGED, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
     WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEHWHEEL, WM_MOUSEMOVE,
     WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN,
@@ -42,19 +38,23 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{PCWSTR, w};
 
 use crate::error::PlatformError;
-use crate::input::{Event, MouseButton, SpaceEvent};
-use crate::render::shadow::ShadowLook;
-use crate::render::{
-    BorderStroke, DropInto, PaintFrame, Painter, PreparedScene, ShadowStyle, SpaceScene, SpaceStyle,
-};
+use crate::input::{Event, SpaceEvent};
+use crate::render::{DropInto, Painter, PreparedScene, SpaceScene, SpaceStyle};
 use crate::ui::CursorShape;
 use crate::win32::composition::SpaceVisuals;
-use crate::win32::dpi::{scale_for, window_dpi};
+use crate::win32::dpi::window_dpi;
 use crate::win32::shadow_window::{ShadowPlacement, ShadowWindow};
 use crate::win32::space_animation::{self, Animation};
 use crate::win32::system::{hiword, is_windows_11, loword};
 use crate::win32::window_class::{self, WindowClass};
 use crate::win32::{drop_target, dwm, messages, runtime, window_state};
+
+use frame::{Frame, shadow_alpha, update_region};
+use mouse::{
+    on_button_down, on_button_up, on_mouse_leave, on_mouse_move, on_mouse_wheel, to_desktop,
+};
+use zorder::on_window_pos_changing;
+pub(crate) use zorder::{set_on_top, sink, window_above};
 
 const CLASS_NAME: PCWSTR = w!("DeskSpaceSpace");
 
@@ -64,14 +64,6 @@ const CLASS_NAME: PCWSTR = w!("DeskSpaceSpace");
 const REPAINT_TIMER_ID: usize = 2;
 /// Long enough for DWM to have composed the shown window a few times.
 const REPAINT_DELAY_MS: u32 = 100;
-
-/// Mouse-button bits of the `wParam` key state on mouse messages. Defined here
-/// to avoid pulling in `Win32_System_SystemServices` for three constants.
-/// https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-lbuttonup
-const MK_LBUTTON: usize = 0x0001;
-const MK_RBUTTON: usize = 0x0002;
-const MK_MBUTTON: usize = 0x0010;
-const MK_ANY_BUTTON: usize = MK_LBUTTON | MK_RBUTTON | MK_MBUTTON;
 
 pub(crate) struct SpaceWindowOptions {
     pub id: u64,
@@ -315,47 +307,6 @@ pub(crate) unsafe fn show(hwnd: HWND) {
     }
 }
 
-/// Moves a top-level space between its two placements: above every window
-/// (`--on-top`), or at the bottom, where `on_window_pos_changing` pins it as
-/// at creation. A desktop-hosted space has only one placement.
-pub(crate) fn set_on_top(hwnd: HWND, on_top: bool) {
-    // SAFETY: `hwnd` is a live space window; the state borrow is short and
-    // ends before SetWindowPos, whose WM_WINDOWPOSCHANGING reads the state.
-    unsafe {
-        let hosted = with_state(hwnd, |state| {
-            state.on_top = on_top;
-            state.hosted
-        });
-        if hosted != Some(false) {
-            return;
-        }
-        let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
-        if on_top {
-            let _ = SetWindowPos(hwnd, Some(HWND_TOPMOST), 0, 0, 0, 0, flags);
-        } else {
-            let _ = SetWindowPos(hwnd, Some(HWND_NOTOPMOST), 0, 0, 0, 0, flags);
-            let _ = SetWindowPos(hwnd, Some(HWND_BOTTOM), 0, 0, 0, 0, flags);
-        }
-    }
-}
-
-/// Sends `hwnd` to the bottom of its siblings, where the desktop layer
-/// belongs: a top-level window lands where `on_window_pos_changing` pins it,
-/// and a desktop-hosted one below the hosted spaces. A window kept above the
-/// others (`--on-top`) stays there, since the bottom would drop its topmost
-/// style.
-pub(crate) fn sink(hwnd: HWND) {
-    // SAFETY: `hwnd` is a live space window; the state borrow is short and
-    // ends before SetWindowPos.
-    unsafe {
-        if with_state(hwnd, |state| state.on_top) != Some(false) {
-            return;
-        }
-        let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
-        let _ = SetWindowPos(hwnd, Some(HWND_BOTTOM), 0, 0, 0, 0, flags);
-    }
-}
-
 pub(crate) fn set_rect(hwnd: HWND, rect: Rect) {
     // SAFETY: `hwnd` is a live space window, outside any state borrow.
     if unsafe { space_animation::retarget(hwnd, rect) } || current_rect(hwnd) == Some(rect) {
@@ -565,12 +516,6 @@ pub(crate) fn shadow_of(hwnd: HWND) -> Option<HWND> {
     unsafe { with_state(hwnd, |state| state.shadow.as_ref().map(ShadowWindow::hwnd)) }.flatten()
 }
 
-/// A shadow's whole opacity, 0 to 255: its setting, in percent, times how
-/// strongly the frame casts it.
-fn shadow_alpha(opacity: u8, strength: f32) -> u8 {
-    (f32::from(opacity.min(100)) / 100.0 * strength.clamp(0.0, 1.0) * 255.0).round() as u8
-}
-
 /// Leaves `backing` of the window's DWM backing in place, stepping the rest
 /// aside (`Backing`). Changes only what differs, and nothing for a
 /// desktop-hosted window, which has none.
@@ -602,114 +547,6 @@ pub(crate) fn show_backing(hwnd: HWND, backing: Backing) {
     }
 }
 
-/// Who draws a space's corners, and how its window is clipped. The painter
-/// always draws the border (`dwm::BorderOwner::Painter`).
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct Frame {
-    /// Desktop-hosted windows get no per-pixel alpha; paint them opaque.
-    opaque: bool,
-    /// The radius the painter rounds the body to; 0 where DWM rounds the
-    /// window or the corners are square.
-    radius: i32,
-    /// The border's thickness at 96 DPI, 0 for none.
-    border_width: i32,
-    /// The radius DWM rounds the window to, at 96 DPI: 0 where it does not
-    /// round (its own square corners, or Windows 10, which has none). DWM
-    /// scales it with the window's DPI, so the border follows it there.
-    dwm_radius: i32,
-    /// Clip the window to a rounded region of this radius. Needed for opaque
-    /// desktop-hosted windows, whose pixels outside the rounded corners
-    /// would otherwise show. Regions are not anti-aliased, so the painter
-    /// still draws smooth corners inside them. Accent-blurred top-level
-    /// spaces use DWM's corners instead, because the blur material ignores
-    /// regions (`Theme::effective_corner_radius`); composition spaces clip
-    /// themselves in their visual tree (`dwm::Material::dwm_rounds`).
-    region_radius: Option<i32>,
-    /// The shadow the window draws itself (ROADMAP D15): the style's, unless
-    /// DWM casts the Windows 11 shadow with its corners, or the space has
-    /// no edge to cast from (Clear, chrome-less) or is desktop-hosted.
-    shadow: Option<ShadowStyle>,
-}
-
-impl Frame {
-    /// `material` is what draws the window's blur, `None` for a
-    /// desktop-hosted window, which has none.
-    fn for_style(style: SpaceStyle, material: Option<dwm::Material>, windows_11: bool) -> Self {
-        let hosted = material.is_none();
-        // A chrome-less window (the desktop layer) has no rounded corners or
-        // border; it fills its whole rectangle.
-        let radius = if style.chrome {
-            style.corner_radius.max(0)
-        } else {
-            0
-        };
-        let border_width = if style.chrome && style.border {
-            style.border_width.max(1)
-        } else {
-            0
-        };
-        let shadow = style
-            .shadow
-            .filter(|_| style.chrome && style.backdrop != Backdrop::Clear && !hosted);
-        if material.is_some_and(dwm::Material::dwm_rounds) && style.dwm_draws_frame() {
-            // `dwm_draws_frame` allows only radii DWM has (0, 4, 8).
-            let dwm_radius = if windows_11 { radius } else { 0 };
-            return Self {
-                opaque: false,
-                radius: 0,
-                border_width,
-                dwm_radius,
-                region_radius: None,
-                // DWM's rounded corners bring its own shadow.
-                shadow: shadow.filter(|_| dwm_radius == 0),
-            };
-        }
-        Self {
-            opaque: hosted,
-            radius,
-            border_width,
-            dwm_radius: 0,
-            region_radius: (radius > 0 && hosted).then_some(radius),
-            shadow,
-        }
-    }
-
-    /// What the painter draws, for a window at `dpi`.
-    fn paint(&self, dpi: u32) -> PaintFrame {
-        let scale = scale_for(dpi);
-        // Whole pixels keep the line crisp at any scale.
-        let width = (self.border_width as f32 * scale).round().max(1.0);
-        PaintFrame {
-            opaque: self.opaque,
-            radius: self.radius,
-            outline_radius: self.outline_radius(scale),
-            border: (self.border_width > 0).then_some(BorderStroke { width }),
-        }
-    }
-
-    /// The shadow the window casts at `dpi`, and its opacity in percent.
-    fn shadow(&self, dpi: u32) -> Option<(ShadowLook, u8)> {
-        let shadow = self.shadow?;
-        let scale = scale_for(dpi);
-        let look = ShadowLook {
-            reach: ((shadow.size as f32 * scale).round() as i32).max(1),
-            radius: self.outline_radius(scale),
-        };
-        Some((look, shadow.opacity))
-    }
-
-    /// The radius of the window's visible corners at `scale`: DWM's, which
-    /// it scales with the window's DPI, or the one the space rounds itself
-    /// to.
-    fn outline_radius(&self, scale: f32) -> f32 {
-        if self.dwm_radius > 0 {
-            self.dwm_radius as f32 * scale
-        } else {
-            self.radius as f32
-        }
-    }
-}
-
 fn ensure_class() -> Result<(), PlatformError> {
     // Without CS_DBLCLKS Windows never sends WM_LBUTTONDBLCLK, and a
     // double-click arrives as two WM_LBUTTONDOWNs.
@@ -734,35 +571,6 @@ unsafe fn fit_visuals(hwnd: HWND) {
     }
 }
 
-/// Applies the frame's rounded window region, or removes it.
-unsafe fn update_region(hwnd: HWND) {
-    // SAFETY: `hwnd` is a live space window; the borrow does not re-enter.
-    let Some(radius) = (unsafe { with_state(hwnd, |state| state.frame.region_radius) }) else {
-        return;
-    };
-    let mut client = Default::default();
-    // SAFETY: `hwnd` is live; the system owns the region after SetWindowRgn.
-    unsafe {
-        let Some(radius) = radius else {
-            let _ = SetWindowRgn(hwnd, None, true);
-            return;
-        };
-        if GetClientRect(hwnd, &mut client).is_err() {
-            return;
-        }
-        // CreateRoundRectRgn excludes the right and bottom edges, hence +1.
-        let region = CreateRoundRectRgn(
-            0,
-            0,
-            client.right + 1,
-            client.bottom + 1,
-            radius * 2,
-            radius * 2,
-        );
-        let _ = SetWindowRgn(hwnd, Some(region), true);
-    }
-}
-
 /// Runs `f` with a short-lived borrow of the window's state. `f` must not call
 /// anything that can re-enter `wndproc`.
 pub(super) unsafe fn with_state<R>(
@@ -772,53 +580,6 @@ pub(super) unsafe fn with_state<R>(
     // SAFETY: space windows always hold a `SpaceState`; the caller rules out
     // re-entry.
     unsafe { window_state::with_state(window, f) }
-}
-
-/// Converts a client point to the space's desktop coordinates: screen
-/// coordinates for top-level spaces, the host's client coordinates for hosted
-/// ones.
-unsafe fn to_desktop(window: HWND, lparam: LPARAM, hosted: bool) -> (i32, i32) {
-    let mut point = [POINT {
-        x: loword(lparam.0),
-        y: hiword(lparam.0),
-    }];
-    // SAFETY: `window` is live; `point` is a valid one-element buffer.
-    unsafe {
-        let target = if hosted { GetParent(window).ok() } else { None };
-        MapWindowPoints(Some(window), target, &mut point);
-    }
-    (point[0].x, point[0].y)
-}
-
-/// Ctrl and Shift as a mouse message reports them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Modifiers {
-    ctrl: bool,
-    shift: bool,
-}
-
-/// Reads the `MK_*` flags that every mouse message carries in the low word of
-/// wParam (for the wheel messages, GET_KEYSTATE_WPARAM).
-///
-/// `GetKeyState` cannot be used here: it reports the key state as of the last
-/// keyboard message this thread read, and a space is never activated, so its
-/// thread never sees Ctrl or Shift go down. That is why Ctrl+wheel did nothing
-/// over a space.
-/// https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-mousewheel
-fn modifiers(wparam: WPARAM) -> Modifiers {
-    let keys = (wparam.0 & 0xFFFF) as u32;
-    Modifiers {
-        ctrl: keys & MK_CONTROL.0 != 0,
-        shift: keys & MK_SHIFT.0 != 0,
-    }
-}
-
-fn button_for(message: u32) -> MouseButton {
-    match message {
-        WM_LBUTTONDOWN | WM_LBUTTONUP => MouseButton::Left,
-        WM_RBUTTONDOWN | WM_RBUTTONUP | WM_RBUTTONDBLCLK => MouseButton::Right,
-        _ => MouseButton::Middle,
-    }
 }
 
 unsafe fn paint(window: HWND) {
@@ -878,186 +639,6 @@ unsafe fn space_event(window: HWND, event: SpaceEvent) {
 unsafe fn is_hosted(window: HWND) -> bool {
     // SAFETY: the caller's contract.
     unsafe { with_state(window, |state| state.hosted) }.unwrap_or(false)
-}
-
-/// Keeps top-level spaces under every other window so they behave like part
-/// of the desktop, and above the desktop layer (`insert_after`).
-unsafe fn on_window_pos_changing(window: HWND, lparam: LPARAM) {
-    // SAFETY: for WM_WINDOWPOSCHANGING lParam is null or a live WINDOWPOS the
-    // system lets us edit; the state borrow is short.
-    unsafe {
-        let position = lparam.0 as *mut WINDOWPOS;
-        let pinned = with_state(window, |state| {
-            let shadow = state.shadow.as_ref().map(ShadowWindow::hwnd);
-            (!state.hosted && !state.on_top).then_some(shadow)
-        })
-        .flatten();
-        let Some(shadow) = pinned else {
-            return;
-        };
-        if position.is_null() || (*position).flags.contains(SWP_NOZORDER) {
-            return;
-        }
-        let layer = runtime::desktop_layer_window();
-        // The space's own shadow sits right under it, so the space is
-        // directly above the layer when only its shadow is between them.
-        let above_layer = layer.and_then(window_above).and_then(|above| {
-            if Some(above) == shadow {
-                window_above(above)
-            } else {
-                Some(above)
-            }
-        });
-        match insert_after(window, layer, above_layer) {
-            Some(after) => (*position).hwndInsertAfter = after,
-            None => (*position).flags |= SWP_NOZORDER,
-        }
-    }
-}
-
-/// Where a pinned top-level window goes when its z-order changes, as the
-/// `hwndInsertAfter` to use, or `None` to stay where it is. `above_layer` is
-/// the non-topmost window directly above the desktop `layer`, if any.
-///
-/// The layer and the spaces all live at the bottom, and the layer spans the
-/// whole desktop. When every one of them went to `HWND_BOTTOM`, the last to
-/// move ended up lowest, so an outside z-order change (Show desktop, a task
-/// switch) could leave a space under the layer: still visible through it,
-/// but its clicks and drops went to the layer, which refuses drops.
-/// Spaces therefore go directly above the layer, which alone takes the
-/// bottom.
-fn insert_after(window: HWND, layer: Option<HWND>, above_layer: Option<HWND>) -> Option<HWND> {
-    match layer {
-        None => Some(HWND_BOTTOM),
-        Some(layer) if layer == window => Some(HWND_BOTTOM),
-        Some(_) => match above_layer {
-            Some(above) if above == window => None,
-            Some(above) => Some(above),
-            // Only topmost windows are above the layer, so the top of the
-            // non-topmost band is the slot directly above it.
-            None => Some(HWND_TOP),
-        },
-    }
-}
-
-/// The window directly above `window` in the z-order, unless it is topmost.
-/// Then `HWND_TOP` names the same slot for a non-topmost window, without
-/// positioning it relative to a topmost one.
-/// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowpos#remarks
-pub(crate) fn window_above(window: HWND) -> Option<HWND> {
-    // SAFETY: plain z-order and style queries; neither sends a message.
-    unsafe {
-        let above = GetWindow(window, GW_HWNDPREV).ok()?;
-        let style = WINDOW_EX_STYLE(GetWindowLongW(above, GWL_EXSTYLE) as u32);
-        (!style.contains(WS_EX_TOPMOST)).then_some(above)
-    }
-}
-
-unsafe fn on_mouse_move(window: HWND, lparam: LPARAM) {
-    // SAFETY: `window` is a live space window; the state borrows are short.
-    unsafe {
-        let start_tracking = with_state(window, |state| {
-            !std::mem::replace(&mut state.tracking_leave, true)
-        });
-        if start_tracking == Some(true) {
-            // Ask for WM_MOUSELEAVE so hover highlights clear when the cursor
-            // leaves the space.
-            // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-trackmouseevent
-            let mut track = TRACKMOUSEEVENT {
-                cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
-                dwFlags: TME_LEAVE,
-                hwndTrack: window,
-                dwHoverTime: 0,
-            };
-            let _ = TrackMouseEvent(&mut track);
-        }
-        let (x, y) = to_desktop(window, lparam, is_hosted(window));
-        space_event(window, SpaceEvent::MouseMove { x, y });
-    }
-}
-
-unsafe fn on_mouse_leave(window: HWND) {
-    // SAFETY: `window` is a live space window; the state borrow is short.
-    unsafe {
-        with_state(window, |state| {
-            state.tracking_leave = false;
-            state.cursor = CursorShape::Arrow;
-        });
-        space_event(window, SpaceEvent::MouseLeave);
-    }
-}
-
-unsafe fn on_mouse_wheel(window: HWND, wparam: WPARAM, lparam: LPARAM, tilt: bool) {
-    // Unlike other mouse messages, the wheel position is in screen
-    // coordinates, and the delta is the signed high word of wParam
-    // (GET_WHEEL_DELTA_WPARAM). A tilt wheel's positive delta is to the right.
-    // https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-mousewheel
-    // https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-mousehwheel
-    let delta = hiword(wparam.0 as isize);
-    let mut point = [POINT {
-        x: loword(lparam.0),
-        y: hiword(lparam.0),
-    }];
-    let Modifiers { ctrl, shift } = modifiers(wparam);
-    // SAFETY: `window` is a live space window and `point` a valid one-element
-    // buffer.
-    unsafe {
-        if is_hosted(window) {
-            MapWindowPoints(None, GetParent(window).ok(), &mut point);
-        }
-        space_event(
-            window,
-            SpaceEvent::Wheel {
-                x: point[0].x,
-                y: point[0].y,
-                delta,
-                ctrl,
-                shift,
-                tilt,
-            },
-        );
-    }
-}
-
-unsafe fn on_button_down(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) {
-    let Modifiers { ctrl, shift } = modifiers(wparam);
-    // SAFETY: `window` is a live space window.
-    unsafe {
-        // Capture so the matching button-up arrives even if the cursor leaves
-        // the window mid-drag.
-        // https://learn.microsoft.com/en-us/windows/win32/inputdev/about-mouse-input#mouse-capture
-        SetCapture(window);
-        let (x, y) = to_desktop(window, lparam, is_hosted(window));
-        space_event(
-            window,
-            SpaceEvent::MouseDown {
-                x,
-                y,
-                button: button_for(message),
-                ctrl,
-                shift,
-            },
-        );
-    }
-}
-
-unsafe fn on_button_up(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) {
-    // SAFETY: `window` is a live space window. ReleaseCapture is not tied to
-    // the window, so it is sound even if the handler destroyed it.
-    unsafe {
-        let (x, y) = to_desktop(window, lparam, is_hosted(window));
-        space_event(
-            window,
-            SpaceEvent::MouseUp {
-                x,
-                y,
-                button: button_for(message),
-            },
-        );
-        if wparam.0 & MK_ANY_BUTTON == 0 {
-            let _ = ReleaseCapture();
-        }
-    }
 }
 
 unsafe extern "system" fn wndproc(
@@ -1212,14 +793,6 @@ pub(crate) fn drop_into(window: HWND) -> DropInto {
 mod tests {
     use super::*;
 
-    #[test]
-    fn the_desktop_layer_is_never_topmost() {
-        let style = style(deskspace_core::Backdrop::Blur, 8);
-        let layer =
-            SpaceWindowOptions::desktop_layer(Rect::new(-1920, 0, 3840, 1080), style, None, false);
-        assert!(!layer.on_top);
-    }
-
     fn style(backdrop: deskspace_core::Backdrop, corner_radius: i32) -> SpaceStyle {
         SpaceStyle {
             backdrop,
@@ -1228,196 +801,15 @@ mod tests {
             border: true,
             border_width: 1,
             chrome: true,
-            shadow: Some(SHADOW),
+            shadow: None,
         }
     }
 
-    /// The visible corners' radius and the border's width, if one is drawn.
-    fn edge(paint: &PaintFrame) -> (f32, Option<f32>) {
-        (
-            paint.outline_radius,
-            paint.border.map(|border| border.width),
-        )
-    }
-
-    const ACCENT: Option<dwm::Material> = Some(dwm::Material::Accent);
-    const COMPOSED: Option<dwm::Material> = Some(dwm::Material::Composition);
-    const SHADOW: ShadowStyle = ShadowStyle {
-        size: 16,
-        opacity: 35,
-    };
-
     #[test]
-    fn a_composition_space_casts_its_own_shadow_at_its_corners() {
-        let frame = Frame::for_style(style(deskspace_core::Backdrop::Acrylic, 8), COMPOSED, true);
-        let (look, opacity) = frame.shadow(144).expect("composition casts no DWM shadow");
-        assert_eq!(opacity, 35);
-        assert_eq!(look.reach, 24, "the reach scales with the DPI");
-        assert_eq!(look.radius, 8.0, "the radius the window clips itself to");
-    }
-
-    #[test]
-    fn where_dwm_rounds_the_corners_its_own_shadow_stands() {
-        let rounded = Frame::for_style(style(deskspace_core::Backdrop::Acrylic, 8), ACCENT, true);
-        assert_eq!(rounded.shadow(96), None);
-        // Square corners and Windows 10 bring no DWM shadow.
-        let square = Frame::for_style(style(deskspace_core::Backdrop::Solid, 0), ACCENT, true);
-        assert!(square.shadow(96).is_some());
-        let ten = Frame::for_style(style(deskspace_core::Backdrop::Acrylic, 8), ACCENT, false);
-        assert_eq!(ten.shadow(96).map(|(look, _)| look.radius), Some(0.0));
-        // A radius DWM cannot draw: the space rounds itself, and casts.
-        let painted = Frame::for_style(style(deskspace_core::Backdrop::Solid, 12), ACCENT, true);
-        assert_eq!(painted.shadow(96).map(|(look, _)| look.radius), Some(12.0));
-    }
-
-    #[test]
-    fn no_shadow_without_the_setting_an_edge_or_a_top_level_window() {
-        let off = SpaceStyle {
-            shadow: None,
-            ..style(deskspace_core::Backdrop::Acrylic, 8)
-        };
-        assert_eq!(Frame::for_style(off, COMPOSED, true).shadow(96), None);
-        let clear = style(deskspace_core::Backdrop::Clear, 8);
-        assert_eq!(Frame::for_style(clear, COMPOSED, true).shadow(96), None);
-        let layer = SpaceStyle {
-            chrome: false,
-            ..style(deskspace_core::Backdrop::Acrylic, 0)
-        };
-        assert_eq!(Frame::for_style(layer, COMPOSED, true).shadow(96), None);
-        let hosted = Frame::for_style(style(deskspace_core::Backdrop::Acrylic, 8), None, true);
-        assert_eq!(hosted.shadow(96), None);
-    }
-
-    #[test]
-    fn a_shadow_fades_with_its_setting_and_its_frame() {
-        assert_eq!(shadow_alpha(100, 1.0), 255);
-        assert_eq!(shadow_alpha(35, 1.0), 89);
-        assert_eq!(shadow_alpha(100, 0.5), 128);
-        assert_eq!(shadow_alpha(35, 0.0), 0);
-        assert_eq!(shadow_alpha(250, 2.0), 255, "both clamped");
-    }
-
-    #[test]
-    fn a_composition_space_rounds_itself_where_dwm_would_have() {
-        let composed = Some(dwm::Material::Composition);
-        let frame = Frame::for_style(style(deskspace_core::Backdrop::Acrylic, 8), composed, true);
-        let paint = frame.paint(144);
-        assert!(!paint.opaque);
-        assert_eq!((paint.radius, edge(&paint)), (8, (8.0, Some(2.0))));
-        assert_eq!(frame.region_radius, None);
-    }
-
-    #[test]
-    fn the_border_thickness_scales_to_whole_pixels() {
-        let thick = SpaceStyle {
-            border_width: 3,
-            ..style(deskspace_core::Backdrop::Clear, 0)
-        };
-        let frame = Frame::for_style(thick, ACCENT, true);
-        assert_eq!(frame.paint(96).border.unwrap().width, 3.0);
-        assert_eq!(frame.paint(120).border.unwrap().width, 4.0);
-        assert_eq!(frame.paint(144).border.unwrap().width, 5.0);
-    }
-
-    #[test]
-    fn where_dwm_rounds_the_border_follows_its_corners_at_the_windows_dpi() {
-        let frame = Frame::for_style(style(deskspace_core::Backdrop::Acrylic, 8), ACCENT, true);
-        assert_eq!(frame.paint(96).radius, 0);
-        assert_eq!(edge(&frame.paint(96)), (8.0, Some(1.0)));
-        assert_eq!(edge(&frame.paint(144)), (12.0, Some(2.0)));
-        let small = Frame::for_style(style(deskspace_core::Backdrop::Blur, 4), ACCENT, true);
-        assert_eq!(edge(&small.paint(120)), (5.0, Some(1.0)));
-    }
-
-    #[test]
-    fn windows_10_squares_the_painted_border_as_it_squares_the_window() {
-        let frame = Frame::for_style(style(deskspace_core::Backdrop::Acrylic, 8), ACCENT, false);
-        assert_eq!(edge(&frame.paint(144)), (0.0, Some(2.0)));
-    }
-
-    #[test]
-    fn a_painter_rounded_space_borders_at_its_own_radius() {
-        let clear = Frame::for_style(style(deskspace_core::Backdrop::Clear, 12), ACCENT, true);
-        let paint = clear.paint(144);
-        assert_eq!((paint.radius, edge(&paint)), (12, (12.0, Some(2.0))));
-        let hosted = Frame::for_style(style(deskspace_core::Backdrop::Acrylic, 8), None, true);
-        let paint = hosted.paint(96);
-        assert!(paint.opaque);
-        assert_eq!((paint.radius, edge(&paint)), (8, (8.0, Some(1.0))));
-        assert_eq!(hosted.region_radius, Some(8));
-    }
-
-    #[test]
-    fn no_border_without_the_setting_or_chrome() {
-        let off = SpaceStyle {
-            border: false,
-            ..style(deskspace_core::Backdrop::Acrylic, 8)
-        };
-        assert_eq!(
-            edge(&Frame::for_style(off, ACCENT, true).paint(96)),
-            (8.0, None),
-            "the highlight still follows DWM's corners"
-        );
-        let layer = SpaceStyle {
-            chrome: false,
-            ..style(deskspace_core::Backdrop::Clear, 0)
-        };
-        assert_eq!(Frame::for_style(layer, ACCENT, true).paint(96).border, None);
-    }
-
-    #[test]
-    fn modifiers_come_from_the_mouse_message() {
-        let wheel_with_ctrl = WPARAM((120usize << 16) | MK_CONTROL.0 as usize);
-        assert_eq!(
-            modifiers(wheel_with_ctrl),
-            Modifiers {
-                ctrl: true,
-                shift: false
-            }
-        );
-        let click_with_both = WPARAM((MK_CONTROL.0 | MK_SHIFT.0) as usize);
-        assert_eq!(
-            modifiers(click_with_both),
-            Modifiers {
-                ctrl: true,
-                shift: true
-            }
-        );
-        let wheel_down_alone = WPARAM((-120i16 as u16 as usize) << 16);
-        assert_eq!(
-            modifiers(wheel_down_alone),
-            Modifiers {
-                ctrl: false,
-                shift: false
-            }
-        );
-    }
-
-    fn window(id: usize) -> HWND {
-        HWND(id as *mut core::ffi::c_void)
-    }
-
-    #[test]
-    fn without_a_layer_a_space_goes_to_the_bottom() {
-        assert_eq!(insert_after(window(1), None, None), Some(HWND_BOTTOM));
-    }
-
-    #[test]
-    fn the_layer_itself_goes_to_the_bottom() {
-        let layer = window(9);
-        assert_eq!(
-            insert_after(layer, Some(layer), Some(window(1))),
-            Some(HWND_BOTTOM)
-        );
-    }
-
-    #[test]
-    fn a_space_goes_directly_above_the_layer() {
-        let (space, other, layer) = (window(1), window(2), window(9));
-        assert_eq!(insert_after(space, Some(layer), Some(other)), Some(other));
-        // Already directly above the layer: it stays put.
-        assert_eq!(insert_after(space, Some(layer), Some(space)), None);
-        // Nothing but topmost windows above the layer.
-        assert_eq!(insert_after(space, Some(layer), None), Some(HWND_TOP));
+    fn the_desktop_layer_is_never_topmost() {
+        let style = style(deskspace_core::Backdrop::Blur, 8);
+        let layer =
+            SpaceWindowOptions::desktop_layer(Rect::new(-1920, 0, 3840, 1080), style, None, false);
+        assert!(!layer.on_top);
     }
 }
