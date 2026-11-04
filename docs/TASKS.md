@@ -1724,8 +1724,9 @@ Rules for every Q task:
 
 ## P. Pay down what we found while working
 
-The **Found while working** list, triaged on 2026-11-02 against the code, and
-P28-P39 from the code review of 2026-11-04. "How to work a task" applies. Each
+The **Found while working** list, triaged on 2026-11-02 against the code,
+P28-P39 from the code review of 2026-11-04, and P40-P45 from SonarCloud's
+analysis of the same day. "How to work a task" applies. Each
 task says whether it changes behavior; a bug fix that does gets a section V
 row (rule 8).
 
@@ -1958,6 +1959,80 @@ Small first. Each lands alone unless it says "After".
     loading at all, and the "newer" backup still holds the original.
   - Done when: both guard tests pass, and `CONTEXT.md` section 5 says what an
     unknown word does, beside `ThemeFile`'s rules.
+
+- [ ] **P40. Log why a hotkey could not be registered (fix).** In
+  `Hotkeys::register_all` (`app/hotkeys.rs`), `tracing::warn!(message, "hotkey
+  unavailable")` names its field `message`. That is the name `tracing` gives the
+  event's own text, so the two collide and the reason can be lost from the log.
+  SonarCloud reports it as rule `rust:S6677`.
+  - Name the field `reason` instead: `tracing::warn!(reason = %message, "hotkey
+    unavailable")`. `register` returns its reason as a `String`, so `%` shows it as
+    text.
+  - Done when: the gates pass. Under `-v`, a binding another app already holds
+    logs the reason beside "hotkey unavailable".
+
+- [ ] **P41. Rename script variables that shadow PowerShell's own (scripts).**
+  PowerShell sets `$switch` inside a `switch` statement and keeps its error list in
+  `$Error`; names are not case sensitive. `scripts/dev.ps1` assigns `$switch` in its
+  argument loop, and `Get-ScreenPixels` in `scripts/onscreen/OnScreen.psm1` assigns
+  `$error` after `GetDIBits`. Neither breaks
+  today, but the next edit nearby could. SonarCloud reports both (`S8626`).
+  - Rename `$switch` to `$scriptSwitch`, and `$error` to `$win32Error`, everywhere
+    each is used. Change nothing else.
+  - Test `dev.ps1`'s argument handling on a copy with its build, launch, and
+    `Remove-Item` steps stubbed, as `TOOLS.md` section 2 says. Never run the real
+    script with `-Fresh`.
+  - Done when: the stubbed copy maps `--ontop` and `--on-top` to `-OnTop` as before,
+    and `OnScreen.psm1` still imports (`Import-Module` it in a fresh `pwsh`).
+
+- [ ] **P42. Pin CI's third-party actions to commit SHAs (ci).** `ci.yml` uses
+  `Swatinem/rust-cache@v2` twice and `EmbarkStudios/cargo-deny-action@v2` once. A tag
+  can be moved to other code at any time, so a hijacked tag would run in CI.
+  SonarCloud reports all three (`githubactions:S7637`).
+  - For each, find the full commit SHA of the newest release on that major version
+    (`gh api repos/<owner>/<repo>/releases/latest`, then the tag's commit), and write
+    `uses: <owner>/<repo>@<sha> # v2.x.y`. The comment says which version the SHA is.
+  - Leave `actions/checkout` as it is; GitHub owns it, and SonarCloud does not flag
+    it.
+  - Run `actionlint` (`TOOLS.md` section 1). Done when it passes and CI is green on
+    the commit.
+
+- [ ] **P43. Let clippy keep closures that only call a method out (lint).**
+  `.and_then(|name| name.to_str())` says what `.and_then(OsStr::to_str)` says, with
+  more to read. SonarCloud reports 21 of these (`rust:S1612`), and clippy's
+  `redundant_closure_for_method_calls` found 36 (2026-11-04); the two lists overlap
+  only in part. A lint keeps them out for good, as `ENGINEERING.md` section 2 rule 4
+  wants.
+  - Add `redundant_closure_for_method_calls = "warn"` to `[workspace.lints.clippy]`
+    in the root `Cargo.toml`, with a one-line comment. Every crate inherits it, and
+    CI's `-D warnings` makes it fail.
+  - Fix what clippy reports. `cargo clippy --fix --workspace --all-targets
+    --allow-dirty` applies most of them; read the diff before you commit.
+  - Then open the SonarCloud list (project `generalchad_DeskSpace`, rule
+    `rust:S1612`). Fix each hit that clippy did not, if the method reference
+    compiles. List any that do not compile in the commit body, so the maintainer can
+    mark them in SonarCloud.
+  - Done when: the gates pass, and nothing but closures changed.
+
+- [ ] **P44. Turn the press targets in `begin_interaction` into a table
+  (refactor).** `App::begin_interaction` (`app/pointer.rs`) first asks five chrome
+  targets in turn whether a press is theirs: `back_button_clicked`,
+  `status_button_clicked`, `begin_column_resize`, `begin_header_press`, and
+  `group_header_clicked`. Each check is its own `if let Surface::Space(id) = surface`
+  with the same shape. A new target is a sixth copy, and SonarCloud rates the
+  function's cognitive complexity 37, over its limit of 30 (`rust:S3776`).
+  - All five take `(&mut self, &mut Ui, SpaceId, Point) -> bool`. Put them, in today's
+    order, in a `const SPACE_PRESS_TARGETS: [fn(&mut App, &mut Ui, SpaceId, Point) ->
+    bool; 5]` in `pointer.rs`. Each row keeps its comment. The order matters, since a
+    divider is checked before the header, and the table's doc says so.
+  - `begin_interaction` asks them in one place: `if let Surface::Space(id) = surface
+    && SPACE_PRESS_TARGETS.iter().any(|claim| claim(self, ui, id, point))`.
+  - Move the check-box branch, unchanged, into a method that returns whether it took
+    the press, called next.
+  - Collides with: P15f, which may add a press target. Then it is one more row.
+  - Done when: the gates pass with the same test count, and the function is clearly
+    under 30 on SonarCloud's next analysis. It changes no behavior, so it needs no
+    section V row.
 
 ### Seniors only
 
@@ -2226,6 +2301,24 @@ These are in the order we would take them. Each lands alone.
   - Tests need a real window: create a message-only one (`HWND_MESSAGE`) in the test,
     or stop and ask. A nested `with_state` on one window returns `None` and leaves
     the outer borrow working. Nested borrows of two different windows both work.
+
+- [ ] **P45. Split the color picker's window procedure (refactor; unsafe).**
+  `wndproc` in `win32/color_picker/mod.rs` (198 lines) handles its 17 messages inline
+  in one `unsafe` block. SonarCloud rates it the most complex function in the code
+  (cognitive complexity 46; `rust:S3776`).
+  - A pure move: each arm's body becomes a function named for its message
+    (`on_mouse_move`, `on_key_down`, and so on), and `wndproc` keeps the `match`
+    with one call per arm. Copy how `space_window/mod.rs` hands mouse messages to
+    `space_window/mouse.rs`. If the handlers pass about 300 lines, put them in a new
+    `color_picker/input.rs`.
+  - The picker's state is borrowed, not owned (`window_state.rs`): every handler
+    keeps its `with_state` borrows exactly as short as they are now, and
+    `WM_NCDESTROY` still only detaches. Every moved `unsafe` block keeps its
+    `// SAFETY:` comment, reworded only where its context changed.
+  - Done when: the gates pass with the same test count, and `wndproc` is under about
+    60 lines. **[needs human]** check: open the picker from Colors, drag in the
+    field, type a hex value, use the arrows and Esc, and sample from the screen with
+    a right-click. All behave as before.
 
 ## D. Reserved (strong model or maintainer; do not start)
 
