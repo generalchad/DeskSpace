@@ -212,6 +212,12 @@ help inspect the look and the desktop layer.
 - The tray icon opens Settings on left-click (or keyboard select) and offers
   Undo, Redo, Settings, hide/show spaces, new space, new lens, check for
   updates, and exit on right-click.
+- Settings > Colors saves a space's whole look to a theme file and loads one
+  with "Save theme…" and "Load theme…". A theme carries the colors, border,
+  shadow, icon size and spacing, and labels; the Themes list shows the
+  `.deskspace-theme.toml` files in the `themes` folder beside your settings
+  file (reopen Settings to see a theme you just saved). A load is a preview,
+  so Cancel puts the old look back.
 - Press `Ctrl+Alt+D` to hide or show the spaces. The Hotkeys settings page
   changes it and can also bind keys for a new space and for Settings. While
   spaces are hidden, the desktop's right-click menu (under "Show more options"

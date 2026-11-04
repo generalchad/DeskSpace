@@ -18,6 +18,11 @@ pub enum ConfigError {
         size: u64,
         limit: u64,
     },
+    #[error("theme file {path} is not usable: {reason}")]
+    Theme {
+        path: std::path::PathBuf,
+        reason: String,
+    },
     #[error("failed to parse configuration: {0}")]
     Parse(#[from] toml::de::Error),
     #[error("icon set at {path} is not usable: {reason}")]

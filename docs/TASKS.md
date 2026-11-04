@@ -16,8 +16,8 @@ are collected in section V instead of blocking:
 - section P's "Juniors and interns" list, the best place for a first task;
 - section K (K8-K16), each a pure move with rules that leave nothing to
   design;
-- section N's tasks marked **(junior)**, and O4, which needs no code;
-- section S (S9-S12) and C10, without waiting for their checks;
+- O4, which needs no code;
+- section S (S9-S12), without waiting for their checks;
 - anything else not marked **[needs decision]**, "still to design", or in
   section D.
 
@@ -285,45 +285,6 @@ drop side is `win32/drop_target.rs` (`DragKind`, `drag_kind`, `DropPlan`,
     per-space looks. Keep `Preset` forward-compatible (`#[serde(default)]`).
     It grows with the remaining Explorer item settings (hidden/protected
     files once F-22 exists).
-
-- [ ] **C10. Theme files: save, load, and share a look (F-58).**
-  Distinct from C6: C6 is built-in named *item* presets; C10 is a file
-  holding a whole look, so people can share themes without forking.
-  - Design (recommended by review, 2026-10-16; approved by the
-    maintainer, 2026-10-29):
-    - A theme file is a `SpaceLook` (the whole `Theme` plus grid spacing and
-      padding), because `SpaceLook` is already the unit of "a look": it
-      round-trips through serde, defaults missing fields, and clamps on load.
-      `ui_mode` is ignored on apply, as it is for a space. `preset` (Match
-      Explorer / Custom) travels with a theme, since it decides icon size
-      and spacing, which are part of how a theme looks.
-    - Format: TOML, extension `.deskspace-theme.toml`, with `format = 1`,
-      `name`, an optional `author`, and a `[look]` table. A file with a newer
-      `format` loads with a warning, unknown keys ignored, as `Config` does.
-    - Location: a `themes` folder beside the config file (so a scratch
-      `--config` has its own), listed in Settings; "Save theme…" and "Load
-      theme…" also take any path through the standard file dialogs.
-    - Applying: in the Global scope it writes `config.theme` and the grid's
-      `gap` / `padding`; in a space's scope it is a `SetSpaceLook { custom:
-      true }`. Either way it is a previewed edit that Cancel undoes, like any
-      other settings change.
-  - Three commits:
-    - [x] **C10a (config, pure):** `deskspace-config/src/theme_file.rs` with
-      `ThemeFile { format, name, author, look: SpaceLook }`, `load(path)` and
-      `save(path)` returning `ConfigError`, and `themes_dir()` on
-      `ConfigStore`. Tests: round trip, missing fields default, out-of-range
-      values clamp, unknown keys ignored, a newer `format` loads. Landed in
-      `feat: add the theme-file format (C10a)`.
-    - [x] **C10b (platform):** `Ui::pick_save_path(filter, default_name)` over
-      `IFileSaveDialog`, beside `Ui::pick_files`, and a filter argument on
-      the open side if it has none. Landed in
-      `feat: expose the save dialog and filtered open dialog (C10b)`.
-    - **C10c (app):** two buttons on the Colors page ("Save theme…", "Load
-      theme…"): two `ButtonAction` variants and their arms in
-      `App::on_settings_button` (the "new global setting" recipe's button
-      path), and a "Themes" `Choice` listing `themes_dir()`. **[needs human]**
-      check: save a customized space's look, load it on Global and on another
-      space, Cancel undoes the load.
 
 ## N. Packs and automation (extensions)
 
@@ -2350,6 +2311,7 @@ for a machine that has it.
 | P22 | Open "From installed apps…" from a space's Shortcuts page and from the custom shortcut dialog: it lists apps with icons. Close it, wait for the background refresh (with `--debug`, "cached the installed apps"), and open it again: the apps and icons still show, with no failure or stall. Do it twice in a row. |
 | P21 | In a debug build with `--debug` open, preview Bounce repeatedly on a space: the animation stays smooth (no hitch once a second), and the debug panel updates again once it stops. |
 | P10 | U5's and U7's rows still pass: undo and redo of deletes, pastes, moves, and renames behave as before. The rollback itself is test-carried, because the gap between the check and the failing step is too short to hit by hand. |
+| C10c (F-58) | With a scratch config, customize a space's look, then Colors > "Save theme…" and name the file (with or without the suffix). Load it on Global and on another space, once through "Load theme…" and once from the Themes list after closing and reopening Settings: the look, icon spacing, and padding change, and the Dark/Light setting does not. A load on a space that follows Global turns its "Customize this space" switch on. Cancel puts the old look back; Apply keeps it over a restart. With no theme files the Themes list is disabled and says so; a broken or oversized file is reported and changes nothing; saving over an existing theme asks before replacing it. |
 
 ## Found while working
 

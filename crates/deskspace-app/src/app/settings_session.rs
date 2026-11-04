@@ -2,9 +2,9 @@
 
 use std::path::PathBuf;
 
-use deskspace_config::IconDownloads;
+use deskspace_config::{IconDownloads, ThemeFile};
 use deskspace_core::geometry::{Point, Rect};
-use deskspace_core::{Command, ItemKind, SpaceId};
+use deskspace_core::{Command, ItemKind, SpaceId, SpaceLook};
 use deskspace_platform::{
     FieldValue, IconUser, PreviewItem, SettingsEvent, SpacePreview, Ui, windows_build,
 };
@@ -30,6 +30,9 @@ const PREVIEW_ICON_SIZE: i32 = 64;
 /// rest draw their kind's generic icon: the page is a picture, not a
 /// scrollable file list, and a 50,000-item lens must not queue 50,000 loads.
 const PREVIEW_ICON_LIMIT: usize = 60;
+
+/// The settings window's file filter for a theme file.
+const THEME_FILTER: &[(&str, &str)] = &[("DeskSpace theme", "*.deskspace-theme.toml")];
 
 /// The open settings window's state: its session, the preview it still owes
 /// the spaces, and the space it highlights.
@@ -149,10 +152,11 @@ impl App {
     /// one is given (a space's "Space settings…"); otherwise where it was.
     pub(super) fn open_settings_with(&mut self, ui: &mut Ui, scope: Option<SpaceId>) {
         let config = &self.config;
-        let session = self
-            .settings_ui
-            .session
-            .get_or_insert_with(|| Session::new(config));
+        let session = self.settings_ui.session.get_or_insert_with(|| {
+            let mut session = Session::new(config);
+            session.themes = ThemeFile::list(&self.store.themes_dir());
+            session
+        });
         if scope.is_some() {
             let kind = ScopeKind::of(scope.and_then(|id| config.desktop.space(id)));
             session.select_scope(scope, kind);
@@ -239,6 +243,8 @@ impl App {
                     self.schedule_preview(ui, Preview::restyle_all());
                 } else if effect == FieldEffect::Layout {
                     self.schedule_preview(ui, Preview::relayout_all());
+                } else if effect == FieldEffect::Look {
+                    self.schedule_preview(ui, Preview::look_all());
                 }
                 self.refresh_settings(ui);
             }
@@ -315,6 +321,8 @@ impl App {
                 self.restyle_all(ui);
                 self.refresh_settings(ui);
             }
+            (ButtonAction::SaveTheme, _) => self.save_theme(ui),
+            (ButtonAction::LoadTheme, _) => self.load_theme(ui),
             (ButtonAction::FitToContents, Some(id)) => {
                 let at = self.space_center(id);
                 if self.commit(ui, self.fit_command(id), at).is_applied() {
@@ -399,12 +407,96 @@ impl App {
                 }
                 match effect {
                     FieldEffect::Layout => self.schedule_preview(ui, Preview::relayout(id)),
+                    FieldEffect::Look => self.schedule_preview(ui, Preview::look(id)),
                     FieldEffect::Lens => self.sync_watches(ui),
                     _ => self.schedule_preview(ui, Preview::restyle(id)),
                 }
             }
         }
         self.refresh_settings(ui);
+    }
+
+    /// Writes the selected scope's look to a theme file. The theme's name is
+    /// the file's, and the folder defaults to the one Windows offers.
+    fn save_theme(&mut self, ui: &mut Ui) {
+        let Some(chosen) =
+            ui.pick_save_path("Save theme", "theme.deskspace-theme.toml", THEME_FILTER)
+        else {
+            return;
+        };
+        let path = ThemeFile::with_suffix(&chosen);
+        if path != chosen
+            && path.exists()
+            && !ui.confirm(
+                "Replace theme",
+                &format!("{} already exists.\n\nReplace it?", path.display()),
+            )
+        {
+            return;
+        }
+        // The dialog and the confirmation pump messages, so read the scope
+        // again afterwards.
+        let Some(scope) = self
+            .settings_ui
+            .session
+            .as_ref()
+            .map(|session| session.scope)
+        else {
+            return;
+        };
+        let Some(look) = settings::look_to_save(&self.config, scope) else {
+            return;
+        };
+        let theme = ThemeFile {
+            name: ThemeFile::name_from_path(&path),
+            look,
+            ..ThemeFile::default()
+        };
+        match theme.save(&path) {
+            Ok(()) => tracing::info!(path = %path.display(), "saved a theme"),
+            Err(error) => ui.alert("DeskSpace could not save the theme", &error.to_string()),
+        }
+    }
+
+    /// Opens a theme file and previews its look on the selected scope.
+    fn load_theme(&mut self, ui: &mut Ui) {
+        let Some(path) = ui.pick_files("Load theme", THEME_FILTER).into_iter().next() else {
+            return;
+        };
+        match ThemeFile::load(&path) {
+            Ok(theme) => self.use_theme(ui, theme.look),
+            Err(error) => ui.alert("DeskSpace could not load the theme", &error.to_string()),
+        }
+    }
+
+    /// Previews `look` on the selected scope as any other settings edit, so
+    /// Cancel puts the previous look back.
+    fn use_theme(&mut self, ui: &mut Ui, look: SpaceLook) {
+        let Some(scope) = self
+            .settings_ui
+            .session
+            .as_ref()
+            .map(|session| session.scope)
+        else {
+            return;
+        };
+        match scope {
+            Some(_) => {
+                let command = match self.settings_ui.session.as_mut() {
+                    Some(session) => settings::apply_space_theme(&self.config, session, look),
+                    None => None,
+                };
+                self.apply_space_setting(ui, command);
+            }
+            None => {
+                if let Some(session) = self.settings_ui.session.as_mut() {
+                    settings::apply_global_theme(&mut self.config, session, &look);
+                }
+                self.restyle_all(ui);
+                self.relayout_all(ui);
+                self.refresh_settings(ui);
+            }
+        }
     }
 
     /// Dispatches a space command from the settings window (the Customize

@@ -20,6 +20,10 @@ Notable changes to DeskSpace, newest first. The format follows
   about you or your files is sent. The icon takes the title's color, so it
   follows a dark and light switch, and a space without one keeps its old
   title bar. Settings > About credits the icon sets.
+- Theme files: Settings > Colors saves a space's whole look to a
+  `.deskspace-theme.toml` file and loads one from any file or from the Themes
+  list, which reads the `themes` folder beside the settings file. A load is a
+  preview, so Cancel puts the old look back.
 - DeskSpace entries on the desktop's right-click menu: New space, DeskSpace
   Settings, and Show spaces while the spaces are hidden. Each opens the
   running app's window or adds the space there, without starting a second

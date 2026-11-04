@@ -5841,3 +5841,42 @@ until I5-I6 all land, so no partial build hides the desktop.
     both. `ConfigStore::save`'s tests must pass unchanged.
   - Tests in `theme_file.rs`: an oversized file is refused, a long name is cut,
     and a multi-byte name is cut without splitting a character.
+
+- [x] **C10. Theme files: save, load, and share a look (F-58).**
+  Distinct from C6: C6 is built-in named *item* presets; C10 is a file
+  holding a whole look, so people can share themes without forking.
+  - Design (recommended by review, 2026-10-16; approved by the
+    maintainer, 2026-10-29):
+    - A theme file is a `SpaceLook` (the whole `Theme` plus grid spacing and
+      padding), because `SpaceLook` is already the unit of "a look": it
+      round-trips through serde, defaults missing fields, and clamps on load.
+      `ui_mode` is ignored on apply, as it is for a space. `preset` (Match
+      Explorer / Custom) travels with a theme, since it decides icon size
+      and spacing, which are part of how a theme looks.
+    - Format: TOML, extension `.deskspace-theme.toml`, with `format = 1`,
+      `name`, an optional `author`, and a `[look]` table. A file with a newer
+      `format` loads with a warning, unknown keys ignored, as `Config` does.
+    - Location: a `themes` folder beside the config file (so a scratch
+      `--config` has its own), listed in Settings; "Save theme…" and "Load
+      theme…" also take any path through the standard file dialogs.
+    - Applying: in the Global scope it writes `config.theme` and the grid's
+      `gap` / `padding`; in a space's scope it is a `SetSpaceLook { custom:
+      true }`. Either way it is a previewed edit that Cancel undoes, like any
+      other settings change.
+  - Three commits:
+    - [x] **C10a (config, pure):** `deskspace-config/src/theme_file.rs` with
+      `ThemeFile { format, name, author, look: SpaceLook }`, `load(path)` and
+      `save(path)` returning `ConfigError`, and `themes_dir()` on
+      `ConfigStore`. Tests: round trip, missing fields default, out-of-range
+      values clamp, unknown keys ignored, a newer `format` loads. Landed in
+      `feat: add the theme-file format (C10a)`.
+    - [x] **C10b (platform):** `Ui::pick_save_path(filter, default_name)` over
+      `IFileSaveDialog`, beside `Ui::pick_files`, and a filter argument on
+      the open side if it has none. Landed in
+      `feat: expose the save dialog and filtered open dialog (C10b)`.
+    - [x] **C10c (app):** two buttons on the Colors page ("Save theme…", "Load
+      theme…"): two `ButtonAction` variants and their arms in
+      `App::on_settings_button` (the "new global setting" recipe's button
+      path), and a "Themes" `Choice` listing `themes_dir()`. **[needs human]**
+      check: save a customized space's look, load it on Global and on another
+      space, Cancel undoes the load.

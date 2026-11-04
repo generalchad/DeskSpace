@@ -85,6 +85,9 @@ pub struct Session {
     /// A lens filter field's text as typed, by space and field id, so the
     /// form shows it back unchanged; the lens holds the parsed list (W35).
     pub filter_texts: HashMap<(SpaceId, u32), String>,
+    /// The theme files found in `themes_dir` when the window opened, for the
+    /// Colors page's list.
+    pub themes: Vec<ThemeFile>,
     pub dirty: bool,
     /// The scope being edited: `None` for Global, or a space.
     pub scope: Option<SpaceId>,
@@ -107,6 +110,15 @@ fn saved_hotkey_texts(window: &WindowSettings) -> [String; HOTKEY_BINDINGS.len()
 }
 
 impl Session {
+    /// The look of the theme at `choice` in the Colors page's list, where 0 is
+    /// the prompt.
+    pub fn theme_look(&self, choice: usize) -> Option<SpaceLook> {
+        choice
+            .checked_sub(1)
+            .and_then(|index| self.themes.get(index))
+            .map(|theme| theme.look.clone())
+    }
+
     pub fn new(config: &Config) -> Self {
         Self {
             saved_theme: config.theme.clone(),
@@ -115,6 +127,7 @@ impl Session {
             hotkey_texts: saved_hotkey_texts(&config.window),
             hotkey_errors: Default::default(),
             filter_texts: HashMap::new(),
+            themes: Vec::new(),
             dirty: false,
             scope: None,
             scope_kind: ScopeKind::Global,

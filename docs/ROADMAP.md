@@ -998,8 +998,9 @@ Remaining:
 4. Theme files (F-58): save a whole look to a file and load it on Global or
    a space, so themes can be shared without forking (`TASKS.md` C10). A
    theme carries the item preset, since it sets icon size and spacing
-   (decided 2026-10-29, maintainer). The format and `themes_dir` are in
-   (`theme_file.rs`); the dialogs and settings buttons follow (C10b, C10c).
+   (decided 2026-10-29, maintainer). Done: the format, the dialogs, and the
+   Colors page's save, load, and Themes list; the on-screen check is
+   `TASKS.md` section V.
 
 Exit criteria: every runtime setting can be edited in the UI, and the tray
 menu can show and hide spaces and open settings.
@@ -1380,7 +1381,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-55 | "Add files…": pick files to add to a space | M3 | Done; check pending (`TASKS.md` V: L6) |
 | F-56 | Explorer "Send to" / "Add to a DeskSpace space" entry | M3, M8 | Deferred; needs an instance hand-off and, for the Windows 11 menu, M8 item 4 |
 | F-57 | Zoom pop-up: the icon size as a percentage at the top center of the screen, with zoom out, zoom in, and Reset | M3 | Done; check pending (`TASKS.md` V) |
-| F-58 | Theme files: save, load, and share a look | M3 | Partial: the format, clamping, and `themes_dir` are in (`deskspace-config/src/theme_file.rs`); the save/load dialogs and settings buttons follow (C10b, C10c) |
+| F-58 | Theme files: save, load, and share a look | M3 | Done: the `.deskspace-theme.toml` format, the save/load dialogs, and the Colors page's Save theme, Load theme, and Themes list; check pending (`TASKS.md` section V: C10c) |
 | F-59 | Scripting verbs for the running instance (out-of-process extension point) | M7 | Open; needs design (`TASKS.md` R16) |
 | F-60 | Translation: the UI follows the Windows display language, with a Language override | M9 | Open; format decided in D20, the rest of the design is `TASKS.md` R18 |
 | F-61 | Debug window (`--debug`): live log console, test-space tools, diagnostics, and simulations | Tooling | Built; awaiting on-screen check (`TASKS.md` section V, X4-X20 and extras) |

@@ -524,8 +524,9 @@ default in `Default`.
   refused before it is parsed, a long `name` or `author` is cut to 100
   characters, and saves share the config's atomic temp-write-and-rename.
   `themes_dir()` is a `themes` folder beside the config, so a scratch
-  `--config` has its own. The file dialogs and settings buttons follow (C10b,
-  C10c).
+  `--config` has its own. The Colors page uses the file dialogs (C10b) to
+  save and load one, and lists the folder's files when the window opens
+  (C10c).
 - `window.icon_downloads` (D16) is `Ask` by default: the app reads a set
   from the cache first, and only `Allowed` downloads a missing one (the
   signed file). `Ask` shows one question a session and saves the answer;
@@ -829,7 +830,11 @@ in `ui.rs`. What spans them:
   page's reset becomes "Match global appearance". Cancel restores each space's
   `SpaceSnapshot` (its look, its view, a lens's folder view, and its title); a space menu edit
   made while the window is open goes into that snapshot, because the menu
-  commits at once. These also commit at once, so Cancel does not undo them:
+  commits at once. Colors also saves the selected look to a theme file and
+  loads one from a file or the `themes` folder; loading is a previewed edit
+  that Cancel undoes, a load on a space customizes it, and a theme never
+  changes `ui_mode`.
+  These also commit at once, so Cancel does not undo them:
   - the Lens page's "Change folder…", which writes the new path into the
     snapshot so Cancel keeps it;
   - the Shortcuts page's X deletes an item after a confirmation
