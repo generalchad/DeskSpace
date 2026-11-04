@@ -5907,3 +5907,15 @@ until I5-I6 all land, so no partial build hides the desktop.
     text.
   - Done when: the gates pass. Under `-v`, a binding another app already holds
     logs the reason beside "hotkey unavailable".
+
+- [x] **P42. Pin CI's third-party actions to commit SHAs (ci).** `ci.yml` uses
+  `Swatinem/rust-cache@v2` twice and `EmbarkStudios/cargo-deny-action@v2` once. A tag
+  can be moved to other code at any time, so a hijacked tag would run in CI.
+  SonarCloud reports all three (`githubactions:S7637`).
+  - For each, find the full commit SHA of the newest release on that major version
+    (`gh api repos/<owner>/<repo>/releases/latest`, then the tag's commit), and write
+    `uses: <owner>/<repo>@<sha> # v2.x.y`. The comment says which version the SHA is.
+  - Leave `actions/checkout` as it is; GitHub owns it, and SonarCloud does not flag
+    it.
+  - Run `actionlint` (`TOOLS.md` section 1). Done when it passes and CI is green on
+    the commit.
