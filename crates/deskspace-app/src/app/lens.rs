@@ -872,7 +872,7 @@ mod tests {
         );
         assert_eq!(app.undo.undo_label(), Some("Change folder"));
         assert!(
-            app.subfolder_of(lens).is_empty(),
+            app.subfolder_of(lens).as_os_str().is_empty(),
             "the browse does not survive its root moving"
         );
     }
