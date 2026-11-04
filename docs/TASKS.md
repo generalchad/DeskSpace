@@ -13,7 +13,8 @@ its section.
 
 **Pick a task:** these are ready for any contributor, now that human checks
 are collected in section V instead of blocking:
-- section P's "Juniors and interns" list, the best place for a first task;
+- section P's "Juniors and interns" list, the best place for a first task,
+  ranked most severe first, so take one from the top;
 - section K (K9-K16), each a pure move with rules that leave nothing to
   design;
 - O4, which needs no code;
@@ -1748,117 +1749,14 @@ and the parts after it wait too.
 
 ### Juniors and interns
 
-Small first. Each lands alone unless it says "After".
+Most severe first (ranked 2026-11-04), so start at the top. Take the first task
+you can start: one marked "After" waits for the task it names, and a **[needs
+human]** step waits for a person. Each lands alone unless it says "After". A new
+task goes into its tier, not at the end.
 
-- [ ] **P12a. See whether a swallowed Alt shows anything (no code).**
-  **[needs human]** The first step of P12. With an item selected, press
-  Alt+Enter, Alt+Left, and Alt+Up, and watch for focus cues or any change on the
-  desktop, on Windows 11 and on Windows 10. If nothing shows on either, delete P12
-  in a commit saying so. Otherwise record what shows under P12.
+#### High
 
-- [ ] **P26a. See whether content still trails its edge (no code).**
-  **[needs human]** The first step of P26. On a space with a title and items,
-  play Roll, Fly, and Bounce from the debug window at 100 % and 150 %. Watch the
-  edge for content lagging or a frame with no title. If nothing shows, delete P26
-  in a commit saying so. Otherwise record which effect shows it under P26.
-
-- [ ] **P24. Let the icon cache forget a window (fix).** After: K9. Nothing ever
-  removes an entry from `IconCache::demand`, so the limit only rises. A previewed
-  space adds at most 60 for good, and a deleted space's scene stays counted, which
-  for a large lens is much more.
-  - `IconCache::forget_user(user)`: remove it from `demand`, and when a worker exists
-    call `queue.set_wanted(&user, &[])`, so it stops loading icons nobody will draw.
-  - `store` evicts once per insert, so a lower limit would never shrink the cache.
-    Turn its eviction into a `while` that runs until the entries are under the limit.
-    A replaced key still evicts nothing.
-  - Call it for `IconUser::SettingsPreview` in `app/settings_session.rs`, with the
-    old scope, read before `select_scope` in `ScopeChanged`, and on Ok and Cancel.
-    Call it for `IconUser::Space` beside both `view_cache.forget(id)` calls
-    (`app/files.rs`, `app/undo.rs`). Undoing that delete makes a new scene, which
-    registers again.
-  - Tests in the cache, which can set `demand` directly: the limit falls after a
-    forget, and the next store evicts down to it, oldest first. No shell calls.
-
-- [ ] **P18b. Make a failed capture explain itself (scripts).** Part of P18. In
-  `scripts/onscreen/OnScreen.psm1`, add `Get-CaptureState`: each DeskSpace window's
-  cloak state (`DwmGetWindowAttribute`, `DWMWA_CLOAKED`), the session
-  (`IsWorkstationLocked` is there already; add the session id and whether it is the
-  console's), and the input desktop's name. `smoke.ps1` and `shadows.ps1 -Pixels`
-  print it, and `Assert-Check` a window is not cloaked, before they read pixels.
-  - Never run these while the maintainer has a build running: `Start-DeskSpace`
-    calls `dev.ps1`, which stops one.
-  - Done when: a run prints the state, and with a space on another virtual desktop
-    the check fails and names the cloak.
-
-- [ ] **P14b. Measure Explorer's fixed-view cells (no code).** **[needs human]** Part
-  of P14. In Explorer, at 100 % and 150 %, measure one cell's width and height, gap
-  included, in Medium, Large, and Extra large icons. Record the numbers in P14c,
-  with the date.
-
-- [ ] **P14c. Give the fixed icon views their own cell (fix).** After: P14b. Part of
-  P14. In `view_layout.rs`, beside `NORMAL_CELLS`, `pub fn fixed_view_cell(mode) ->
-  Option<Size>`, measured in 96-DPI pixels with a comment saying so and when. If the
-  150 % numbers are not 1.5 times the 100 % ones, stop and ask. `Cells::FixedView`
-  carries that `Size`, which `layout_for` fills in from the space's mode. In
-  `base_layout` (`app/view.rs`), give it its own arm, shaped like the `Cells::Look`
-  arm: the cell times `scale.title`, which is the DPI alone, and `gap = 0`.
-  - `ViewMetrics::for_view` needs no change: it hands an icon view the `GridSpec`,
-    and `arrange_space` reads that too, so `base_layout` is the one place.
-  - Tests: each view's cell, DPI scaling, and a look's spacing changes "Settings icon
-    size" and no fixed view.
-  - **[needs human]** check: three Extra large columns fit where Explorer's do.
-    Update W12's row.
-
-- [ ] **P16c. "Size all columns to fit" (feature).** After: P16a, P16b. Part of P16. In
-  the Details header menu, by the menu recipe. It records one undo entry, like Choose
-  columns. Take the widths from plain data in a function, and test it. **[needs
-  human]** check: on a space and a 50,000-file lens, no column clips and no stall.
-
-- [ ] **P16d. Measure Explorer's List column (no code).** **[needs human]** Part of
-  P16. Measure Explorer's limit on a List column's width, and whether a change
-  re-flows. Record it in P16e, with the date.
-
-- [ ] **P27. Archive section W's finished-phase notes (docs).** Every W task is
-  done, yet section W still carries guidance for running them side by side.
-  That makes this file long for every new reader.
-  - Move these, verbatim, to the end of `archive/TASKS-done.md` under a heading
-    "Section W's phase notes (moved 2026-mm-dd)": "Phase 4: views, sort rules,
-    and lens settings"; from "Interleaving", the two definitions and "Work that
-    collides when run in parallel" with its list; and "Phase 5 tasks".
-  - Keep everything else in section W. "Runtime orders the code must survive"
-    (rename the heading above it to "Runtime orders"), "Performance", and
-    "Safety and security" still bind any new lens task. Keep "Phase 5: lens and view extras" too,
-    since those two sit under it. Cut its first bullet list, which is about
-    task order, to one sentence: "Read ROADMAP D17 and D18 first; they are the
-    spec."
-  - Before deleting anything, search the repository (`docs/`, `crates/`,
-    `scripts/`) for each heading's name. Where something cites a moved heading,
-    point it at the archive.
-  - Change no other section. Commit as `docs: archive section W's phase notes
-    (P27)`.
-
-- [ ] **P28. Delete the `deskspace.ico` cleanup (fix).** `App::sync_desktop_verbs`
-  (`app/visibility.rs`) deletes `deskspace.ico` beside the storage folder on every
-  show and hide. Under `--config` that is the config's own folder, wherever the user
-  put it, so a file of theirs with that name is deleted without asking. Only builds
-  from before 2026-10-11 wrote the file. The cleanup came in `325f079`, two days
-  before the first tag (`v0.2.0-alpha.1`), so no release ever wrote it.
-  - Delete the `leftover` lines and the comment above them. Change nothing else.
-  - Done when: the gates pass, and `rg -n "deskspace.ico" crates` finds only
-    `deskspace-app/build.rs` and `deskspace-app/Cargo.toml`.
-
-- [ ] **P29. Let the hook's `stop` clear `WATCH_BACK` too (fix).** In
-  `win32/keyboard.rs`, the comment on `WATCH_BACK` says `stop` clears it, but `stop`
-  clears only the other three flags. `flags()`, which the debug window reads, leaves
-  it out too. No key reads it without another flag set, so nothing misbehaves today,
-  but the next reader will trust the comment.
-  - `stop` clears it. `flags()` returns it as a fourth value, `HookState`
-    (`win32/debug_info.rs`) gains `watch_back`, and the debug window shows it beside
-    `watch_paste` (`app/debug/system.rs`).
-  - Test in `keyboard.rs`: set every flag directly, call `stop`, and check all are
-    clear. The test installs no hook, so `stop` makes no Win32 call.
-  - This is in the hook's module, which juniors otherwise leave alone. It changes no
-    hook call, so any senior can review it.
+A user can lose their layout, an attacker could reach every install, or the next release waits on it.
 
 - [ ] **P30. Keep the signing key out of the release build (ci).** `release.yml`
   puts `secrets.DESKSPACE_MINISIGN_KEY` in the job's `env`, so every step can read
@@ -1875,54 +1773,6 @@ Small first. Each lands alone unless it says "After".
   - Run `actionlint` (`TOOLS.md` section 1).
   - A senior reviews, because this guards the update key. Until R12's dry run, the
     diff and `actionlint` are the check.
-
-- [ ] **P31. Leave the per-user registry alone under `--config` (fix).** A scratch
-  run (`dev.ps1` uses one by default) still writes the desktop menu entries and the
-  Run value, so both point at `target\debug\deskspace.exe`. Its clean exit then
-  deletes the installed build's desktop entries. `CONTEXT.md` section 5 says a
-  scratch config never touches real storage, and the registry should be no
-  different. Decided (maintainer, 2026-11-04): under `--config` the app writes
-  neither.
-  - `App` gets `shell_entries: bool`, with a `///` doc, `false` in `App::new`.
-    `bootstrap::run` sets it to `cli.config.is_none()`, beside `app.layer`.
-  - `sync_desktop_verbs`, `remove_desktop_verbs`, and `sync_start_with_windows`
-    (`app/visibility.rs`) return early unless it is set. Tests build `App` with it
-    off, so their `cfg!(test)` checks no longer do anything; delete them.
-  - Under `--config`, the "Start with Windows" switch still saves to the scratch
-    file. That is fine.
-  - Docs: `CONTEXT.md` section 5 (beside the storage sentence), and `TOOLS.md`
-    section 3's `--config` line. In section V, the C9 row and the E1/E2 row's
-    desktop verb check say to run `./scripts/dev.ps1 -RealConfig`.
-  - **[needs human]** check: with the installed DeskSpace running, run
-    `./scripts/dev.ps1` and exit it. The desktop menu still shows the installed
-    build's entries, and they still work.
-
-- [ ] **P32a. A debug button that blocks the UI thread (debug tool).** Part of P32,
-  which needs it to reproduce the bug. Add "Block the UI thread 2 s" to the debug
-  window, built the way `DebugId::ThemeChanged` is: a `DebugId` (next free value) and
-  its `ALL` entry in `app/debug/ids.rs`, a row in `table.rs`, an arm in `mod.rs`, and
-  the method in `simulate.rs`. The method logs at `info`, calls
-  `std::thread::sleep`, and logs again.
-  - It exists only under the hidden `--debug` flag, so no user can press it.
-  - Done when: the gates pass, and `debug_ids_are_unique` and
-    `debug_ids_round_trip` (`ids.rs`) cover the new id.
-
-- [ ] **P33. Let the compiler find `draw_item` when a layout is added (refactor).**
-  `draw_item` (`render/d2d/item.rs`, 191 lines) turns `scene.item_layout` into three
-  booleans (`details`, `tiles`, and `content`) and draws each layout's extras under
-  its own `if`. A new `ItemLayout` compiles without touching it and draws nothing
-  extra (`ENGINEERING.md` section 2, "No special cases").
-  - Move each `if` block, unchanged, into its own function beside `draw_item`:
-    `draw_details_cells`, `draw_tile_lines`, and `draw_content_meta`. Call them from
-    one exhaustive `match scene.item_layout`, with an empty arm for each layout that
-    draws no extras. No wildcard arm.
-  - Name the fades those blocks use (`150`, `170`, `40`) as constants at the top of
-    `item.rs`, shaped like `CUT_ALPHA` in `d2d/mod.rs`.
-  - This moves code inside `unsafe` blocks, which juniors otherwise leave alone.
-    Every moved block keeps its `// SAFETY:` comment, and a senior reviews.
-  - Collides with: P15f (paint clipping at the content's edge).
-  - Done when: `draw_item` is under about 100 lines and the gates pass. It is a pure
-    move, so it needs no section V row.
 
 - [ ] **P34. Let an older build read a newer config or theme file (fix).** **Land
   before the next release**, so the version people may go back to can read what
@@ -1960,6 +1810,103 @@ Small first. Each lands alone unless it says "After".
   - Done when: both guard tests pass, and `CONTEXT.md` section 5 says what an
     unknown word does, beside `ThemeFile`'s rules.
 
+- [ ] **P14b. Measure Explorer's fixed-view cells (no code).** **[needs human]** Part
+  of P14. In Explorer, at 100 % and 150 %, measure one cell's width and height, gap
+  included, in Medium, Large, and Extra large icons. Record the numbers in P14c,
+  with the date.
+
+- [ ] **P14c. Give the fixed icon views their own cell (fix).** After: P14b. Part of
+  P14. In `view_layout.rs`, beside `NORMAL_CELLS`, `pub fn fixed_view_cell(mode) ->
+  Option<Size>`, measured in 96-DPI pixels with a comment saying so and when. If the
+  150 % numbers are not 1.5 times the 100 % ones, stop and ask. `Cells::FixedView`
+  carries that `Size`, which `layout_for` fills in from the space's mode. In
+  `base_layout` (`app/view.rs`), give it its own arm, shaped like the `Cells::Look`
+  arm: the cell times `scale.title`, which is the DPI alone, and `gap = 0`.
+  - `ViewMetrics::for_view` needs no change: it hands an icon view the `GridSpec`,
+    and `arrange_space` reads that too, so `base_layout` is the one place.
+  - Tests: each view's cell, DPI scaling, and a look's spacing changes "Settings icon
+    size" and no fixed view.
+  - **[needs human]** check: three Extra large columns fit where Explorer's do.
+    Update W12's row.
+
+#### Medium
+
+A rare loss of a user's file, memory that only grows, a broken install's shell entries, or groundwork a senior's fix needs.
+
+- [ ] **P28. Delete the `deskspace.ico` cleanup (fix).** `App::sync_desktop_verbs`
+  (`app/visibility.rs`) deletes `deskspace.ico` beside the storage folder on every
+  show and hide. Under `--config` that is the config's own folder, wherever the user
+  put it, so a file of theirs with that name is deleted without asking. Only builds
+  from before 2026-10-11 wrote the file. The cleanup came in `325f079`, two days
+  before the first tag (`v0.2.0-alpha.1`), so no release ever wrote it.
+  - Delete the `leftover` lines and the comment above them. Change nothing else.
+  - Done when: the gates pass, and `rg -n "deskspace.ico" crates` finds only
+    `deskspace-app/build.rs` and `deskspace-app/Cargo.toml`.
+
+- [ ] **P24. Let the icon cache forget a window (fix).** After: K9. Nothing ever
+  removes an entry from `IconCache::demand`, so the limit only rises. A previewed
+  space adds at most 60 for good, and a deleted space's scene stays counted, which
+  for a large lens is much more.
+  - `IconCache::forget_user(user)`: remove it from `demand`, and when a worker exists
+    call `queue.set_wanted(&user, &[])`, so it stops loading icons nobody will draw.
+  - `store` evicts once per insert, so a lower limit would never shrink the cache.
+    Turn its eviction into a `while` that runs until the entries are under the limit.
+    A replaced key still evicts nothing.
+  - Call it for `IconUser::SettingsPreview` in `app/settings_session.rs`, with the
+    old scope, read before `select_scope` in `ScopeChanged`, and on Ok and Cancel.
+    Call it for `IconUser::Space` beside both `view_cache.forget(id)` calls
+    (`app/files.rs`, `app/undo.rs`). Undoing that delete makes a new scene, which
+    registers again.
+  - Tests in the cache, which can set `demand` directly: the limit falls after a
+    forget, and the next store evicts down to it, oldest first. No shell calls.
+
+- [ ] **P32a. A debug button that blocks the UI thread (debug tool).** Part of P32,
+  which needs it to reproduce the bug. Add "Block the UI thread 2 s" to the debug
+  window, built the way `DebugId::ThemeChanged` is: a `DebugId` (next free value) and
+  its `ALL` entry in `app/debug/ids.rs`, a row in `table.rs`, an arm in `mod.rs`, and
+  the method in `simulate.rs`. The method logs at `info`, calls
+  `std::thread::sleep`, and logs again.
+  - It exists only under the hidden `--debug` flag, so no user can press it.
+  - Done when: the gates pass, and `debug_ids_are_unique` and
+    `debug_ids_round_trip` (`ids.rs`) cover the new id.
+
+- [ ] **P31. Leave the per-user registry alone under `--config` (fix).** A scratch
+  run (`dev.ps1` uses one by default) still writes the desktop menu entries and the
+  Run value, so both point at `target\debug\deskspace.exe`. Its clean exit then
+  deletes the installed build's desktop entries. `CONTEXT.md` section 5 says a
+  scratch config never touches real storage, and the registry should be no
+  different. Decided (maintainer, 2026-11-04): under `--config` the app writes
+  neither.
+  - `App` gets `shell_entries: bool`, with a `///` doc, `false` in `App::new`.
+    `bootstrap::run` sets it to `cli.config.is_none()`, beside `app.layer`.
+  - `sync_desktop_verbs`, `remove_desktop_verbs`, and `sync_start_with_windows`
+    (`app/visibility.rs`) return early unless it is set. Tests build `App` with it
+    off, so their `cfg!(test)` checks no longer do anything; delete them.
+  - Under `--config`, the "Start with Windows" switch still saves to the scratch
+    file. That is fine.
+  - Docs: `CONTEXT.md` section 5 (beside the storage sentence), and `TOOLS.md`
+    section 3's `--config` line. In section V, the C9 row and the E1/E2 row's
+    desktop verb check say to run `./scripts/dev.ps1 -RealConfig`.
+  - **[needs human]** check: with the installed DeskSpace running, run
+    `./scripts/dev.ps1` and exit it. The desktop menu still shows the installed
+    build's entries, and they still work.
+
+- [ ] **P42. Pin CI's third-party actions to commit SHAs (ci).** `ci.yml` uses
+  `Swatinem/rust-cache@v2` twice and `EmbarkStudios/cargo-deny-action@v2` once. A tag
+  can be moved to other code at any time, so a hijacked tag would run in CI.
+  SonarCloud reports all three (`githubactions:S7637`).
+  - For each, find the full commit SHA of the newest release on that major version
+    (`gh api repos/<owner>/<repo>/releases/latest`, then the tag's commit), and write
+    `uses: <owner>/<repo>@<sha> # v2.x.y`. The comment says which version the SHA is.
+  - Leave `actions/checkout` as it is; GitHub owns it, and SonarCloud does not flag
+    it.
+  - Run `actionlint` (`TOOLS.md` section 1). Done when it passes and CI is green on
+    the commit.
+
+#### Low
+
+Logs, tooling, readability, docs, and checks that may close a task.
+
 - [ ] **P40. Log why a hotkey could not be registered (fix).** In
   `Hotkeys::register_all` (`app/hotkeys.rs`), `tracing::warn!(message, "hotkey
   unavailable")` names its field `message`. That is the name `tracing` gives the
@@ -1970,6 +1917,19 @@ Small first. Each lands alone unless it says "After".
     text.
   - Done when: the gates pass. Under `-v`, a binding another app already holds
     logs the reason beside "hotkey unavailable".
+
+- [ ] **P29. Let the hook's `stop` clear `WATCH_BACK` too (fix).** In
+  `win32/keyboard.rs`, the comment on `WATCH_BACK` says `stop` clears it, but `stop`
+  clears only the other three flags. `flags()`, which the debug window reads, leaves
+  it out too. No key reads it without another flag set, so nothing misbehaves today,
+  but the next reader will trust the comment.
+  - `stop` clears it. `flags()` returns it as a fourth value, `HookState`
+    (`win32/debug_info.rs`) gains `watch_back`, and the debug window shows it beside
+    `watch_paste` (`app/debug/system.rs`).
+  - Test in `keyboard.rs`: set every flag directly, call `stop`, and check all are
+    clear. The test installs no hook, so `stop` makes no Win32 call.
+  - This is in the hook's module, which juniors otherwise leave alone. It changes no
+    hook call, so any senior can review it.
 
 - [ ] **P41. Rename script variables that shadow PowerShell's own (scripts).**
   PowerShell sets `$switch` inside a `switch` statement and keeps its error list in
@@ -1985,34 +1945,16 @@ Small first. Each lands alone unless it says "After".
   - Done when: the stubbed copy maps `--ontop` and `--on-top` to `-OnTop` as before,
     and `OnScreen.psm1` still imports (`Import-Module` it in a fresh `pwsh`).
 
-- [ ] **P42. Pin CI's third-party actions to commit SHAs (ci).** `ci.yml` uses
-  `Swatinem/rust-cache@v2` twice and `EmbarkStudios/cargo-deny-action@v2` once. A tag
-  can be moved to other code at any time, so a hijacked tag would run in CI.
-  SonarCloud reports all three (`githubactions:S7637`).
-  - For each, find the full commit SHA of the newest release on that major version
-    (`gh api repos/<owner>/<repo>/releases/latest`, then the tag's commit), and write
-    `uses: <owner>/<repo>@<sha> # v2.x.y`. The comment says which version the SHA is.
-  - Leave `actions/checkout` as it is; GitHub owns it, and SonarCloud does not flag
-    it.
-  - Run `actionlint` (`TOOLS.md` section 1). Done when it passes and CI is green on
-    the commit.
-
-- [ ] **P43. Let clippy keep closures that only call a method out (lint).**
-  `.and_then(|name| name.to_str())` says what `.and_then(OsStr::to_str)` says, with
-  more to read. SonarCloud reports 21 of these (`rust:S1612`), and clippy's
-  `redundant_closure_for_method_calls` found 36 (2026-11-04); the two lists overlap
-  only in part. A lint keeps them out for good, as `ENGINEERING.md` section 2 rule 4
-  wants.
-  - Add `redundant_closure_for_method_calls = "warn"` to `[workspace.lints.clippy]`
-    in the root `Cargo.toml`, with a one-line comment. Every crate inherits it, and
-    CI's `-D warnings` makes it fail.
-  - Fix what clippy reports. `cargo clippy --fix --workspace --all-targets
-    --allow-dirty` applies most of them; read the diff before you commit.
-  - Then open the SonarCloud list (project `generalchad_DeskSpace`, rule
-    `rust:S1612`). Fix each hit that clippy did not, if the method reference
-    compiles. List any that do not compile in the commit body, so the maintainer can
-    mark them in SonarCloud.
-  - Done when: the gates pass, and nothing but closures changed.
+- [ ] **P18b. Make a failed capture explain itself (scripts).** Part of P18. In
+  `scripts/onscreen/OnScreen.psm1`, add `Get-CaptureState`: each DeskSpace window's
+  cloak state (`DwmGetWindowAttribute`, `DWMWA_CLOAKED`), the session
+  (`IsWorkstationLocked` is there already; add the session id and whether it is the
+  console's), and the input desktop's name. `smoke.ps1` and `shadows.ps1 -Pixels`
+  print it, and `Assert-Check` a window is not cloaked, before they read pixels.
+  - Never run these while the maintainer has a build running: `Start-DeskSpace`
+    calls `dev.ps1`, which stops one.
+  - Done when: a run prints the state, and with a space on another virtual desktop
+    the check fails and names the cloak.
 
 - [ ] **P44. Turn the press targets in `begin_interaction` into a table
   (refactor).** `App::begin_interaction` (`app/pointer.rs`) first asks five chrome
@@ -2033,6 +1975,80 @@ Small first. Each lands alone unless it says "After".
   - Done when: the gates pass with the same test count, and the function is clearly
     under 30 on SonarCloud's next analysis. It changes no behavior, so it needs no
     section V row.
+
+- [ ] **P33. Let the compiler find `draw_item` when a layout is added (refactor).**
+  `draw_item` (`render/d2d/item.rs`, 191 lines) turns `scene.item_layout` into three
+  booleans (`details`, `tiles`, and `content`) and draws each layout's extras under
+  its own `if`. A new `ItemLayout` compiles without touching it and draws nothing
+  extra (`ENGINEERING.md` section 2, "No special cases").
+  - Move each `if` block, unchanged, into its own function beside `draw_item`:
+    `draw_details_cells`, `draw_tile_lines`, and `draw_content_meta`. Call them from
+    one exhaustive `match scene.item_layout`, with an empty arm for each layout that
+    draws no extras. No wildcard arm.
+  - Name the fades those blocks use (`150`, `170`, `40`) as constants at the top of
+    `item.rs`, shaped like `CUT_ALPHA` in `d2d/mod.rs`.
+  - This moves code inside `unsafe` blocks, which juniors otherwise leave alone.
+    Every moved block keeps its `// SAFETY:` comment, and a senior reviews.
+  - Collides with: P15f (paint clipping at the content's edge).
+  - Done when: `draw_item` is under about 100 lines and the gates pass. It is a pure
+    move, so it needs no section V row.
+
+- [ ] **P43. Let clippy keep closures that only call a method out (lint).**
+  `.and_then(|name| name.to_str())` says what `.and_then(OsStr::to_str)` says, with
+  more to read. SonarCloud reports 21 of these (`rust:S1612`), and clippy's
+  `redundant_closure_for_method_calls` found 36 (2026-11-04); the two lists overlap
+  only in part. A lint keeps them out for good, as `ENGINEERING.md` section 2 rule 4
+  wants.
+  - Add `redundant_closure_for_method_calls = "warn"` to `[workspace.lints.clippy]`
+    in the root `Cargo.toml`, with a one-line comment. Every crate inherits it, and
+    CI's `-D warnings` makes it fail.
+  - Fix what clippy reports. `cargo clippy --fix --workspace --all-targets
+    --allow-dirty` applies most of them; read the diff before you commit.
+  - Then open the SonarCloud list (project `generalchad_DeskSpace`, rule
+    `rust:S1612`). Fix each hit that clippy did not, if the method reference
+    compiles. List any that do not compile in the commit body, so the maintainer can
+    mark them in SonarCloud.
+  - Done when: the gates pass, and nothing but closures changed.
+
+- [ ] **P27. Archive section W's finished-phase notes (docs).** Every W task is
+  done, yet section W still carries guidance for running them side by side.
+  That makes this file long for every new reader.
+  - Move these, verbatim, to the end of `archive/TASKS-done.md` under a heading
+    "Section W's phase notes (moved 2026-mm-dd)": "Phase 4: views, sort rules,
+    and lens settings"; from "Interleaving", the two definitions and "Work that
+    collides when run in parallel" with its list; and "Phase 5 tasks".
+  - Keep everything else in section W. "Runtime orders the code must survive"
+    (rename the heading above it to "Runtime orders"), "Performance", and
+    "Safety and security" still bind any new lens task. Keep "Phase 5: lens and view extras" too,
+    since those two sit under it. Cut its first bullet list, which is about
+    task order, to one sentence: "Read ROADMAP D17 and D18 first; they are the
+    spec."
+  - Before deleting anything, search the repository (`docs/`, `crates/`,
+    `scripts/`) for each heading's name. Where something cites a moved heading,
+    point it at the archive.
+  - Change no other section. Commit as `docs: archive section W's phase notes
+    (P27)`.
+
+- [ ] **P12a. See whether a swallowed Alt shows anything (no code).**
+  **[needs human]** The first step of P12. With an item selected, press
+  Alt+Enter, Alt+Left, and Alt+Up, and watch for focus cues or any change on the
+  desktop, on Windows 11 and on Windows 10. If nothing shows on either, delete P12
+  in a commit saying so. Otherwise record what shows under P12.
+
+- [ ] **P26a. See whether content still trails its edge (no code).**
+  **[needs human]** The first step of P26. On a space with a title and items,
+  play Roll, Fly, and Bounce from the debug window at 100 % and 150 %. Watch the
+  edge for content lagging or a frame with no title. If nothing shows, delete P26
+  in a commit saying so. Otherwise record which effect shows it under P26.
+
+- [ ] **P16d. Measure Explorer's List column (no code).** **[needs human]** Part of
+  P16. Measure Explorer's limit on a List column's width, and whether a change
+  re-flows. Record it in P16e, with the date.
+
+- [ ] **P16c. "Size all columns to fit" (feature).** After: P16a, P16b. Part of P16. In
+  the Details header menu, by the menu recipe. It records one undo entry, like Choose
+  columns. Take the widths from plain data in a function, and test it. **[needs
+  human]** check: on a space and a 50,000-file lens, no column clips and no stall.
 
 ### Seniors only
 
