@@ -1830,23 +1830,6 @@ A rare loss of a user's file, memory that only grows, a broken install's shell e
   - Done when: the gates pass, and `rg -n "deskspace.ico" crates` finds only
     `deskspace-app/build.rs` and `deskspace-app/Cargo.toml`.
 
-- [ ] **P24. Let the icon cache forget a window (fix).** After: K9. Nothing ever
-  removes an entry from `IconCache::demand`, so the limit only rises. A previewed
-  space adds at most 60 for good, and a deleted space's scene stays counted, which
-  for a large lens is much more.
-  - `IconCache::forget_user(user)`: remove it from `demand`, and when a worker exists
-    call `queue.set_wanted(&user, &[])`, so it stops loading icons nobody will draw.
-  - `store` evicts once per insert, so a lower limit would never shrink the cache.
-    Turn its eviction into a `while` that runs until the entries are under the limit.
-    A replaced key still evicts nothing.
-  - Call it for `IconUser::SettingsPreview` in `app/settings_session.rs`, with the
-    old scope, read before `select_scope` in `ScopeChanged`, and on Ok and Cancel.
-    Call it for `IconUser::Space` beside both `view_cache.forget(id)` calls
-    (`app/files.rs`, `app/undo.rs`). Undoing that delete makes a new scene, which
-    registers again.
-  - Tests in the cache, which can set `demand` directly: the limit falls after a
-    forget, and the next store evicts down to it, oldest first. No shell calls.
-
 - [ ] **P32a. A debug button that blocks the UI thread (debug tool).** Part of P32,
   which needs it to reproduce the bug. Add "Block the UI thread 2 s" to the debug
   window, built the way `DebugId::ThemeChanged` is: a `DebugId` (next free value) and

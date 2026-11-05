@@ -271,6 +271,16 @@ impl IconCache {
         }
     }
 
+    /// Forgets what `user`'s scene last drew, so a window that closed no
+    /// longer raises the cache's limit or leaves icons queued for it. Cached
+    /// entries stay until age evicts them.
+    pub fn forget_user(&mut self, user: IconUser) {
+        self.demand.remove(&user);
+        if let Some(worker) = &self.worker {
+            worker.lock().queue.set_wanted(&user, &[]);
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.entries.len()
     }
@@ -302,12 +312,9 @@ impl IconCache {
 
     fn store(&mut self, key: Key, icon: Option<Icon>, stale: bool) {
         self.clock += 1;
-        if let Some(replaced) = self.entries.get(&key) {
-            self.by_age.remove(&replaced.last_used);
-        } else if self.entries.len() >= self.limit()
-            && let Some((_, oldest)) = self.by_age.pop_first()
-        {
-            self.entries.remove(&oldest);
+        let replaced = self.entries.contains_key(&key);
+        if let Some(entry) = self.entries.get(&key) {
+            self.by_age.remove(&entry.last_used);
         }
         self.by_age.insert(self.clock, key.clone());
         self.entries.insert(
@@ -318,6 +325,15 @@ impl IconCache {
                 last_used: self.clock,
             },
         );
+        if replaced {
+            return;
+        }
+        while self.entries.len() > self.limit() {
+            let Some((_, oldest)) = self.by_age.pop_first() else {
+                break;
+            };
+            self.entries.remove(&oldest);
+        }
     }
 
     fn limit(&self) -> usize {
@@ -607,6 +623,28 @@ mod tests {
         cache.insert(key("a"), held.clone());
         cache.insert(key("b"), icon());
         assert_eq!(held.pixels().len(), 4);
+    }
+
+    #[test]
+    fn forgetting_a_window_lowers_the_limit_and_evicts_down_to_it() {
+        let mut cache = IconCache::with_capacity(2);
+        let user = IconUser::Space(1);
+        cache.demand.insert(user, 3);
+        for path in ["a", "b", "c"] {
+            cache.insert(key(path), icon());
+        }
+        assert_eq!(cache.len(), 3);
+        assert_eq!(cache.limit(), 3, "the scene's icons hold the limit up");
+
+        cache.forget_user(user);
+        assert_eq!(cache.limit(), 2, "the limit falls with the window's demand");
+        cache.insert(key("d"), icon());
+        assert_eq!(cache.len(), 2);
+        assert!(!cache.entries.contains_key(&key("a")), "oldest first");
+        assert!(!cache.entries.contains_key(&key("b")));
+        assert!(cache.entries.contains_key(&key("c")));
+        assert!(cache.entries.contains_key(&key("d")));
+        assert_eq!(cache.by_age.len(), cache.entries.len(), "ages stay in step");
     }
 
     #[test]

@@ -76,6 +76,7 @@ impl App {
         if let Some(session) = self.settings_ui.session.as_mut() {
             session.forget_space(id);
         }
+        self.icons.forget_user(IconUser::SettingsPreview(id.0));
         self.clear_highlight(ui);
         self.refresh_settings(ui);
     }
@@ -263,8 +264,13 @@ impl App {
                 }
             }
             SettingsEvent::ScopeChanged { scope } => {
+                let previous = session.scope;
                 let id = settings::scope_at(&self.config, scope);
                 let kind = ScopeKind::of(id.and_then(|id| self.config.desktop.space(id)));
+                if let Some(previous) = previous {
+                    self.icons
+                        .forget_user(IconUser::SettingsPreview(previous.0));
+                }
                 session.select_scope(id, kind);
                 self.refresh_settings(ui);
                 match id {
@@ -291,7 +297,11 @@ impl App {
                 self.refresh_settings(ui);
             }
             SettingsEvent::Ok => {
+                let scope = session.scope;
                 if self.apply_settings(ui) {
+                    if let Some(scope) = scope {
+                        self.icons.forget_user(IconUser::SettingsPreview(scope.0));
+                    }
                     self.settings_ui.session = None;
                     self.clear_highlight(ui);
                     ui.close_settings();
@@ -300,7 +310,11 @@ impl App {
                 }
             }
             SettingsEvent::Cancel => {
+                let scope = session.scope;
                 self.cancel_settings(ui);
+                if let Some(scope) = scope {
+                    self.icons.forget_user(IconUser::SettingsPreview(scope.0));
+                }
                 ui.close_settings();
             }
         }

@@ -7,7 +7,7 @@ use std::time::SystemTime;
 use deskspace_core::geometry::Point;
 use deskspace_core::{Command, ItemId, Space, SpaceId};
 use deskspace_platform::{
-    CustomShortcut, DropAction, OnCollision, ShellItem, Ui, create_custom_shortcut,
+    CustomShortcut, DropAction, IconUser, OnCollision, ShellItem, Ui, create_custom_shortcut,
     create_shortcut, desktop_directory, is_inside, item_facts, notify_moved,
 };
 
@@ -858,6 +858,7 @@ impl App {
         }
         self.pointer.clear_hover_on(Surface::Space(id));
         self.view_cache.forget(id);
+        self.icons.forget_user(IconUser::Space(id.0));
         // A deleted lens's folder stops being watched; its files stay.
         self.unavailable_lenses.remove(&id);
         true

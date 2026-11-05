@@ -5932,3 +5932,20 @@ until I5-I6 all land, so no partial build hides the desktop.
     the other callers do not change.
   - Done when: `mod.rs` is well under 800 lines of non-test code and the K rules
     above hold.
+
+- [x] **P24. Let the icon cache forget a window (fix).** After: K9. Nothing ever
+  removes an entry from `IconCache::demand`, so the limit only rises. A previewed
+  space adds at most 60 for good, and a deleted space's scene stays counted, which
+  for a large lens is much more.
+  - `IconCache::forget_user(user)`: remove it from `demand`, and when a worker exists
+    call `queue.set_wanted(&user, &[])`, so it stops loading icons nobody will draw.
+  - `store` evicts once per insert, so a lower limit would never shrink the cache.
+    Turn its eviction into a `while` that runs until the entries are under the limit.
+    A replaced key still evicts nothing.
+  - Call it for `IconUser::SettingsPreview` in `app/settings_session.rs`, with the
+    old scope, read before `select_scope` in `ScopeChanged`, and on Ok and Cancel.
+    Call it for `IconUser::Space` beside both `view_cache.forget(id)` calls
+    (`app/files.rs`, `app/undo.rs`). Undoing that delete makes a new scene, which
+    registers again.
+  - Tests in the cache, which can set `demand` directly: the limit falls after a
+    forget, and the next store evicts down to it, oldest first. No shell calls.
