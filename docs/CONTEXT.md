@@ -481,6 +481,20 @@ Automatic decided, through `Play::side`. `Animations` holds one
 "same as" to an effect, and `clamped` replaces an effect a kind does not
 offer, or one from a newer version, with the kind's default.
 
+### Typography and language (`typography.rs`, `text.rs`)
+
+`Typography` is the type scale: one `Font` (family, size at 96 DPI, weight)
+per `Role` (Body, Heading 1-3, Caption, and the spaces' own roles), with
+defaults in `Font::default_for` and clamping in `Font::clamped`. A family of
+`""` means Windows' message font. The platform turns a role into an `HFONT`
+for GDI and an `IDWriteTextFormat` for Direct2D, so one table drives the
+settings window, the debug window, dialogs, and space text.
+
+`text::Key` is a user-visible message and `text::lookup(language, key)` its
+only reader; `Language` is English or a pseudo-localization that accents and
+frames each string, which the Debug window can switch to. This is the seam
+ROADMAP D20's Fluent catalogs fill; call sites name a key, never a sentence.
+
 ## 5. Configuration (`deskspace-config`)
 
 `Config { version, desktop, theme, window }` and `WindowSettings`, the

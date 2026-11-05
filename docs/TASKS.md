@@ -964,6 +964,63 @@ otherwise, a name in `code` that does not exist yet is one the task creates.
     behind; switching pages starts the next page at the top; a short page has
     no scrollbar; the OK/Cancel/Apply bar is always visible.
 
+- [ ] **G11. Apply the typography table everywhere (platform).** Written after
+  the type scale landed as `deskspace_core::typography` (2026-11-04). The
+  platform keeps the current `Typography` and every font comes from it.
+  - `win32/typography.rs`: the current table, set through
+    `Ui::set_typography`, which also drops the cached `render::d2d` graphics
+    so DirectWrite formats are made again, and repaints every space.
+  - GDI: `system::message_logfont` takes a `Role`; `dialog::DialogChrome`,
+    `settings_window::build::create_fonts`, and the debug window build their
+    fonts per role (Body, Heading 1, Heading 3, Caption).
+  - DirectWrite: `Graphics::new` builds every format from its role
+    (`SpaceTitle`, `ItemLabel`, `Details`, `Placeholder`, `Zoom`, `Body`), and
+    the label-size percentage still scales `ItemLabel`.
+  - `Ui::font_families()` lists installed families through DirectWrite once,
+    sorted and deduplicated.
+  - An open settings or debug window takes the new fonts on its next open; a
+    settings window is not rebuilt under a preview (a rebuild would discard
+    unapplied edits), so the Debug box says "reopen Settings to see this".
+  - **[needs human]** check: change Body and Heading 1, then reopen Settings,
+    the Debug window, and a dialog: each follows; a space's title, labels, and
+    Details cells follow theirs live; a size at either end of the range clamps.
+
+- [ ] **G12. The Debug window's typography box and language choice (app).**
+  After G11.
+  - A "Typography" section: one row per `Role` with a family `Choice`, a size
+    `Choice` (the `FONT_SIZE_STEP` series inside `FONT_SIZE_RANGE`), and a
+    weight `Choice` (`FONT_WEIGHTS`); a "Reset fonts" button; and two
+    `Readout`s showing `text::lookup` for `Key::FontSample` and
+    `Key::LanguageSample`.
+  - A `Language` `Choice` (`Language::ALL`), which the samples and the panel's
+    next push use. Session-only, as every debug tool is (D14).
+  - Rows use the shadow-settings pattern (a id base, `DebugControl::group`).
+
+
+  **[needs human]** Written after G5 (decided 2026-11-04, maintainer): keep
+  D26's card spacing, and let a long page scroll. Cards make Appearance and
+  Colors about 850 px tall at 96 DPI, more than a 1080p work area at 150 %.
+  - `place_window` clamps the client height to the monitor's work area, so
+    the command bar stays on screen; the page area takes what is left.
+  - Each page container gets `WS_VSCROLL`, shown only while its content is
+    taller than the page area. `PageBuild` keeps each page's content height,
+    and `SettingsState` its scroll offset.
+  - Scrolling is `ScrollWindowEx(page, 0, -delta, None, None, None, None,
+    SW_SCROLLCHILDREN | SW_INVALIDATE | SW_ERASE)`, then a repaint, so the
+    controls, the cards, and the hairlines move together. `cards::erase_page`
+    subtracts the page's scroll offset when it draws.
+  - A wheel notch over a page hit-tests to the page's offset; `WM_VSCROLL`
+    on the page serves the scrollbar. PageUp, PageDown, Home, and End while a
+    control on the page has focus do the same.
+  - The window's own `WM_MOUSEWHEEL` keeps going to the window procedure it
+    has today; only the page area scrolls.
+  - **[needs human]** check at 100 % and 150 %, in light and dark, on
+    Appearance, Colors, and New spaces: a scrollbar shows while the page does
+    not fit; dragging it, the wheel, and PageUp/PageDown reach every group;
+    the cards and hairlines scroll with the controls, with no card left
+    behind; switching pages starts the next page at the top; a short page has
+    no scrollbar; the OK/Cancel/Apply bar is always visible.
+
 ## T. Animations (ROADMAP D12, D13, F-33)
 
 Read D12 first; it is the spec. T1 is a spike only a human can judge, and
