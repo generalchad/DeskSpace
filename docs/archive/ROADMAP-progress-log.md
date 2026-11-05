@@ -578,3 +578,11 @@ with "Copy here" kept the original; "Add files…" moved its file into the
 folder; and a clashing drop on a normal space became " (2)" with no
 dialog. The right drop's clash exposed P46 on the way: the shell's
 Replace or Skip window opened behind the editor and looked like a hang.
+
+### 2026-11-04: W5, an unavailable lens
+
+Deleting the lens's folder to the Recycle Bin showed "Folder not
+available" and the path, centered and faded, with its items gone; restore
+from the Recycle Bin brought every item back within 5 s. Not covered: the
+long-path wrap inside the lens, which needs a deeper path than this
+session's `C:\Temp\lens-test`.
