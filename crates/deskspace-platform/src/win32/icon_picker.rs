@@ -76,7 +76,8 @@ impl PickerSpec<'_> {
         let Some(set) = self.set else {
             return Vec::new();
         };
-        icon_match::search(query, set, self.words)
+        icon_match::SearchIndex::new(set, self.words)
+            .search(query)
             .into_iter()
             .map(|name| Cell {
                 label: cell_label(name),

@@ -6628,3 +6628,28 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Tests: one context draws every glyph on a thread, and `release` drops
     it; a new size draws whole, and the old size still does after it.
   - **[needs human]** check: see section V, B44.
+
+- [x] **B46. Build the picker's search index once (core).** Pure; any
+  contributor.
+  - Why: `icon_match::search` rebuilds every icon's name parts on each call,
+    sorting and resolving names through two `BTreeMap`s, and looks up the
+    curated words once per icon and per query word, though their answer
+    depends only on the word. It costs about 3 ms per keystroke on the
+    2,887-icon Fluent set in a release build (2026-11-05), and much more in
+    the debug builds `dev.ps1` makes.
+  - In `deskspace-core/src/icon_match.rs`, add `pub struct SearchIndex<'a>`:
+    the set's icons in alphabetical order, each with the hyphen-separated
+    parts of its own name and its aliases' names (what the loop at the top of
+    `search` builds today), and the set and the `words` table it was built
+    from. `SearchIndex::new(set, words)` builds it;
+    `SearchIndex::search(&self, query) -> Vec<&'a str>` answers a query.
+  - In `SearchIndex::search`, call `curated(word, ..)` once per query word,
+    before the loop over icons, and compare each icon with those answers.
+  - Delete the free function `search`, and point its tests at
+    `SearchIndex::new(&set, &words).search(..)`; every assertion stays as it
+    is. The compiler then shows `win32/icon_picker.rs` as the one caller:
+    make it build the index on each call for now (B47 keeps it).
+  - Tests: the existing `search_*` tests, unchanged in what they assert, and
+    one that searches one index twice with different queries.
+  - Done when: the gates pass, and the commit body has the release time of
+    `""`, `"a"`, and `"arrow l"` on the real set, before and after.

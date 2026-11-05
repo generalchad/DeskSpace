@@ -105,48 +105,75 @@ pub fn best_icon<'a>(title: &str, set: &'a IconSet, words: &[(&str, &str)]) -> O
     best.map(|(_, icon)| icon)
 }
 
-/// The icons for the picker's search box, best first.
+/// An icon set prepared for the picker's search box.
 ///
-/// An icon matches when every query word is a prefix of one of its
-/// hyphen-separated name parts (or an alias's), or a curated row maps the word
-/// to it. Curated hits come first, then icons with a part equal to a query
-/// word, then the rest, each group alphabetical. An empty query lists every
-/// icon.
-pub fn search<'a>(query: &str, set: &'a IconSet, words: &[(&str, &str)]) -> Vec<&'a str> {
-    let query = split_words(query);
-    // Each icon with the name parts of itself and of its aliases.
-    let mut parts: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-    for name in set.names() {
-        if let Some(icon) = set.canonical(name) {
-            parts.entry(icon).or_default().extend(name.split('-'));
-        }
-    }
-    let mut groups: [BTreeSet<&str>; 3] = Default::default();
-    for (icon, icon_parts) in parts {
-        let mut by_curated = false;
-        let mut by_equal = false;
-        let all_match = query.iter().all(|word| {
-            if curated(word, set, words) == Some(icon) {
-                by_curated = true;
-                return true;
+/// Building it reads every icon's name parts once, so a query compares them
+/// instead of rebuilding them, and one index answers any number of queries.
+pub struct SearchIndex<'a> {
+    /// Each icon, alphabetically, with the hyphen-separated parts of its own
+    /// name and of its aliases' names.
+    icons: Vec<(&'a str, Vec<&'a str>)>,
+    set: &'a IconSet,
+    words: &'a [(&'a str, &'a str)],
+}
+
+impl<'a> SearchIndex<'a> {
+    /// Builds the index of `set`, whose curated words are `words`.
+    pub fn new(set: &'a IconSet, words: &'a [(&'a str, &'a str)]) -> Self {
+        let mut parts: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+        for name in set.names() {
+            if let Some(icon) = set.canonical(name) {
+                parts.entry(icon).or_default().extend(name.split('-'));
             }
-            by_equal |= icon_parts.contains(&word.as_str());
-            icon_parts
-                .iter()
-                .any(|part| part.starts_with(word.as_str()))
-        });
-        if all_match {
-            let group = if by_curated {
-                0
-            } else if by_equal {
-                1
-            } else {
-                2
-            };
-            groups[group].insert(icon);
+        }
+        Self {
+            icons: parts.into_iter().collect(),
+            set,
+            words,
         }
     }
-    groups.into_iter().flatten().collect()
+
+    /// The icons for the picker's search box, best first.
+    ///
+    /// An icon matches when every query word is a prefix of one of its
+    /// hyphen-separated name parts (or an alias's), or a curated row maps the
+    /// word to it. Curated hits come first, then icons with a part equal to a
+    /// query word, then the rest, each group alphabetical. An empty query
+    /// lists every icon.
+    pub fn search(&self, query: &str) -> Vec<&'a str> {
+        let query = split_words(query);
+        // Each query word is answered once, rather than once per icon.
+        let answers: Vec<Option<&str>> = query
+            .iter()
+            .map(|word| curated(word, self.set, self.words))
+            .collect();
+        let mut groups: [BTreeSet<&str>; 3] = Default::default();
+        for (icon, icon_parts) in &self.icons {
+            let mut by_curated = false;
+            let mut by_equal = false;
+            let all_match = query.iter().zip(&answers).all(|(word, answer)| {
+                if *answer == Some(*icon) {
+                    by_curated = true;
+                    return true;
+                }
+                by_equal |= icon_parts.contains(&word.as_str());
+                icon_parts
+                    .iter()
+                    .any(|part| part.starts_with(word.as_str()))
+            });
+            if all_match {
+                let group = if by_curated {
+                    0
+                } else if by_equal {
+                    1
+                } else {
+                    2
+                };
+                groups[group].insert(*icon);
+            }
+        }
+        groups.into_iter().flatten().collect()
+    }
 }
 
 #[cfg(test)]
@@ -241,35 +268,36 @@ mod tests {
     #[test]
     fn search_with_an_empty_query_lists_every_icon() {
         let set = set(&["b", "a"], &[("c", "a")]);
-        assert_eq!(search("", &set, &[]), ["a", "b"]);
-        assert_eq!(search("  ", &set, &[]), ["a", "b"]);
+        let index = SearchIndex::new(&set, &[]);
+        assert_eq!(index.search(""), ["a", "b"]);
+        assert_eq!(index.search("  "), ["a", "b"]);
     }
 
     #[test]
     fn search_matches_name_part_prefixes() {
         let set = set(&["photo-album", "camera-photo", "phone", "film"], &[]);
+        let index = SearchIndex::new(&set, &[]);
         assert_eq!(
-            search("pho", &set, &[]),
+            index.search("pho"),
             ["camera-photo", "phone", "photo-album"]
         );
-        assert_eq!(search("photo", &set, &[]), ["camera-photo", "photo-album"]);
+        assert_eq!(index.search("photo"), ["camera-photo", "photo-album"]);
     }
 
     #[test]
     fn search_needs_every_word_to_match() {
         let set = set(&["photo-album", "photo-camera", "music-album"], &[]);
-        assert_eq!(search("photo album", &set, &[]), ["photo-album"]);
-        assert!(search("photo zebra", &set, &[]).is_empty());
+        let index = SearchIndex::new(&set, &[]);
+        assert_eq!(index.search("photo album"), ["photo-album"]);
+        assert!(index.search("photo zebra").is_empty());
     }
 
     #[test]
     fn search_orders_curated_then_equal_part_then_prefix() {
         let set = set(&["camera", "photo-album", "photograph", "film"], &[]);
         let words = [("photo", "film")];
-        assert_eq!(
-            search("photo", &set, &words),
-            ["film", "photo-album", "photograph"]
-        );
+        let index = SearchIndex::new(&set, &words);
+        assert_eq!(index.search("photo"), ["film", "photo-album", "photograph"]);
     }
 
     #[test]
@@ -278,23 +306,38 @@ mod tests {
             &["image", "picture-frame"],
             &[("pic", "image"), ("picture", "image")],
         );
-        assert_eq!(search("pic", &set, &[]), ["image", "picture-frame"]);
+        let index = SearchIndex::new(&set, &[]);
+        assert_eq!(index.search("pic"), ["image", "picture-frame"]);
         // "picture" is an alias's whole part, so image has an equal part.
-        assert_eq!(search("picture", &set, &[]), ["image", "picture-frame"]);
+        assert_eq!(index.search("picture"), ["image", "picture-frame"]);
     }
 
     #[test]
     fn search_skips_a_curated_row_for_a_missing_icon() {
         let set = set(&["film"], &[]);
-        assert!(search("photo", &set, &[("photo", "gone")]).is_empty());
+        let index = SearchIndex::new(&set, &[("photo", "gone")]);
+        assert!(index.search("photo").is_empty());
+    }
+
+    #[test]
+    fn one_index_answers_more_than_one_query() {
+        let set = set(&["photo-album", "camera-photo", "phone", "film"], &[]);
+        let index = SearchIndex::new(&set, &[]);
+        assert_eq!(
+            index.search("pho"),
+            ["camera-photo", "phone", "photo-album"]
+        );
+        assert_eq!(index.search("film"), ["film"]);
+        assert!(index.search("zebra").is_empty());
     }
 
     #[test]
     fn a_deprecated_icon_is_never_picked() {
         let mut set = set(&["camera", "photo"], &[]);
         set.icons.get_mut("photo").unwrap().hidden = true;
+        let index = SearchIndex::new(&set, &[]);
         assert_eq!(best_icon("Photos", &set, &[]), None);
-        assert!(search("photo", &set, &[]).is_empty());
-        assert_eq!(search("", &set, &[]), ["camera"]);
+        assert!(index.search("photo").is_empty());
+        assert_eq!(index.search(""), ["camera"]);
     }
 }
