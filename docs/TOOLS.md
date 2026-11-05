@@ -22,9 +22,10 @@ it runs; without it, run the same cargo commands in a shell.
 
 Either way, `Cargo.lock` changes only in a task that adds or updates a
 dependency. In a shell, pass `--locked` to `cargo build`, `test`, and
-`clippy`. A server tool with a `locking_mode` input takes the value that
-means `--locked`; whether it locks when the input is left out is not yet
-checked (`TASKS.md`, Found while working).
+`clippy`. A server tool's `locking_mode` input defaults to `"locked"`
+(`--locked`), so leave it out; its input schema says so (read 2026-11-05).
+`"unlocked"` lets `Cargo.lock` change, so pass it only in a task that adds or
+updates a dependency.
 
 | Tool | Covers |
 |------|--------|

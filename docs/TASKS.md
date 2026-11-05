@@ -16,10 +16,9 @@ are collected in section V instead of blocking:
 - section P's "Juniors and interns" list, the best place for a first task,
   ranked most severe first, so take one from the top;
 - section B's icon picker tasks, in order: B45 (log lines) first;
-- section G (settings window polish): G2, G6, or the pure half of G1, G4,
-  or G7 to start;
-- section K (K10-K16), each a pure move with rules that leave nothing to
-  design;
+- section G (settings window polish): the pure half of G13;
+- section K (K10-K13, K15, K16), each a pure move with rules that leave
+  nothing to design;
 - O4, which needs no code;
 - anything else not marked **[needs decision]**, "still to design", or in
   section D.
@@ -868,6 +867,8 @@ alongside the others:
 - cards: done (G4-G6);
 - long names: done (G7, G8); G9 remains.
 
+G13, found while building G10's page scroll, stands alone.
+
 G1, G4, and G7 were pure code that only their partner task called, so each
 landed in its partner's commit. A junior could write and test the pure half
 first, and a second person could take the Win32 half on the same branch.
@@ -898,6 +899,28 @@ exist yet is one the task creates.
     short-named space, hovering the long one shows its full name, the short
     one shows nothing, and moving between rows updates the tip. It works in
     light and dark and at 150 %.
+
+- [ ] **G13. Tab scrolls a long page to the focused control (platform).**
+  **[needs human]** Found while building G10: on a page taller than the window
+  (`settings_window/scroll.rs`), Tab onto a control scrolled out of view leaves
+  it hidden.
+  - Pure half (a junior may write it first, as G1's was): `PageScroll::reveal(&self,
+    top: i32, bottom: i32, margin: i32) -> Option<i32>` in `page_scroll.rs`, the
+    offset that brings a control's layout rows `top..bottom` into view with
+    `margin` to spare, or `None` when it is in view already. A control taller than
+    the view shows its top. Tests: above, below, inside, taller, and at both ends
+    of the range.
+  - Win32 half: after the message loop's `IsDialogMessage` moves the focus
+    (`runtime/mod.rs`), and the new focus is a child of the shown page, read its
+    rect in page coordinates, ask `reveal`, and scroll there through the path
+    `scroll_page` already takes, so the cards repaint as for the wheel. Use
+    `scaled` for the margin (8 px at 96 DPI).
+  - Senior review: `unsafe` Win32, and the check runs for every message the
+    settings window's loop sees, so it must cost nothing when the focus did not
+    change (compare with the last focus stored in `SettingsState`).
+  - **[needs human]** check: on a page taller than the window, Tab and Shift+Tab
+    through every control: each one scrolls into view as it is reached, and the
+    wheel, the bar, and PageUp/PageDown still work.
 
 ## T. Animations (ROADMAP D12, D13, F-33)
 
@@ -1740,8 +1763,9 @@ Rules for every Q task:
 ## P. Pay down what we found while working
 
 The **Found while working** list, triaged on 2026-11-02 against the code,
-P28-P39 from the code review of 2026-11-04, and P40-P45 from SonarCloud's
-analysis of the same day. "How to work a task" applies. Each
+P28-P39 from the code review of 2026-11-04, P40-P45 from SonarCloud's
+analysis of the same day, and P47-P48 from the list's triage on 2026-11-05.
+"How to work a task" applies. Each
 task says whether it changes behavior; a bug fix that does gets a section V
 row (rule 8).
 
@@ -1866,6 +1890,19 @@ Logs, tooling, readability, docs, and checks that may close a task.
   the Details header menu, by the menu recipe. It records one undo entry, like Choose
   columns. Take the widths from plain data in a function, and test it. **[needs
   human]** check: on a space and a 50,000-file lens, no column clips and no stall.
+
+- [ ] **P47a. See whether a browsed lens lists too often (no code).** Part of P47.
+  While a lens is browsed into a subfolder, the worker watches the lens's whole
+  folder tree (`Folder::open` in `win32/folder_watch.rs` asks for the subtree when
+  `root` is set), so a change anywhere under it lists the shown subfolder again.
+  - Make a throwaway lens on a copy of a Rust project, browse into a quiet
+    subfolder of it (`src`), and run `cargo build` in the copy while
+    `./scripts/dev.ps1 -Release -Verbosity 1` logs. Count the "built a lens's
+    list" lines for the shown folder per second, and note their `elapsed`.
+  - Record the rate, the times, the date, and the tree's file count under P47.
+    If the shown folder is listed more than once a second while nothing in it
+    changes, P47b is ready. Otherwise delete P47 in the commit, with the numbers
+    as the reason.
 
 ### Seniors only
 
@@ -2105,6 +2142,23 @@ These are in the order we would take them. Each lands alone.
   - **[needs human]** check, with P17c: Tab in and out; arrows, Delete, and Enter, on
     a space and a lens, at 100 % and 150 %, light and dark.
 
+- [ ] **P48. A keyboard path to the settings header's icon and rename
+  (accessibility, M7).** The header's icon and name (`settings_window/header.rs`,
+  S11, S12) open the icon picker and the inline rename only on a double-click
+  (`STN_DBLCLK`), so neither can be reached from the keyboard. Take it with M7
+  item 4 and P17, not before.
+  - Proposed, which a senior may amend: both statics get `WS_TABSTOP`, so
+    `IsDialogMessage` gives them Tab, and they draw a focus rectangle only while
+    focused, as P17a's field does. Enter or Space on the icon opens the picker;
+    Enter or F2 on the name starts the rename. Each raises the event its
+    double-click raises, so the app gains no second path.
+  - Both statics live only on a space's own pages; a Global scope has no header
+    to reach. Remember the window may be gone after a dispatch (`ENGINEERING.md`
+    section 6, Re-entrancy).
+  - **[needs human]** check: Tab reaches the icon and then the name, light and
+    dark, at 100 % and 150 %; Enter opens each; Esc cancels the rename and leaves
+    the focus on the name.
+
 - [ ] **P18. Make the on-screen harness explain a wallpaper capture (scripts).**
   `scripts/onscreen/smoke.ps1`, run by an agent on the maintainer's machine on
   2026-10-31, read the wallpaper instead of the backdrop and the space, though
@@ -2158,6 +2212,22 @@ These are in the order we would take them. Each lands alone.
     bounded (`ENGINEERING.md` section 6), so the last save still lands before exit.
     A failed write comes back as an event, so `save`'s one alert still shows.
   - Tests: the newest-wins hand-off, as a pure type.
+
+- [ ] **P47. List a browsed lens only when its own folder changes (perf; thread).**
+  P47a, in the junior list, measures whether this is needed and may delete it.
+  - [ ] **P47b.** After: P47a, and K10 (both edit `folder_watch.rs`; take K10
+    first). The notify records already name each changed path, relative to the
+    watched root. Before a subtree change debounces into a listing, keep it only
+    when its parent is the shown folder, or when it is the shown folder itself or
+    a folder on the way down to it (a rename or delete there must still reach the
+    lens). Put that rule in a pure `touches_shown(root, shown, changed) -> bool`
+    beside `Coalescer`, with tests: a change in the shown folder, in a sibling, in
+    a deeper child, and to each folder on the path, and the same under a junction
+    spelling. An overflowed read (no records) still lists, as now. Keep the
+    worker's lifetime and its waits exactly as they are (`ENGINEERING.md` section
+    6). **[needs human]** check: P47a's setup lists the shown folder only when it
+    changes, and renaming the browsed folder from Explorer still takes the lens
+    back as W42's row says.
 
 - [ ] **P39. Catch a re-entrant `with_state` borrow at run time (fix; unsafe).**
   `window_state::with_state` hands out a `&mut T` made from a raw pointer. Only its
@@ -2548,19 +2618,7 @@ for a machine that has it.
 
 One line per issue noticed but not fixed: file, symptom, suggested task.
 
-- `folder_watch.rs`: a browsed lens's subtree read re-lists the subfolder it
-  shows on a change anywhere under the lens's folder; filter the notify
-  records to the shown path if a large, busy tree makes it list too often.
-- `settings_window/scroll.rs`: Tab onto a control scrolled out of view
-  does not scroll the page to it; follow the focus (each control's
-  `*N_SETFOCUS`, or a check in the message loop) if it proves confusing.
-- `settings_window/header.rs` (S11, S12, D26): the header's icon and name
-  open only on a double-click, with no keyboard path to the picker or the
-  rename; give both one in M7's accessibility work.
-- `docs/TOOLS.md` section 1: whether rust-mcp-server's cargo tools lock
-  `Cargo.lock` when `locking_mode` is left out is unchecked (its README does
-  not say, 2026-11-05). With the server installed, read a tool's input
-  schema or run `cargo-check` and watch for a lock change, then state the
-  answer there.
-- `TASKS.md` "Pick a task": it still offers G1, G2, G4, G6, and G7, which
-  section G says are done; refresh the list against the open tasks.
+Triaged 2026-11-05: the folder watch's subtree listing became P47, the page
+scroll's focus G13, and the settings header's keyboard path P48; the
+`locking_mode` question was answered in `TOOLS.md`, and "Pick a task" was
+refreshed.
