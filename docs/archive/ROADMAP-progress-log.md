@@ -547,3 +547,11 @@ The run also showed that `shadow_opacity` is the black's own alpha, not the
 darkest pixel: the blur leaves the peak at about three quarters of it below
 the space and half beside it. The maintainer chose on 2026-10-27 to keep
 that look; the theme field's comment and D15 now say so.
+
+### 2026-11-04: settings text on build 26300
+
+On the installed 0.3.0-alpha.1 build (`a2e51c0`), at 100 % in dark and
+light mode: the settings window opened on Global, on a plain space, and on
+a lens, and stayed up; the rail, scopes, and header labels and the button
+text drew as before, and the lens's Folder note showed its path. Not
+covered: 150 %.
