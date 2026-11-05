@@ -644,7 +644,10 @@ A native, lightweight, offline Windows desktop organizer that:
     pane shows each space's icon beside its name. Double-clicking the
     header's name renames the space inline; during that rename the icon
     becomes the same button. Both apply at once, as a desktop rename does,
-    so the window's Cancel does not undo them.
+    so the window's Cancel does not undo them. (Amended 2026-11-04,
+    maintainer, by D26: double-clicking the header's icon opens the picker
+    at any time, not only during a rename, and a space with no icon always
+    shows the placeholder there. The desktop rule is unchanged.)
 - **D17. Views, sort rules, and lens settings (2026-10-21, maintainer).**
   Decides M4 phase 4 (F-08, F-09, F-17's Lenses page, F-31's kept rule).
   - *Telling a lens from a space:* each row of the settings window's
@@ -859,6 +862,34 @@ A native, lightweight, offline Windows desktop organizer that:
     with GDI and already measure with `DT_CALCRECT`, so R18 starts from that.
   - Work items: `TASKS.md` P16.
 
+- **D26. Settings window polish (2026-11-04, maintainer).** Decides F-68.
+  - *The highlight fades.* The outline that marks the space selected in the
+    settings window fades in (150 ms) and out (250 ms) rather than switching.
+    It still holds for the same time. The platform plays the fade, so the app
+    goes on sending a plain on or off. While Windows' "Animation effects" is
+    off, it switches as before, which is the same rule `play_for` follows.
+  - *The space's header.* On a space's page, the icon and the name sit on
+    one line. Double-clicking the icon opens the icon picker. Double-clicking
+    the name opens an inline edit, and Enter saves it. A space with no icon
+    always shows the placeholder there, so there is something to
+    double-click. This amends D16's *Settings* rule, under which the header
+    icon took clicks only during a rename. Neither part has a keyboard path
+    yet; that waits for M7's accessibility work.
+  - *Long names.* A name too long for the header scrolls slowly to its end
+    and back, pausing at each end, and shows in full in a tooltip. Only the
+    header scrolls. A scopes-pane row ends in an ellipsis and gets the
+    tooltip, because several rows moving at once would be noisy. While
+    "Animation effects" is off, the header ends in an ellipsis too.
+  - *Cards.* Every page groups its fields on cards, as Windows 11's Settings
+    does. A heading sits above its card, a hairline divides the rows, and a
+    note right after a field becomes that field's grey description. The
+    grouping is read from the page's existing `Heading` fields, so the form
+    data does not change. Pages whose one heading covers unrelated fields
+    are split into smaller groups. No setting moves to another page. One
+    note does: the Colors page's note on materials goes to the Appearance
+    page, which it describes.
+  - Work items: `TASKS.md` section G, and S11 and S12 (amended the same day).
+
 ## 3. Guiding principles
 
 - **Keep the domain pure.** All new behavior is a `Command` variant in
@@ -1001,6 +1032,9 @@ Remaining:
    (decided 2026-10-29, maintainer). Done: the format, the dialogs, and the
    Colors page's save, load, and Themes list; the on-screen check is
    `TASKS.md` section V.
+5. Settings window polish (F-68, D26): the highlight fades, a space's
+   header pairs its icon and name, long names scroll, and pages group their
+   fields on cards (`TASKS.md` section G).
 
 Exit criteria: every runtime setting can be edited in the UI, and the tray
 menu can show and hide spaces and open settings.
@@ -1391,6 +1425,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-65 | Group by, as Explorer (every space) | M4 | Done; check pending (`TASKS.md` V: W37, W38); decided in D18 |
 | F-66 | Measuring guides while moving or resizing a space: alignment lines, gaps in pixels, and equal-gap and equal-size marks (optional) | M6 | Open; decided in D21 (M6 item 4) |
 | F-67 | A lens follows its folder when it is renamed or moved | M4 | Done; check pending (`TASKS.md` V: W45); decided in D19 |
+| F-68 | Settings window polish: a fading highlight, a one-line icon and name header, scrolling long names, and cards | M3 | Open; decided in D26, tasks in `TASKS.md` section G and S11, S12 |
 
 
 ## 8. Open questions

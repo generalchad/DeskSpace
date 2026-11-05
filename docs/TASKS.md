@@ -15,6 +15,8 @@ its section.
 are collected in section V instead of blocking:
 - section P's "Juniors and interns" list, the best place for a first task,
   ranked most severe first, so take one from the top;
+- section G (settings window polish): G2, G6, or the pure half of G1, G4,
+  or G7 to start;
 - section K (K10-K16), each a pure move with rules that leave nothing to
   design;
 - O4, which needs no code;
@@ -817,9 +819,12 @@ Rules for every S task:
     buttons.
 
 - [ ] **S11. Icons in the settings window (platform, app).** **[needs
-  human]**
+  human]** Amended 2026-11-04 by D26: the header always shows an icon slot
+  on a space's page, with the placeholder for a space without an icon.
   - `ui.rs`: `SettingsScope.icon: Option<Glyph>` and `SettingsHeader.icon:
-    Option<Glyph>`, owned so the form stays plain data. The settings window
+    Option<HeaderIcon>`, with `enum HeaderIcon { Glyph(Glyph), Placeholder }`.
+    `None` means no slot (Global); `Placeholder` is a space without an icon.
+    Both are owned, so the form stays plain data. The settings window
     rasterizes them through a `GlyphCache` in its state, in its own text
     color and DPI. `settings/mod.rs` `build_form` takes the glyphs by space
     (a `&BTreeMap<SpaceId, Glyph>` that `settings_session.rs` builds from
@@ -828,32 +833,46 @@ Rules for every S task:
   - Scopes pane (`settings_window/paint.rs` `on_draw_scope`): the icon at
     s(16), left of the label, after the indent, dimmed with dimmed rows.
   - Header: put the new code in a new `settings_window/header.rs`. An
-    owner-drawn `BUTTON` of s(20)
-    square at `title_x` draws the icon. It stays disabled, and so takes no
-    click or Tab stop, until S12. The title moves right by s(20) + s(8)
-    while there is an icon, and `apply_header` shows, hides, and moves
-    both. Global has no icon.
-  - Tests: `build_form` gives each space scope and the header the glyph it
-    was handed, and Global none.
+    owner-drawn static (`SS_OWNERDRAW | SS_NOTIFY`, so S12 can take its
+    double-click) of s(20) square at `title_x`, centred on the title's line,
+    draws the icon. `Placeholder` draws S10's placeholder in GDI: a rounded
+    outline in the text color blended halfway to the body (`paint.rs`
+    `blend`), with Segoe Fluent's "Add" glyph (`E710`) from the glyph font.
+    The static takes no click until S12. On a space's page the title starts
+    s(20) + s(8) right of `title_x`, and `apply_header` shows, hides, and
+    moves both. Global has no slot, and its title stays where it is.
+  - Tests: `build_form` gives each space scope the glyph it was handed and
+    the header `HeaderIcon::Glyph` of it; a space with no glyph gets
+    `Placeholder` in the header and `None` in its scope row; Global gets
+    `None` in both.
   - **[needs human]** check: in light and dark, at 100 % and 150 %, spaces
     with icons show them in the scopes pane and the header, aligned with
-    the text; spaces without show nothing, laid out as before; a dimmed
-    scope's icon is dimmed; the header icon takes no click.
+    the text; a space without one shows the placeholder in the header and
+    nothing in its scopes row, which is laid out as before; a dimmed
+    scope's icon is dimmed; the header icon takes no click; Global's header
+    has no icon and its title has not moved.
 
 - [ ] **S12. Renaming in the settings header (platform, app).** **[needs
-  human]** After S10 and S11.
+  human]** After S10 and S11. Amended 2026-11-04 by D26: the icon opens the
+  picker on a double-click at any time, not only during the name's edit.
   - `SettingsHeader.renamable: bool` (true for a space scope). In
     `settings_window/header.rs`, double-clicking the title (`SS_NOTIFY`,
     `STN_DBLCLK`) puts an edit over it with the text selected and focused.
     The edit answers `WM_GETDLGCODE` with `DLGC_WANTALLKEYS`, so Enter and
     Esc reach it rather than the window's OK and Cancel. Enter, or focus
-    leaving for anything but the icon button or the picker, raises
+    leaving for anything but the header icon or the picker, raises
     `SettingsEvent::HeaderRenamed { title }`; Esc ends the edit and
-    changes nothing.
-  - While the edit is open, the header's icon button is enabled and shown,
-    with the placeholder when the space has none (S10's look). A click
-    raises `SettingsEvent::HeaderIconPressed`. `apply_header` updates the
-    icon and the label without closing an open edit.
+    changes nothing. If G8 has landed, the edit hides the scrolling title
+    and stops its scroll while it is open (G8 says how).
+  - Double-clicking the header icon (S11's static, `STN_DBLCLK`), with or
+    without the edit open, raises `SettingsEvent::HeaderIconPressed`. A
+    single click does nothing. Over the icon the cursor is a hand
+    (`WM_SETCURSOR` in the settings window's procedure, for that control
+    only), and a tooltip says "Double-click to change the icon": a second
+    tool on G8's header tooltip if G8 has landed, or else create that
+    tooltip here as G8 describes, and G8 reuses it. Opening the picker
+    does not end an open edit. `apply_header` updates the icon and the
+    label without closing an open edit.
   - App, `on_settings_event`: `HeaderRenamed` commits `RenameSpace` at once,
     through the same helper the desktop rename's commit uses (extract it
     from `finish_rename` if it is inline), ignoring an empty or unchanged
@@ -867,10 +886,321 @@ Rules for every S task:
     edit opens with the name selected. Type, then Enter: the header, the
     scopes pane, and the space on the desktop show the new name, and the
     window stays open. Esc in the edit keeps the old name and the window
-    open. During the edit, click the icon: the picker opens over the
-    settings window, and a choice shows at once in the header, the scopes
-    pane, and on the desktop. Cancel afterwards keeps both changes.
-    Global's header does not edit.
+    open. Double-click the icon, once with the edit closed and once with
+    it open: the picker opens over the settings window each time, an open
+    edit stays open behind it, and a choice shows at once in the header,
+    the scopes pane, and on the desktop. A single click on the icon does
+    nothing; the cursor over it is a hand and its tooltip shows. A space
+    with no icon: double-click the placeholder, pick one, and it replaces
+    the placeholder. Cancel afterwards keeps both changes. Global's header
+    does not edit and has no icon.
+
+## G. Settings window polish (ROADMAP D26, F-68)
+
+Read D26 first; it is the spec. There are three strands, and each can run
+alongside the others:
+
+- the highlight fades: G2, then G1 with G3;
+- cards: G4 with G5, then G6;
+- long names in a space's header: G7 with G8, then G9.
+
+G1, G4, and G7 are pure code that only their partner task calls, so each
+lands in its partner's commit. A junior can write and test the pure half
+first, and a second person can take the Win32 half on the same branch.
+
+The header's icon and inline rename are S11 and S12 (section S, amended for
+D26). They wait on the icon picker (S9, S10). G8 and G9 do not wait for them.
+`settings_window/header.rs` is created by whichever of S11 and G8 lands
+first. That task moves `build_header` (`build.rs`) and `apply_header`
+(`update.rs`) into it, unchanged, so the other task finds them there.
+
+These tasks are written for juniors and interns. G1, G4, G6, and G7 touch no
+`unsafe` code. The others cross the junior line in section P, so each one
+says why and names what a senior reviews. Unless a task says
+otherwise, a name in `code` that does not exist yet is one the task creates.
+
+- [ ] **G1. The highlight's fade (platform, pure).** Lands in the same
+  commit as G3, its first caller; tick and archive both. A junior can write
+  and test it first, then hand the branch on.
+  - `render/highlight.rs`, beside `render/transition.rs`: `pub const
+    HIGHLIGHT_FADE_IN: Duration` (150 ms) and `HIGHLIGHT_FADE_OUT` (250 ms),
+    and `pub struct HighlightFade { from: f32, to: f32, start: Duration }`.
+    Its methods:
+    - `at_rest(on: bool) -> Self`;
+    - `level(now) -> f32`, which eases from `from` to `to` with
+      `math::smoothstep`;
+    - `toward(on: bool, now)`, which restarts from `level(now)`;
+    - `jump(on: bool)`;
+    - `is_done(now) -> bool`.
+  - A fade's length is its full duration times `(to - from).abs()`, so a
+    fade reversed half-way takes half the time and starts with no jump.
+  - Tests: at rest it stays at 0 or 1. A full fade in reaches 1 at 150 ms
+    and a fade out reaches 0 at 250 ms. The level only rises during a fade in
+    and only falls during a fade out. It never leaves 0..1. Reversing at
+    half-way starts from the level it had and ends early in proportion.
+    `is_done` is true from the end on.
+  - It cannot land alone: with no caller, clippy's `-D warnings` fails on
+    dead code, and `#[expect]` is not the answer.
+
+- [ ] **G2. Let a window hold two frame subscriptions (platform).** G3 gives
+  a space window a second reason to want frames while an animation may hold
+  the first. Today `Subscribers` (`win32/frame_clock.rs`) keeps one entry
+  per window. The first `Subscription` to drop removes it, which would stop
+  the other one's frames.
+  - `Subscribers` counts per window: `add` increments, `remove` decrements,
+    and the entry goes at 0. A window is still owed one frame per
+    composition, however many subscriptions it has.
+  - `messages::FRAME` in the space window's procedure
+    (`space_window/mod.rs`) calls `frame_clock::delivered(window)` once,
+    then `space_animation::on_frame`. Move the `delivered` call out of
+    `on_frame` to do this.
+  - Update `Subscription`'s doc comment: a window may hold several, and it
+    gets frames while any of them lives.
+  - Tests in `frame_clock.rs`, on `Subscribers` alone: two adds and one
+    remove still list the window in `take_due`; the second remove empties
+    it; a window with two subscriptions is listed once per `take_due`.
+  - Senior review: `Subscribers` is shared with the frame thread under
+    `CLOCK`'s lock. The change itself stays inside that type.
+  - Done when: the gates pass and nothing else changes. The "Frame clock"
+    row in section V already covers it, so add no row.
+
+- [ ] **G3. Fade the highlight in and out (platform, app).** **[needs
+  human]** After G2. Includes G1; one commit, `(G1, G3)`.
+  - App: `SpaceScene` gains `highlight_fades: bool` (`render/scene.rs`,
+    with a `///` doc), filled in `space_scene` (`deskspace-app/src/scene.rs`).
+    It is true unless Windows' "Animation effects" is off. Decide it as
+    `play_for` (`app/animation.rs`) does, including the debug tweak's
+    `ignore_windows`. `Timer::Highlight` and `HIGHLIGHT_MS` stay as they are.
+    Scene test: copy `the_settings_highlight_reaches_the_scene`.
+  - Platform: put the window side in a new `space_window/highlight.rs`,
+    because `space_window/mod.rs` is already past the size limit's 800
+    lines. `SpaceState` gains a `highlight` that holds a `HighlightFade`
+    and an `Option<frame_clock::Subscription>`.
+    - Every place that stores a new `PreparedScene` in `state.scene`
+      (`set_scene`, and `show_scene` in `space_animation.rs`) goes through
+      one helper. Leave `paint` alone: it only puts back the scene it took
+      out. The helper compares the old scene's `highlight` with the
+      new one's. On a change it calls `toward` and subscribes when
+      `highlight_fades` is set, and calls `jump` when it is not. A fold's
+      deferred scene therefore fades when it lands.
+    - `messages::FRAME` then also calls the highlight's frame step. The step
+      invalidates the window while the level moves, and drops the
+      subscription once `is_done`.
+  - Paint: `PaintFrame` (`space_window/frame.rs`) gains `highlight: f32`,
+    set from the fade's level at paint time. The painter (`render/d2d/mod.rs`,
+    the block after the border) draws while the level is above 0, at
+    `selected_fill` with alpha `255 × level`, and no longer reads
+    `scene.highlight`.
+  - `CONTEXT.md` section 6, "Highlight": it fades in and out, and switches
+    while Windows' "Animation effects" is off.
+  - Senior review: the paint and window code is `unsafe`. Every new block
+    keeps or gains its `// SAFETY:` comment.
+  - **[needs human]** check, with `--on-top` at 100 % and 150 %: open
+    Settings on a space, then click other spaces in the scopes pane. Each
+    outline fades in quickly, holds about a second, and fades out, with no
+    flash and no outline left behind. Click a second space mid-fade: the
+    first fades out while the second fades in. Fold and unfold a space
+    while it is highlighted, and hide all spaces mid-fade; nothing sticks.
+    With Windows' "Animation effects" off, it switches as before. With no
+    highlight showing, idle CPU is as before.
+
+- [ ] **G4. Plan a page's cards (platform, pure).** Lands in the same
+  commit as G5, its first caller, as G1 does with G3.
+  - A new `deskspace-platform/src/settings_cards.rs`, pure like
+    `debug_console.rs`: `pub fn card_plan(fields: &[Field]) -> Vec<Placement>`,
+    one `Placement` per field, with `Placement { role: Role, opens_card:
+    bool, closes_card: bool }` and `enum Role { Heading, Row, Description }`.
+    The rules, D26's *Cards*:
+    - A `Heading` closes the open card and is drawn above the next one.
+    - A `Note` right after a field that is neither a `Heading` nor a `Note`
+      is that field's `Description`.
+    - Every other field is a `Row` on the open card, and opens one if there
+      is none. Fields before a page's first heading form an untitled card.
+    - The page's last row closes its card.
+  - Card geometry constants at 96 DPI, at the top of the file, each with a
+    one-line doc: `CARD_PADDING_X` 16, `CARD_PADDING_Y` 8, `CARD_RADIUS` 4,
+    `CARD_GAP` 12 (below a card), `ROW_SEPARATOR_GAP` 8 (above a hairline),
+    and `DESCRIPTION_GAP` 2.
+  - `UiColors` (`win32/dark_mode.rs`) gains `card` and `card_stroke`. Dark:
+    `0x32 0x32 0x32` and the divider's `0x3D 0x3D 0x3D`. Light: `0xF9 0xF9
+    0xF9` and `0xE5 0xE5 0xE5`. Extend `text_contrasts_with_the_body_in_both_modes`
+    so text contrasts with the card too, and add a test that the card
+    differs from the body in both modes.
+  - Tests for `card_plan`: the General page's shape (headings, rows, a note
+    as a description); a note after a heading is a row; two notes in a row
+    are a row and then a row; a page with no heading is one untitled card;
+    a heading closes the card before it; an empty page plans nothing.
+
+- [ ] **G5. Draw the cards (platform).** **[needs human]** Includes G4; one
+  commit, `(G4, G5)`.
+  - `build_pages` (`settings_window/build.rs`) reads `card_plan` for each
+    page.
+    - Opening a card adds `CARD_PADDING_Y`. A row after the card's first adds
+      `ROW_SEPARATOR_GAP` and records a hairline. A description starts
+      `DESCRIPTION_GAP` below its row, with no hairline. Closing a card adds
+      `CARD_PADDING_Y` and then `CARD_GAP`.
+    - Every field on a card is laid out `CARD_PADDING_X` further in on both
+      sides. Pass the inset to `Builder::field`; do not change each field
+      builder.
+    - Record each page's card rects and hairlines in `SettingsState`.
+  - Put the drawing in a new `settings_window/cards.rs`, because `build.rs`
+    is near the size limit. The page's `WM_ERASEBKGND` (`page_wndproc`)
+    fills the body, then draws each card with GDI: `RoundRect` in `card`,
+    edged in `card_stroke`, at `CARD_RADIUS`, and each hairline a 1 px
+    `card_stroke` line inset by `CARD_PADDING_X`.
+  - Colors: in `on_ctl_color`, a control on a card gets the `card`
+    background and brush, and a heading keeps the body's. Store a `card`
+    brush beside `body_brush`, and remake it in `set_colors`. A description
+    draws in `secondary_text`, or in `disabled_text` while its row is
+    disabled. Check what the space preview (`settings_window/preview.rs`)
+    fills behind its picture: it must be `card` too.
+  - Window size: the window still fits the tallest page. If any page at
+    150 % is now taller than about 690 px at 96 DPI (a 1080p work area at
+    150 %), stop and ask. Pages do not scroll today, and scrolling would be
+    its own task.
+  - `CONTEXT.md` section 6, the settings window: pages group their fields on
+    cards (`card_plan`). Add `settings_cards.rs` to the file map's "Settings
+    window controls" row.
+  - Senior review: the build and paint code is `unsafe`, and
+    `on_ctl_color` decides every control's colors.
+  - **[needs human]** check, in light and dark at 100 % and 150 %, on every
+    page of Global, a space, and a lens: each heading's fields sit on one
+    rounded card with hairlines between rows. Labels, check boxes, sliders
+    and their marks, swatches, text boxes, and drop-downs show the card's
+    color behind them, with no body-colored boxes. Notes under a field are
+    grey and sit close under it. Disabled rows still grey out. Switching
+    dark mode while the window is open repaints the cards. Tab order is as
+    before.
+
+- [ ] **G6. Group each page's fields (app).** **[needs human]** After G5,
+  so the check sees the cards. App only: `settings/pages.rs`, plus new
+  heading and note ids in `settings/ids.rs` (next free; never renumber).
+  The first group on a page keeps the page's existing heading id, with the
+  new label. Change no setting, its label, or its page except as listed.
+  - Appearance (`SPACES_HEADING`): "Material" (Color mode, Background
+    material, Corner radius, Tint opacity, Title bar shading), "Border"
+    (Show window border, Border thickness), "Shadow" (Show shadow, Shadow
+    size, Shadow opacity), and "Items" (Item preset).
+  - Move `COMPATIBILITY_NOTE` from the end of the Colors page to right after
+    "Background material", so it becomes that row's description. It
+    describes the materials, and on the Colors page it would read as the
+    Reset button's description.
+  - Colors (`COLORS_HEADING`): "Colors" (Use custom colors, Background tint,
+    Text), "Border" (Border color, Custom border color, Border opacity),
+    "Selection" (Use Windows accent color for the selection, Selection box
+    color, Show selection box border), and "Themes" (Themes, Save theme…,
+    Load theme…, and the reset button).
+  - General (`BEHAVIOR_HEADING`): "Startup" (Start DeskSpace when you sign
+    in, Start with spaces hidden), "Desktop" (Take over the desktop, Snap to
+    grid, Snap resized spaces to whole columns and rows), "Look" (Settings
+    and menus), and "Space icons" (Icon downloads and its note). "Updates"
+    is unchanged.
+  - New spaces: `NEW_SPACES_NOTE` keeps only its second sentence ("A locked
+    space keeps its size and scrolls instead of growing.") and moves right
+    after "Start new spaces locked". A new note right after the heading says
+    "Everything not set here follows the Global appearance and layout."
+  - Every other page is unchanged. Its notes already land where G4's rules
+    put them.
+  - Tests: fix any test that indexes these pages' fields. Add one per
+    regrouped page that checks its headings in order. The handler tests
+    (`every_editable_*_field_has_a_handler`) must pass unchanged.
+  - Collides with: R14, which would rewrite these pages. If R14b has
+    started, stop and ask.
+  - **[needs human]** check: each listed page shows the groups above in
+    that order, with the moved notes under the rows named. Every setting
+    still previews, applies, and cancels as before.
+
+- [ ] **G7. The scrolling title's motion (platform, pure).** Lands in the
+  same commit as G8, its first caller, as G1 does with G3. "Marquee" in
+  this codebase means the selection box (`MARQUEE_COLOR`), so call this the
+  scrolling title.
+  - A new `deskspace-platform/src/title_scroll.rs`: `pub struct TitleScroll
+    { overflow: f32, travel: Duration }`, built by `new(text_width,
+    box_width, scale)`. `overflow` is the part of the text that does not
+    fit, in pixels, and is never below 0. One traverse lasts `overflow` at
+    `TITLE_SCROLL_SPEED`, 30 px per second at 96 DPI times `scale`, and
+    never less than 400 ms.
+  - The motion repeats every `2 × (TITLE_SCROLL_PAUSE + travel)`, with the
+    pause at 1500 ms. It pauses at the start, eases to `overflow` with
+    `smoothstep`, pauses at the end, and eases back.
+  - Methods: `offset(elapsed) -> f32`; `is_moving(elapsed) -> bool`; and
+    `next_move(elapsed) -> Option<Duration>`, which during a pause gives
+    the time left until the next traverse, so G8 can set a timer instead of
+    taking frames.
+  - Tests: no overflow means no motion (offset 0, `next_move` is `None`).
+    The offset is 0 through the first pause, reaches `overflow` at the end
+    of the first traverse, holds through the second pause, and is back at 0
+    after one period. It never leaves 0..overflow. The travel scales with
+    DPI and has its floor. `next_move` counts down during each pause.
+
+- [ ] **G8. Scroll a long name in the header, with a tooltip (platform).**
+  **[needs human]** Includes G7; one commit, `(G7, G8)`. It does not wait
+  for S11 or S12; see the section's introduction for `header.rs`.
+  - The header title becomes an owner-drawn static (`SS_OWNERDRAW |
+    SS_NOTIFY`), drawn in `header.rs`. It is drawn with the heading font and
+    the text color on the body color, clipped to the control, at x =
+    −offset.
+  - Measure the title (`DT_CALCRECT | DT_SINGLELINE`, heading font) whenever
+    its text, its width, or the DPI changes. Then make a fresh `TitleScroll`
+    and restart from offset 0.
+  - It scrolls only while the system's "Animation effects" is on: read
+    `system_animations()` (`win32/system.rs`) when measuring. While it is off, a name that does not fit ends in
+    `DT_END_ELLIPSIS` and does not move.
+  - Frames come from `frame_clock` only while a traverse runs.
+    - The settings window holds a `Subscription` and handles
+      `messages::FRAME` in its procedure: `delivered`, then invalidate the
+      title (no erase).
+    - When a traverse ends, drop the subscription and set a timer for
+      `next_move`. The timer's id goes beside the window's other ids in
+      `settings_window/mod.rs`.
+    - Minimizing stops both, and restoring restarts the scroll. Closing the
+      window drops them with its state. Idle CPU between traverses stays at
+      0.
+  - Tooltip: a `TOOLTIPS_CLASSW` window owned by the settings window, with
+    one tool on the title (`TTF_IDISHWND | TTF_SUBCLASS`). Its text is the
+    full name while it does not fit and empty otherwise, since an empty text
+    shows no tip. Update it with `TTM_UPDATETIPTEXTW`. Follow
+    `win32/info_tip.rs` for creating it, without its tracking. Theme it for
+    dark mode in `set_dark`: `theme_controls` visits child windows only, and
+    the tooltip is not one.
+  - If S12 has landed, the name's edit hides the title and stops the scroll
+    while it is open, and closing the edit restarts it. If S12 has not
+    landed, S12 does this.
+  - Tests, pure, in `header.rs` or `title_scroll.rs`: when to restart (text,
+    width, or DPI changed) and when to scroll (overflow, and the system
+    switch).
+  - `CONTEXT.md` section 6, the settings window: a long name scrolls and has
+    a tooltip.
+  - Senior review: the owner draw, the frame-clock subscription, and the
+    tooltip are `unsafe` Win32.
+  - **[needs human]** check, at 100 % and 150 %, in light and dark: give a
+    space a name about three times the header's width. On its page the name
+    pauses, scrolls smoothly to its end, pauses, and scrolls back,
+    repeating. Hovering it shows the full name. A short name neither moves
+    nor shows a tip. Rename the space from the desktop while its page is
+    open: the scroll restarts. Move the window to a monitor with another
+    DPI: the scroll restarts. Minimize and restore: it stops, then starts.
+    With "Animation effects" off, the name ends in "…" and still shows its
+    tip. Task Manager shows no busy "frame clock" thread during the pauses.
+
+- [ ] **G9. Tooltips for long names in the scopes pane (platform).**
+  **[needs human]** After G8. D26: scope rows do not scroll; a row that ends
+  in an ellipsis (`on_draw_scope` already draws `DT_END_ELLIPSIS`) shows
+  its full label in a tooltip.
+  - Add a second tool to G8's tooltip, on the scopes list box
+    (`TTF_IDISHWND | TTF_SUBCLASS`), with `LPSTR_TEXTCALLBACKW` text. On
+    `TTN_GETDISPINFOW`, find the row under the cursor (`LB_ITEMFROMPOINT`).
+    Give its label only if the label is wider than the row's text area, as
+    `on_draw_scope` measures it; otherwise give no text.
+  - When the pointer moves to another row, `TTM_POP` the tip so the next one
+    asks again. Record the last row in `SettingsState`.
+  - Put the "is it cut off" width check in one function that
+    `on_draw_scope` and the tooltip share, so the two cannot disagree.
+  - Senior review: `unsafe` Win32, and the tool subclasses the list box.
+  - **[needs human]** check: in a scopes pane with one long-named and one
+    short-named space, hovering the long one shows its full name, the short
+    one shows nothing, and moving between rows updates the tip. It works in
+    light and dark and at 150 %.
 
 ## T. Animations (ROADMAP D12, D13, F-33)
 
@@ -2591,3 +2921,6 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
 - `folder_watch.rs`: a browsed lens's subtree read re-lists the subfolder it
   shows on a change anywhere under the lens's folder; filter the notify
   records to the shown path if a large, busy tree makes it list too often.
+- `settings_window/header.rs` (S11, S12, D26): the header's icon and name
+  open only on a double-click, with no keyboard path to the picker or the
+  rename; give both one in M7's accessibility work.
