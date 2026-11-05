@@ -1820,16 +1820,6 @@ A user can lose their layout, an attacker could reach every install, or the next
 
 A rare loss of a user's file, memory that only grows, a broken install's shell entries, or groundwork a senior's fix needs.
 
-- [ ] **P28. Delete the `deskspace.ico` cleanup (fix).** `App::sync_desktop_verbs`
-  (`app/visibility.rs`) deletes `deskspace.ico` beside the storage folder on every
-  show and hide. Under `--config` that is the config's own folder, wherever the user
-  put it, so a file of theirs with that name is deleted without asking. Only builds
-  from before 2026-10-11 wrote the file. The cleanup came in `325f079`, two days
-  before the first tag (`v0.2.0-alpha.1`), so no release ever wrote it.
-  - Delete the `leftover` lines and the comment above them. Change nothing else.
-  - Done when: the gates pass, and `rg -n "deskspace.ico" crates` finds only
-    `deskspace-app/build.rs` and `deskspace-app/Cargo.toml`.
-
 - [ ] **P32a. A debug button that blocks the UI thread (debug tool).** Part of P32,
   which needs it to reproduce the bug. Add "Block the UI thread 2 s" to the debug
   window, built the way `DebugId::ThemeChanged` is: a `DebugId` (next free value) and

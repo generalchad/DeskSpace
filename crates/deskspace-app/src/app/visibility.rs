@@ -34,10 +34,6 @@ impl App {
             return;
         };
         let exe = exe.to_string_lossy();
-        // Older versions wrote a .ico beside the storage folder for this entry;
-        // the executable carries its own icon resource now, so clean it up.
-        let leftover = self.storage.root().with_file_name("deskspace.ico");
-        let _ = std::fs::remove_file(&leftover);
         let verbs = desktop_verbs(&exe, !self.visible);
         if let Err(error) = set_desktop_verbs(&verbs) {
             tracing::warn!(%error, "could not update the desktop menu entries");
