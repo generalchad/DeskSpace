@@ -498,7 +498,10 @@ The saved scale is `Config::typography`. The Debug window's typography box
 can override it for the session (`DebugTools::typography`): its picks are a
 draft until "Apply fonts", so browsing a list of families rebuilds nothing,
 and "Reset to saved fonts" drops the override. `font_choices.rs` holds the
-option lists a family, size, and weight choice shows. `App::typography`
+option lists a family, size, and weight choice shows, for the Debug box and
+the settings window's font pages alike; a size or family that no preset
+lists is offered in its place, so the settings window refreshes a
+drop-down's list when it changes, not only its selection. `App::typography`
 (`app/fonts.rs`) says which scale is in force.
 `App::sync_typography` hands it to the platform at startup and after every
 change, and skips an unchanged scale, because each hand-off rebuilds every
@@ -868,7 +871,11 @@ in `ui.rs`. What spans them:
 - **The app's form** (`settings/`): the scopes are Global, then every space
   indented, dimmed while it follows Global. Each row shows its kind's glyph in
   the row's text color, so a dimmed row dims its glyph too. Global lists every
-  page but View, Shortcuts and Lens, and adds a Lenses page after New spaces
+  page but View, Shortcuts and Lens, lists the Space fonts and Window fonts
+  pages after Advanced (`settings/fonts.rs`: a card per text role, edits
+  writing `Config::typography` and previewed through
+  `App::sync_typography`; a reset per page), and adds a Lenses page after
+  New spaces
   for a new lens's defaults; a space lists the five look pages, which
   show
   its values (from Global until customized) greyed unless the header's

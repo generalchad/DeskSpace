@@ -37,7 +37,8 @@ not a finished product yet.
   and a small helper (`deskspace-watchdog.exe`, kept beside `deskspace.exe`)
   puts them back if it crashes.
 - **Themes.** All spaces share one look by default, and you can customize a
-  single space without changing the rest.
+  single space without changing the rest. Settings > Space fonts and Window
+  fonts choose the family, size, and weight of each kind of text.
 - **Control center.** A tray icon, right-click menus, keyboard shortcuts, and a
   settings window where every option can be changed and previewed live.
 

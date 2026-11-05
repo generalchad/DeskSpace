@@ -5,6 +5,7 @@ use std::collections::HashMap;
 
 use deskspace_core::Rect;
 use deskspace_core::source::FolderView;
+use deskspace_core::typography::Typography;
 
 use super::ids::page;
 use super::tables::HOTKEY_BINDINGS;
@@ -79,6 +80,7 @@ pub struct Session {
     pub saved_theme: Theme,
     pub saved_window: WindowSettings,
     pub saved_layout: GridSpec,
+    pub saved_typography: Typography,
     /// The binding text as typed, per `HOTKEY_BINDINGS`, committed on Apply.
     pub hotkey_texts: [String; HOTKEY_BINDINGS.len()],
     pub hotkey_errors: [Option<String>; HOTKEY_BINDINGS.len()],
@@ -88,6 +90,9 @@ pub struct Session {
     /// The theme files found in `themes_dir` when the window opened, for the
     /// Colors page's list.
     pub themes: Vec<ThemeFile>,
+    /// Every installed font family, sorted, read when the window opened, for
+    /// the font pages' family lists.
+    pub fonts: Vec<String>,
     pub dirty: bool,
     /// The scope being edited: `None` for Global, or a space.
     pub scope: Option<SpaceId>,
@@ -124,10 +129,12 @@ impl Session {
             saved_theme: config.theme.clone(),
             saved_window: config.window.clone(),
             saved_layout: config.desktop.layout,
+            saved_typography: config.typography.clone(),
             hotkey_texts: saved_hotkey_texts(&config.window),
             hotkey_errors: Default::default(),
             filter_texts: HashMap::new(),
             themes: Vec::new(),
+            fonts: Vec::new(),
             dirty: false,
             scope: None,
             scope_kind: ScopeKind::Global,
@@ -142,6 +149,7 @@ impl Session {
         self.saved_theme = config.theme.clone();
         self.saved_window = config.window.clone();
         self.saved_layout = config.desktop.layout;
+        self.saved_typography = config.typography.clone();
         self.saved_spaces = snapshot_spaces(config);
         self.pinned.clear();
         self.hotkey_texts = saved_hotkey_texts(&config.window);
@@ -155,6 +163,7 @@ impl Session {
         config.theme = self.saved_theme.clone();
         config.window = self.saved_window.clone();
         config.desktop.layout = self.saved_layout;
+        config.typography = self.saved_typography.clone();
     }
 
     /// Takes a change made outside the window (the space's context menu,
@@ -241,6 +250,24 @@ mod tests {
         let config = Config::new();
         let session = Session::new(&config);
         (config, session)
+    }
+
+    #[test]
+    fn cancel_puts_the_fonts_back_and_apply_keeps_them() {
+        use deskspace_core::typography::{Font, Role};
+
+        let (mut config, mut session) = setup();
+        config
+            .typography
+            .set(Role::SpaceTitle, Font::new("Arial", 18.0, 700));
+        let edited = config.typography.clone();
+        session.revert(&mut config);
+        assert_eq!(config.typography, Typography::default(), "Cancel");
+
+        config.typography = edited.clone();
+        session.commit(&config);
+        session.revert(&mut config);
+        assert_eq!(config.typography, edited, "Cancel after Apply");
     }
 
     fn config_with_space(title: &str) -> (Config, SpaceId) {

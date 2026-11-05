@@ -4,6 +4,7 @@ use super::build::fill_list;
 use super::commands::{show_page, window_text};
 use super::nav::{NavRow, entry_row, nav_rows};
 use super::*;
+use windows::Win32::UI::WindowsAndMessaging::CB_RESETCONTENT;
 
 /// Selects `row` in a rail list. Edits arrive on every slider tick; touching
 /// the list only when it changed keeps it from repainting each time.
@@ -94,6 +95,8 @@ pub(super) enum Update {
     Enable(Option<HWND>, Option<HWND>, Vec<HWND>, bool),
     Text(HWND, String),
     Choice(HWND, usize),
+    /// A drop-down whose list changed, and its new selection.
+    Options(HWND, Vec<String>, usize),
     Check(HWND, bool),
     Slider(HWND, i32),
     Repaint(HWND),
@@ -226,6 +229,19 @@ unsafe fn update_pages(updates: Vec<Update>, apply: Option<HWND>, form: &Setting
                 Update::Choice(control, index) => {
                     SendMessageW(control, CB_SETCURSEL, Some(WPARAM(index)), None);
                 }
+                Update::Options(control, options, index) => {
+                    SendMessageW(control, CB_RESETCONTENT, None, None);
+                    for option in options {
+                        let text = wide(&option);
+                        SendMessageW(
+                            control,
+                            CB_ADDSTRING,
+                            None,
+                            Some(LPARAM(text.as_ptr() as isize)),
+                        );
+                    }
+                    SendMessageW(control, CB_SETCURSEL, Some(WPARAM(index)), None);
+                }
                 Update::Check(control, on) => {
                     SendMessageW(control, BM_SETCHECK, Some(WPARAM(on as usize)), None);
                 }
@@ -313,6 +329,18 @@ fn plan_field(old: &Field, controls: &mut FieldControls, new: &Field, updates: &
         return;
     };
     match (&old.kind, &new.kind) {
+        // A font's list holds its current size or family when no preset
+        // does, so it can change with the value; an index alone would then
+        // name another option.
+        (
+            FieldKind::Choice { options: a, .. },
+            FieldKind::Choice {
+                options: b,
+                selected,
+            },
+        ) if a != b => {
+            updates.push(Update::Options(main, b.clone(), *selected));
+        }
         (FieldKind::Choice { selected: a, .. }, FieldKind::Choice { selected: b, .. })
             if a != b =>
         {

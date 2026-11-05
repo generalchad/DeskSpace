@@ -8,6 +8,7 @@
 //! `Command`s the app dispatches, so `Desktop` is only changed through them.
 
 mod apply;
+mod fonts;
 mod ids;
 mod pages;
 mod session;
@@ -18,6 +19,7 @@ pub use apply::{
     apply_animation_edit, apply_field, apply_global_theme, apply_shadow_edit, apply_space_theme,
     customize_space, look_to_save, match_global, reset_appearance, space_edit,
 };
+pub use fonts::reset_fonts;
 pub use ids::{field, page};
 pub use session::{Session, SpaceSnapshot, needs_relayout, needs_restyle};
 pub use tables::{
@@ -143,7 +145,9 @@ impl ScopeKind {
 /// View page, and its Shortcuts page; a lens also lists its Lens page.
 pub fn listed_pages(scope: ScopeKind) -> Vec<usize> {
     match scope {
-        ScopeKind::Global => (0..=6)
+        ScopeKind::Global => (0..LOOK_PAGE_COUNT)
+            .chain([page::SPACE_FONTS, page::WINDOW_FONTS])
+            .chain(LOOK_PAGE_COUNT..=6)
             .chain([page::LENSES])
             .chain(7..=page::ABOUT)
             .chain(page::ANIMATIONS..page::ANIMATIONS + tables::ANIMATION_PAGES.len())
@@ -236,6 +240,8 @@ pub fn build_form(
     pages.push(view_page(space));
     debug_assert_eq!(pages.len(), page::LENSES);
     pages.push(lenses_page(config));
+    debug_assert_eq!(pages.len(), page::SPACE_FONTS);
+    pages.extend(fonts::font_pages(config, &session.fonts));
 
     let listed = listed_pages(kind);
     let selected = listed
@@ -337,6 +343,8 @@ pub enum ButtonAction {
     /// An animation page's "Open Windows animation settings", which opens
     /// the page holding Windows' "Animation effects" switch.
     OpenWindowsAnimationSettings,
+    /// A font page's "Reset to defaults", by its field id (`reset_fonts`).
+    ResetFonts(u32),
 }
 
 /// The action of the button with field id `id`, or `None` for any other id.
@@ -349,6 +357,7 @@ pub fn button_action(id: u32) -> Option<ButtonAction> {
         field::CHECK_UPDATES_NOW => Some(ButtonAction::CheckForUpdates),
         field::LENS_OPEN => Some(ButtonAction::OpenLensFolder),
         field::LENS_CHANGE => Some(ButtonAction::ChangeLensFolder),
+        id if fonts::is_font_reset(id) => Some(ButtonAction::ResetFonts(id)),
         id if tables::ANIMATION_PAGES
             .iter()
             .any(|page| page.open_settings == id) =>
@@ -374,6 +383,8 @@ pub enum FieldEffect {
     Lens,
     /// Only pending (unapplied) settings changed.
     Pending,
+    /// The type scale changed; hand it to the platform.
+    Fonts,
 }
 
 #[cfg(test)]
@@ -875,8 +886,23 @@ mod tests {
         assert_eq!(nav.selected_scope, 0);
         assert_eq!(
             nav.entries().count(),
-            page::ABOUT + 2 + tables::ANIMATION_PAGES.len(),
-            "every Global page, the Lenses page included"
+            page::ABOUT + 4 + tables::ANIMATION_PAGES.len(),
+            "every Global page, the Lenses and font pages included"
+        );
+        let labels: Vec<&str> = nav.entries().map(|entry| entry.label.as_str()).collect();
+        assert_eq!(
+            labels[..8],
+            [
+                "Appearance",
+                "Labels",
+                "Layout",
+                "Colors",
+                "Advanced",
+                "Space fonts",
+                "Window fonts",
+                "General"
+            ],
+            "the font pages follow the look pages"
         );
         let header = nav.header.as_ref().unwrap();
         assert_eq!(header.title, "Global settings");
@@ -1062,7 +1088,7 @@ mod tests {
         let button = nav.header.as_ref().unwrap().button.as_ref().unwrap();
         assert_eq!(button.label, "Delete space");
         // The page shape never changes: General and About are still built.
-        assert_eq!(form.pages.len(), page::LENSES + 1);
+        assert_eq!(form.pages.len(), page::WINDOW_FONTS + 1);
     }
 
     fn animation_form(config: &Config, system_on: bool) -> SettingsForm {

@@ -175,6 +175,18 @@ pub mod field {
     pub const LOOK_HEADING: u32 = 168;
     pub const SPACE_ICONS_HEADING: u32 = 169;
     pub const NEW_SPACES_INTRO_NOTE: u32 = 170;
+
+    // The font pages. Each `Role` has `FONT_SLOTS` ids from
+    // `FONTS + role * FONT_SLOTS`: its heading, then its family, size, and
+    // weight (`settings/fonts.rs`), so 171-210; its note is
+    // `FONT_NOTES + role`, 211-220. A role is never renumbered.
+    pub const FONTS: u32 = 171;
+    pub const FONT_SLOTS: u32 = 4;
+    pub const FONT_NOTES: u32 = 211;
+    pub const SPACE_FONTS_NOTE: u32 = 221;
+    pub const WINDOW_FONTS_NOTE: u32 = 222;
+    pub const RESET_SPACE_FONTS: u32 = 223;
+    pub const RESET_WINDOW_FONTS: u32 = 224;
 }
 
 /// The pages, in build order. The first `LOOK_PAGE_COUNT` hold look settings,
@@ -194,4 +206,8 @@ pub mod page {
     pub const VIEW: usize = 11 + crate::settings::tables::ANIMATION_PAGES.len();
     /// Global's Lenses defaults page (W23), after View.
     pub const LENSES: usize = VIEW + 1;
+    /// Global's two font pages, after Lenses; `listed_pages` puts them after
+    /// Advanced.
+    pub const SPACE_FONTS: usize = LENSES + 1;
+    pub const WINDOW_FONTS: usize = LENSES + 2;
 }

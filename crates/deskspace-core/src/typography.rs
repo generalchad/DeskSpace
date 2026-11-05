@@ -19,8 +19,8 @@ use crate::lenient::Lenient;
 
 /// One kind of text, from the smallest to the largest role.
 ///
-/// `ALL` is the picker's and the debug box's order; a role is never removed or
-/// renumbered, so a saved name keeps meaning what it meant.
+/// `ALL` is the order the settings and debug windows list roles in; a role is
+/// never removed or renumbered, so a saved name keeps meaning what it meant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Role {
     /// Body text: labels, check boxes, buttons, values, and the debug console.
@@ -59,7 +59,7 @@ impl Role {
         Self::Zoom,
     ];
 
-    /// The role's name in the Debug box.
+    /// The role's name in the settings and debug windows.
     pub fn label(self) -> &'static str {
         match self {
             Self::Body => "Body",
@@ -119,10 +119,10 @@ impl fmt::Display for Role {
     }
 }
 
-/// The allowed size of a role, at 96 DPI, and the sizes the Debug box offers.
+/// The allowed size of a role, at 96 DPI, and the step between sizes.
 pub const FONT_SIZE_RANGE: (f32, f32) = (6.0, 48.0);
 pub const FONT_SIZE_STEP: f32 = 0.5;
-/// The weights the Debug box offers, and their Windows names.
+/// The weights a font can take, and their Windows names.
 pub const FONT_WEIGHTS: &[(u16, &str)] = &[(400, "Regular"), (600, "Semibold"), (700, "Bold")];
 
 /// One role's font.

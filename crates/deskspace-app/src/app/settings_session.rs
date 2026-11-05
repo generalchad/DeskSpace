@@ -152,10 +152,13 @@ impl App {
     /// Opens the settings window, or brings it to the front, on `scope` when
     /// one is given (a space's "Space settings…"); otherwise where it was.
     pub(super) fn open_settings_with(&mut self, ui: &mut Ui, scope: Option<SpaceId>) {
+        self.load_installed_fonts(ui);
         let config = &self.config;
+        let fonts = self.fonts.installed();
         let session = self.settings_ui.session.get_or_insert_with(|| {
             let mut session = Session::new(config);
             session.themes = ThemeFile::list(&self.store.themes_dir());
+            session.fonts = fonts.to_vec();
             session
         });
         if scope.is_some() {
@@ -246,6 +249,8 @@ impl App {
                     self.schedule_preview(ui, Preview::relayout_all());
                 } else if effect == FieldEffect::Look {
                     self.schedule_preview(ui, Preview::look_all());
+                } else if effect == FieldEffect::Fonts {
+                    self.sync_typography(ui);
                 }
                 self.refresh_settings(ui);
             }
@@ -356,6 +361,11 @@ impl App {
             (ButtonAction::OpenLensFolder | ButtonAction::ChangeLensFolder, None) => {}
             (ButtonAction::OpenWindowsAnimationSettings, _) => {
                 ui.open_url(settings::windows_animation_settings_uri(windows_build()));
+            }
+            (ButtonAction::ResetFonts(reset), _) => {
+                settings::reset_fonts(&mut self.config, reset);
+                self.sync_typography(ui);
+                self.refresh_settings(ui);
             }
         }
     }
@@ -614,6 +624,7 @@ impl App {
         self.restore_spaces(ui, &session.saved_spaces);
         session.revert(&mut self.config);
         ui.set_ui_dark(self.ui_dark());
+        self.sync_typography(ui);
         if restyle {
             self.restyle_all(ui);
         }

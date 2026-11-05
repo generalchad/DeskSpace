@@ -18,6 +18,12 @@ pub(super) struct Fonts {
     installed: Option<Vec<String>>,
 }
 
+impl Fonts {
+    pub(super) fn installed(&self) -> &[String] {
+        self.installed.as_deref().unwrap_or_default()
+    }
+}
+
 impl App {
     /// Reads the installed families the first time a font choice needs them.
     pub(super) fn load_installed_fonts(&mut self, ui: &Ui) {
@@ -28,7 +34,7 @@ impl App {
 
     /// Every installed family, sorted; empty until `load_installed_fonts`.
     pub(super) fn installed_fonts(&self) -> &[String] {
-        self.fonts.installed.as_deref().unwrap_or_default()
+        self.fonts.installed()
     }
 
     /// The type scale in force: the Debug window's session override when it
