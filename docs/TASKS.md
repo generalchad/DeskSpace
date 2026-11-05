@@ -28,7 +28,8 @@ are collected in section V instead of blocking:
 Section P's "Seniors only" list is for experienced contributors.
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
-decision]** and everything in section D. Phases 4 and 5 are complete; their
+decision]**, everything in section D, and section Y's ideas, which are not
+tasks yet. Phases 4 and 5 are complete; their
 on-screen checks are in section V.
 
 ## How to work a task
@@ -521,6 +522,90 @@ drop side is `win32/drop_target.rs` (`DragKind`, `drag_kind`, `DropPlan`,
     per-space looks. Keep `Preset` forward-compatible (`#[serde(default)]`).
     It grows with the remaining Explorer item settings (hidden/protected
     files once F-22 exists).
+
+## Y. Ideas waiting for a decision
+
+Brainstormed 2026-11-05: features and small delights that no ROADMAP entry
+covers yet. None is ready to build. Each says what it is, where it would
+plug in, how big it is, and a recommendation. Once the maintainer approves
+one, it gets an `F-xx` row (and a `Dx` decision if it needs one) in
+`ROADMAP.md`, and its tasks are written in the section it belongs to; then
+it leaves this list. A rejected idea is deleted with the reason in the
+commit.
+
+Features:
+
+- **Y1. Find anything.** **[needs decision]** A hotkey opens a search box
+  over every space and lens; typing narrows a list of items by name, and
+  Enter opens the chosen one, or Shift+Enter scrolls its space to it and
+  selects it. Fit: the icon picker's `SearchIndex` (B46) is the matcher, a
+  `HOTKEY_BINDINGS` row is the hotkey, and the box is a never-activated
+  pop-up like the zoom pop-up's. Large. Recommended for M7 (keyboard): it is
+  the biggest step toward "a full workflow without a mouse".
+- **Y2. Smart lenses.** **[needs decision]** A lens that is a query: "the 20
+  newest files in Downloads", "changed this week". Fit: two
+  `#[serde(default)]` fields on `FolderView`, a limit and a modified-within,
+  applied by `LensBuilder` after its filter and sort. Small. Recommended
+  first: it reuses the most and asks the least design.
+- **Y3. What's new in a lens.** **[needs decision]** Items that arrived since
+  you last looked carry a small dot that fades once seen, and a folded lens's
+  title says "3 new". Fit: the listing already reconciles by path (B37), so
+  "new" is a path not in the last seen set, kept per lens in session state. A
+  scene field draws the dot. Medium.
+- **Y4. Shell-folder lenses.** **[needs decision]** Lenses on the Recycle
+  Bin, This PC (drives with a free-space bar), and Quick access. Fit: a
+  `SpaceSource` variant whose listing comes from `IShellFolder` on the
+  worker; D3's file rules need a line for each (Delete in the Recycle Bin
+  deletes for good). Large; seniors only.
+- **Y5. Step aside while presenting.** **[needs decision]** When a
+  full-screen app runs, or Windows reports presentation mode
+  (`SHQueryUserNotificationState`), the spaces hide with Startup's Out and
+  return with its In afterwards. Fit: `app/visibility.rs` and one
+  `WindowSettings` switch. Small. Recommended: it removes a reason to quit
+  DeskSpace before a meeting.
+- **Y6. Light and dark themes.** **[needs decision]** A scope can name two
+  theme files, one for light and one for dark, and switches when Windows
+  does. Fit: C10's theme files and `Event::SystemThemeChanged`, which
+  exists. Small.
+- **Y7. Tint from the wallpaper.** **[needs decision]** A tint choice "From
+  the wallpaper": the average colour of the wallpaper under the space,
+  softened, so spaces sit in any desktop. Fit: T22's spike already reads the
+  wallpaper and its placement (`IDesktopWallpaper`); a colour source like
+  `border_source`. Medium; take it after T22 decides.
+- **Y8. Colour labels.** **[needs decision]** Tag an item with a colour, drawn
+  as a dot beside its label; a lens keeps its labels by path, capped. Fit: an
+  `Item` field, a `Command`, a scene field, and an item-menu entry. Medium.
+- **Y9. An undo history.** **[needs decision]** "Undo ▸" lists the last
+  entries by label, and choosing one undoes back to it, one entry at a time,
+  stopping at a stale one as undo does. Fit: `UndoStack` already labels every
+  entry; one menu entry by the recipe. Small; a junior task once approved.
+- **Y10. Portable mode.** **[needs decision]** A `deskspace.portable` file
+  beside the exe keeps the config and the store beside it, and writes no Run
+  value, desktop verb, or registry entry. Fit: `ConfigStore`'s paths and
+  `bootstrap.rs`; opt-in, so no user's install changes. Small to medium.
+- **Y11. Spaces per virtual desktop.** **[needs decision]** A space shows on
+  every virtual desktop, as now, or on one. Fit: `IVirtualDesktopManager`
+  (documented: `IsWindowOnCurrentVirtualDesktop`, `MoveWindowToDesktop`).
+  Whether it works on DeskSpace's never-activated tool windows needs a spike
+  first. Medium; it touches F-12 (pages), so decide them together.
+
+Quirks:
+
+- **Y12. Items glide.** **[needs decision]** After a sort, Arrange, or a
+  lens change, items glide from their old cells to their new ones instead of
+  jumping; a deleted item crumples away. Fit: a transition between two
+  `PreparedScene`s keyed by item id, played by the platform from pure frame
+  math as space effects are, so the app still pushes one scene. Large;
+  seniors only, after section T's groundwork.
+- **Y13. Shake to tidy.** **[needs decision]** Shake a space by its title
+  while dragging it, and it arranges itself (the Arrange the menu runs),
+  with one undo entry. Fit: a pure gesture check over the drag's recent
+  points in `app/pointer/`, then the existing `arrange_space`. Small.
+- **Y14. Peek into a folded space.** **[needs decision]** Holding the pointer
+  over a folded space's title shows its items in a pop-up below it, without
+  unfolding it or moving its neighbours. Fit: a pop-up window drawing the
+  space's own scene. Medium; it overlaps F-04's unfold on hover, so decide
+  them together.
 
 ## N. Packs and automation (extensions)
 
