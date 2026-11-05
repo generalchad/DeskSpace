@@ -162,6 +162,7 @@ pub fn run(cli: Cli, debug_log: Option<DebugLog>) -> anyhow::Result<()> {
 
     let mut app = App::new(config, store, hidden, cli.settings);
     app.layer = LayerState::new(cli.takeover_layer, cli.takeover);
+    app.shell_entries = cli.config.is_none();
     app.new_space_on_start = cli.new_space;
     app.debug = debug_log.map(|log| DebugTools::new(log, cli.config.is_none()));
     tracing::info!(

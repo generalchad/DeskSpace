@@ -26,8 +26,7 @@ impl App {
     /// always, and Show DeskSpace spaces only while the spaces are hidden, so
     /// each entry is there exactly when it can do something.
     pub(super) fn sync_desktop_verbs(&self) {
-        // Tests must not touch the real per-user registry.
-        if cfg!(test) {
+        if !self.shell_entries {
             return;
         }
         let Ok(exe) = std::env::current_exe() else {
@@ -43,7 +42,7 @@ impl App {
     /// Removes every desktop background verb, so a clean exit does not leave
     /// menu items that can only start a fresh instance.
     pub(super) fn remove_desktop_verbs(&self) {
-        if cfg!(test) {
+        if !self.shell_entries {
             return;
         }
         if let Err(error) = set_desktop_verbs(&[]) {
@@ -54,8 +53,7 @@ impl App {
     /// Writes or clears the per-user `Run` value that starts DeskSpace at
     /// sign-in. Rewriting it on every start keeps the stored path current.
     pub(super) fn sync_start_with_windows(&self, enabled: bool) {
-        // Tests must not touch the real per-user registry.
-        if cfg!(test) {
+        if !self.shell_entries {
             return;
         }
         if let Err(error) = set_start_with_windows(enabled) {

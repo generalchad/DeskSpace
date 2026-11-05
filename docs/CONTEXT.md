@@ -509,7 +509,9 @@ default in `Default`.
   path. `storage_dir()`, where dropped files are moved, is
   `%LOCALAPPDATA%\DeskSpace\DeskSpace\data\storage`, or a `storage` folder
   beside an explicit config file, so scratch configs never touch real
-  storage. `save` writes a sibling `*.toml.tmp`, flushes it to disk, and
+  storage. A scratch config writes no per-user registry entries either: the
+  desktop verbs and the Run value are left as the installed build set them.
+  `save` writes a sibling `*.toml.tmp`, flushes it to disk, and
   renames it, so a crash or a power cut never truncates the config.
 - `icons_dir()`, the cache of downloaded icon sets (`icons.rs`,
   `IconStore`, D16), is `%LOCALAPPDATA%\DeskSpace\DeskSpace\data\icons`, or

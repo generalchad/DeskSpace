@@ -586,6 +586,10 @@ pub struct App {
     pub(crate) new_space_on_start: bool,
     /// The desktop layer's flags and the shell entries it draws.
     pub(crate) layer: LayerState,
+    /// Whether the per-user registry entries are DeskSpace's to write. False
+    /// under `--config`, so a scratch run leaves the installed build's desktop
+    /// menu entries and Run value alone.
+    pub(crate) shell_entries: bool,
     /// Update checking and installation state (`app/update.rs`).
     update: UpdateState,
     /// The title icons' sets and glyphs (`app/space_icons.rs`).
@@ -628,6 +632,7 @@ impl App {
             open_settings_on_start: open_settings,
             new_space_on_start: false,
             layer: LayerState::default(),
+            shell_entries: false,
             update: UpdateState::default(),
             space_icons: SpaceIcons::default(),
             debug: None,

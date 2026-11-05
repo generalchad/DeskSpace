@@ -5959,3 +5959,24 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Delete the `leftover` lines and the comment above them. Change nothing else.
   - Done when: the gates pass, and `rg -n "deskspace.ico" crates` finds only
     `deskspace-app/build.rs` and `deskspace-app/Cargo.toml`.
+
+- [x] **P31. Leave the per-user registry alone under `--config` (fix).** A scratch
+  run (`dev.ps1` uses one by default) still writes the desktop menu entries and the
+  Run value, so both point at `target\debug\deskspace.exe`. Its clean exit then
+  deletes the installed build's desktop entries. `CONTEXT.md` section 5 says a
+  scratch config never touches real storage, and the registry should be no
+  different. Decided (maintainer, 2026-11-04): under `--config` the app writes
+  neither.
+  - `App` gets `shell_entries: bool`, with a `///` doc, `false` in `App::new`.
+    `bootstrap::run` sets it to `cli.config.is_none()`, beside `app.layer`.
+  - `sync_desktop_verbs`, `remove_desktop_verbs`, and `sync_start_with_windows`
+    (`app/visibility.rs`) return early unless it is set. Tests build `App` with it
+    off, so their `cfg!(test)` checks no longer do anything; delete them.
+  - Under `--config`, the "Start with Windows" switch still saves to the scratch
+    file. That is fine.
+  - Docs: `CONTEXT.md` section 5 (beside the storage sentence), and `TOOLS.md`
+    section 3's `--config` line. In section V, the C9 row and the E1/E2 row's
+    desktop verb check say to run `./scripts/dev.ps1 -RealConfig`.
+  - **[needs human]** check: with the installed DeskSpace running, run
+    `./scripts/dev.ps1` and exit it. The desktop menu still shows the installed
+    build's entries, and they still work.

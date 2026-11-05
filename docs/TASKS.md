@@ -1830,27 +1830,6 @@ A rare loss of a user's file, memory that only grows, a broken install's shell e
   - Done when: the gates pass, and `debug_ids_are_unique` and
     `debug_ids_round_trip` (`ids.rs`) cover the new id.
 
-- [ ] **P31. Leave the per-user registry alone under `--config` (fix).** A scratch
-  run (`dev.ps1` uses one by default) still writes the desktop menu entries and the
-  Run value, so both point at `target\debug\deskspace.exe`. Its clean exit then
-  deletes the installed build's desktop entries. `CONTEXT.md` section 5 says a
-  scratch config never touches real storage, and the registry should be no
-  different. Decided (maintainer, 2026-11-04): under `--config` the app writes
-  neither.
-  - `App` gets `shell_entries: bool`, with a `///` doc, `false` in `App::new`.
-    `bootstrap::run` sets it to `cli.config.is_none()`, beside `app.layer`.
-  - `sync_desktop_verbs`, `remove_desktop_verbs`, and `sync_start_with_windows`
-    (`app/visibility.rs`) return early unless it is set. Tests build `App` with it
-    off, so their `cfg!(test)` checks no longer do anything; delete them.
-  - Under `--config`, the "Start with Windows" switch still saves to the scratch
-    file. That is fine.
-  - Docs: `CONTEXT.md` section 5 (beside the storage sentence), and `TOOLS.md`
-    section 3's `--config` line. In section V, the C9 row and the E1/E2 row's
-    desktop verb check say to run `./scripts/dev.ps1 -RealConfig`.
-  - **[needs human]** check: with the installed DeskSpace running, run
-    `./scripts/dev.ps1` and exit it. The desktop menu still shows the installed
-    build's entries, and they still work.
-
 #### Low
 
 Logs, tooling, readability, docs, and checks that may close a task.
@@ -2485,7 +2464,7 @@ for a machine that has it.
 | C5 (F-48) | The "Item preset" dropdown shows both entries; "Custom" enables the Layout fields and the icon size takes effect; "Match Explorer's display" greys them. |
 | C7 (F-18) | Each hotkey fires once bound; a conflicting binding is reported beside its field and the window stays open; clearing a binding stops it. |
 | C8 (F-17) | A space created from the space menu, the tray, and the hotkey uses the configured title, size, lock state, icon, and view (set the New spaces page's Show as to List with the status bar on); a locked new space keeps its size and scrolls. |
-| E1, E2 | `deskspace.exe` shows the icon in Explorer's small, medium, and extra-large views and the version under Properties > Details; the tray, settings title bar, and Shift+right-click desktop verb show the icon at 100 % and 150 %. |
+| E1, E2 | `deskspace.exe` shows the icon in Explorer's small, medium, and extra-large views and the version under Properties > Details; the tray, settings title bar, and Shift+right-click desktop verb show the icon at 100 % and 150 %. Run with `./scripts/dev.ps1 -RealConfig` so the desktop verb is the installed build's. |
 | E5-E7, E10-E12 | Covered by the R12 dry run (installer, uninstall, the watchdog in the zip, update from one pre-release to the next). |
 | F-45 automatic install | Installed build with a feed: turn on both update toggles; after a check finds a newer release, the tray shows "Restart to update to X"; 10 minutes without input (no full-screen app) installs silently and DeskSpace comes back with the same spaces, with takeover on the desktop icons are never left blank; the tray entry installs at once with a progress window; a portable copy greys the install toggle. |
 | Update install failure | Installed build with a feed and a newer release: in PowerShell set `$env:TEMP` and `$env:TMP` to a missing drive (`Z:\none`), start `%LocalAppData%\DeskSpace.App\deskspace.exe --hidden`, then "Check for updates…" → "Update and restart": DeskSpace quits, comes back hidden on the old version with the same spaces, and a "DeskSpace was not updated" box in front of other windows names the error. With takeover on, the desktop icons are never left blank. |
@@ -2511,7 +2490,8 @@ for a machine that has it.
 | W7 (F-07) | Create a lens with "New lens…" from the space menu, the tray menu, and the desktop layer's menu (takeover on): each asks for a folder and opens a lens titled with the folder's name beside the top row of spaces, filled within a moment. Picking DeskSpace's storage folder shows a message and creates nothing. Cancelling creates nothing. |
 | New space placement (D10) | With a few spaces in a row at the top of a monitor, New space from the space menu, the tray, the desktop menu, and the hotkey each opens to the right of the row, its top in line, with the same gutter as the others; with the row full to the screen edge it goes to the next row or under all of them; it never covers another space; on a second monitor it opens on the monitor of the click or the pointer; on an empty monitor it opens near the top-left corner; on a 150 % monitor the gutter looks the same. |
 | Desktop menu (F-14) | With takeover on, right-click an empty spot of the desktop: New space, DeskSpace settings…, and Hide/Show spaces sit above Explorer's desktop menu; each DeskSpace entry works; View, Sort by, Refresh, New › Text Document, Paste, Display settings, and Personalize work, and the layer shows the result; the Menu key and Shift+F10 with nothing selected open the same menu; a right-click on a loose icon still shows its item menu, and on a space the space menu. Run elevated once too: the menu still shows New, Display settings, and Personalize below the DeskSpace entries, with masked icons and no separator dangling under Hide spaces; with `-Verbosity 1` any fallback logs a warning naming the step that failed. |
-| C9 (F-52) | With the app running (not elevated), right-click an empty spot of the desktop: "New space" and "DeskSpace Settings" sit above Explorer's entries. "New space" opens a space on the pointer's monitor; "DeskSpace Settings" opens the running instance's window instead of starting a second copy. With the spaces hidden, "Show DeskSpace spaces" appears, and hiding/showing updates the menu. After a clean exit all three are gone. |
+| C9 (F-52) | With the app running (not elevated; `./scripts/dev.ps1 -RealConfig` so the entries are real), right-click an empty spot of the desktop: "New space" and "DeskSpace Settings" sit above Explorer's entries. "New space" opens a space on the pointer's monitor; "DeskSpace Settings" opens the running instance's window instead of starting a second copy. With the spaces hidden, "Show DeskSpace spaces" appears, and hiding/showing updates the menu. After a clean exit all three are gone. |
+| P31 | With the installed DeskSpace running, run `./scripts/dev.ps1` and exit it. The desktop menu still shows the installed build's entries, and they still work. |
 | Menu at the click | With takeover on and "Auto arrange" off, right-click an empty spot far from other icons: Paste (after copying a file) and New › Text Document each put the new icon at the click, not in the next free slot; a space's item menu commands (Open, Properties, Delete) work as before. If Explorer ignores the point, record it here. |
 | New on the desktop | With takeover on, right-click an empty spot of the desktop: New › Folder, and New › Text Document with extensions shown and hidden, each make the item and open DeskSpace's rename box on it, with "New folder" (or the base name) selected; typing a name and Enter names it; Esc keeps "New folder"; a second New › Folder gives "New folder (2)" its own box. Paste and View › Refresh open no box. With takeover off (`--layer` only), Explorer's own box shows, as before. |
 | Layer rename | With takeover on, a loose desktop icon renames like a space item: F2, a slow second click, and "Rename" on its right-click menu each open the rename box on the icon (the base name selected when extensions show); Enter renames the file, which stays selected and in place; Esc and a click elsewhere behave as in a space; Ctrl+Z in Explorer undoes it. |
