@@ -18,8 +18,8 @@ are collected in section V instead of blocking:
 - section B's icon picker tasks, in order: B45 (log lines) first; then
   B51, B53, and B55 from "Measure and trim the UI thread";
 - section G (settings window polish): the pure half of G13;
-- section K (K10-K13, K15, K16), each a pure move with rules that leave
-  nothing to design;
+- section K (K10-K13, K15, K16, K18), each a pure move with rules that
+  leave nothing to design; K18 first, since `undo.rs` is at the limit;
 - O4, which needs no code, and O5;
 - anything else not marked **[needs decision]**, "still to design", or in
   section D.
@@ -450,6 +450,38 @@ work per event (section W, "Performance").
   - Done when: a `./scripts/dev.ps1 -Release -Verbosity 1` run shows each line
     once, and the commit body records one run's numbers with the number of
     spaces and items, or says a person must.
+
+### Readability and tooling (B56-B57)
+
+- [ ] **B56. One home for the performance rules (docs).** **(junior)** After:
+  P27, which moves section W's notes around the same text.
+  - Why: the 8 ms budget, "measure in a release build", and "never commit a
+    test that asserts a time" live in section W's "Performance" and in the
+    rules of B44-B50 and B51-B55, so each new performance task copies them. A
+    rule belongs in `ENGINEERING.md` (section 7's table).
+  - Add a short "Performance" part to `ENGINEERING.md` section 3: the 8 ms
+    UI-thread budget per event, nothing O(items) per mouse move or wheel notch,
+    no allocation while painting (now in section 4; move it), measure in
+    release, and no timing asserts. Section W keeps only what is about lenses
+    (the 50,000-file bar, no IO the listing did not do) and points at it; the B
+    rules point at it instead of restating it.
+  - Change no task's meaning. Commit as `docs: give the performance rules one
+    home (B56)`.
+
+- [ ] **B57. A coverage report for the pure crates (tooling).** **(junior)**
+  Installing a tool is an install on the user's machine, so ask first, as
+  `TOOLS.md` section 4 does for WinDbg.
+  - Why: the pure crates carry most of the logic, and nothing says which parts
+    no test reaches.
+  - `scripts/coverage.ps1` runs `cargo llvm-cov` over core, config, update, and
+    the app, and prints each crate's line coverage and the ten least covered
+    files. It needs `cargo install cargo-llvm-cov --locked` and the
+    `llvm-tools-preview` component: add the component to `rust-toolchain.toml`
+    in the same commit (a `ci:` change, `ENGINEERING.md` section 1), and the
+    tool to `TOOLS.md` with what it is for.
+  - No CI gate and no threshold: the report informs tasks, it does not block.
+  - Done when: a run prints the report; the commit body records it, and each
+    pure file under 50 % becomes a **Found while working** line.
 
 ## L. Adding items to spaces (ROADMAP F-50, F-53..F-55)
 
@@ -1815,6 +1847,26 @@ moves.
   - Collides with: P15f (paint clipping) and anything in section T.
   - Done when: `mod.rs` is under about 700 lines and the K rules above hold.
 
+- [ ] **K18. Split `app/undo.rs` before it crosses the limit.** 791 lines
+  (2026-11-05), so the next action that records an entry fails `file_size.rs`
+  for whoever adds it, in a task about something else. Turn it into
+  `app/undo/mod.rs` plus:
+  - `stack.rs`: `FileChange`, `SpaceChange`, `UndoEntry`, `OpenEntry`,
+    `UndoStack` and their `impl`s, `space_state`, and `same_space_state`, with
+    the tests that build only a stack (`finish_caps_depth_at_undo_depth`,
+    `new_entry_clears_redo_but_empty_action_does_not`, and any other that
+    builds no `App`).
+  - `files.rs`: the `App` methods that put files back, from `reverse_files` to
+    `reverse_rename`, with `original_path` and `rollback_failed_text`.
+  - `mod.rs` keeps `UNDO_DEPTH`, the label functions, `StepOutcome`,
+    `Reversed`, the stale texts, `undo`, `redo`, the apply and restore steps,
+    `arrange_space`, `snap_all_spaces`, and every round-trip test, which builds a
+    whole `App`.
+  - `files.rs` moves and restores user files. A pure move is safe, but ask a
+    senior to review the diff, as K15 does. Add no `ALLOWED` entry: the file is
+    under the limit today.
+  - Done when: `mod.rs` is under about 400 lines and the K rules above hold.
+
 ## Q. Move the why next to the code (shrink `CONTEXT.md` section 6)
 
 `CONTEXT.md` section 6 explains many Win32 quirks in prose far from the code
@@ -1848,6 +1900,31 @@ Rules for every Q task:
 6. Done when: the gates pass, the subsection is at most half its length
    before, and `rg -n "<a distinctive phrase from each moved sentence>"
    crates` finds it in the code.
+
+- [ ] **Q8. Decode the task ids left in comments.** **[needs decision]**
+  `ENGINEERING.md` section 4 rule 10 keeps task ids out of new comments and
+  lets the old ones go "when their code is next touched". About 180 comment
+  lines still carry one (2026-11-05: core 22, config 5, app 96, platform 56,
+  ROADMAP `Dn` ids not counted). Each sends a reader to the archive to learn
+  why the code is so, and nothing stops a new one.
+  - Recommended: sweep them now, then guard. The alternative is to keep the
+    rule as it is, and only add the guard with an allowlist of today's files.
+  - The parts, if approved, each its own commit, any order before Q8d:
+    - [ ] **Q8a (junior).** Core, config, and update.
+    - [ ] **Q8b (junior).** The app.
+    - [ ] **Q8c (junior).** The platform. Every edited `unsafe` block keeps its
+      `// SAFETY:` comment.
+    - [ ] **Q8d (junior).** After Q8a-Q8c. A test beside `file_size.rs`
+      (`crates/deskspace-app/tests/comment_ids.rs`) that fails on a task id in a
+      `//` or `///` comment: a section letter this file uses and a number, as
+      a whole word. ROADMAP's `Dn` and `F-nn` and Win32 names (`WM_`, `VK_`,
+      ...) pass. The failure names the file and line.
+  - For each id: look it up in this file or `archive/TASKS-done.md`, and say
+    the why it stood for in the comment's own words. If the comment reads as
+    well without it, delete just the id. If a comment only names the task
+    ("added in W12"), delete the comment. Change comments only; Q's rules 2,
+    3, and 5 hold (the commit body lists each rewritten comment's file).
+  - Done when: the part's crates have no id left, and the gates pass.
 
 ## P. Pay down what we found while working
 
@@ -2401,7 +2478,11 @@ the ROADMAP decision ids (`D1`-`D9`).
   and so have the W tasks that held it back (section W, "Interleaving"), so
   nothing blocks it now. Every themeable or animatable option pays the
   three-place cost, so this comes before the pack kinds in section N add
-  options. The split (review, 2026-11-03):
+  options. It is close to urgent: `settings/pages.rs` measured 797 non-test
+  lines on 2026-11-05, so the next settings option fails `file_size.rs`. Until
+  R14a is decided, that option's task adds an `ALLOWED` entry for `pages.rs`
+  naming R14, rather than splitting what R14 rewrites. The split (review,
+  2026-11-03):
   - **R14a (senior, design).** **[needs decision]** The row type, written up
     here for the maintainer, with one real field moved as the proof (an
     `icon_size`-like range field in a look page). Settle the questions above,
