@@ -746,78 +746,6 @@ Rules for every S task:
    through `App::record_effects`, labelled "Change icon", so Ctrl+Z puts
    the old icon back; `SetSpaceIcon` is already in `touched_by`.
 
-- [ ] **S9. The icon picker (platform).** Lands in the same commit as S10,
-  its first caller, which holds the on-screen check.
-  - `win32/icon_picker.rs`, a modal window copied from `app_picker.rs`
-    (owner, disabled-owner loop, dark mode, DPI). At the top, a set
-    dropdown, shown only when the request has more than one set (D16's
-    packs scaffold), and a search box (cue "Search icons") that filters as
-    you type through `deskspace_core::icon_match::search`. Below them, a
-    note line (`request.note` or the chosen set's), and an `LVS_ICON` list
-    view with `LVS_OWNERDATA`, so a set of thousands opens at once. It
-    labels each cell with the name, hyphens as spaces, and fills images
-    on demand (`LVN_GETDISPINFOW`) from a `GlyphCache` at 32 px, scaled, in
-    the window's text color. At the bottom, "Automatic", "No icon",
-    Cancel, and OK. OK is the default and enabled while a cell is
-    selected; Enter or a double-click on a cell is OK.
-  - `Ui::pick_icon(&IconPickerRequest) -> Option<IconChoice>` in
-    `runtime/ui_chrome.rs`, beside `pick_apps`: `IconPickerRequest<'a> {
-    title, sets: Vec<PickerSet<'a>>, current: Option<&IconRef> }`, with
-    `PickerSet { prefix, label, set: Option<&IconSet>, words, note:
-    Option<&str> }` (a set not ready has `None` and a note saying why), and
-    `IconChoice { Automatic, None, Icon(IconRef) }`. Its owner is the
-    settings window when open, else the controller, as `pick_apps`'s is.
-    It opens on `current`, selected and scrolled to.
-  - `win32/outside_click.rs` `is_outside`: a press on the picker is not
-    outside, as one on a popup menu is not, so a rename behind it stays
-    open (S10).
-  - Tests, pure: the cell label from a name; which cell the request opens
-    on; the dropdown shown only for two or more sets.
-
-- [ ] **S10. Changing the icon while renaming (app, platform).** Includes
-  S9; one commit, tick and archive both. **[needs human]**
-  - `TitleIcon` gains `button: bool` and `hovered: bool`. While the space's
-    title is being renamed, `space_scene` always sets `title_icon`, with
-    `button: true`. The image is the space's icon or `None`, which the
-    painter draws as a placeholder: a rounded outline in the title color
-    at reduced alpha, with Segoe Fluent's "Add" glyph (`E710`). A hovered
-    button gets the item hover fill behind it. Outside a rename nothing
-    changes (S rule 4).
-  - `CursorShape::Hand` (`IDC_HAND`; map it beside the others), shown
-    while the pointer is over the button during a rename.
-    `PointerState` tracks the hover so the scene can draw it.
-  - `app/pointer.rs` `prepare_space_event`, before the click commits the
-    rename: a left press inside the button of the title being renamed opens
-    the picker and returns false, leaving the rename open. Add the check as
-    one named method (`title_icon_pressed`).
-  - `App::pick_space_icon(ui, id)` (in `space_icons.rs`): turn key capture
-    off (`ui.capture_text_input(false)`) so the picker's search box gets
-    keys. Build the request: every `ICON_SETS` row, with `need_icon_set`'s
-    state as each set's note ("Downloading the icons…", "Icon downloads
-    are off. Turn them on in Settings > General.", or the failure). Then
-    `ui.pick_icon`, then capture back on. A choice commits `SetSpaceIcon`
-    at once (`self.commit`) and refreshes the space; the rename goes on,
-    and Esc later cancels only the text. If the set is not ready and
-    consent is `Allowed` or `Ask`, call `need_icon_set` first (it decides through `next_step`, S rule 2); when the
-    download is still running, remember the space (`pending_picker`) and
-    open the picker from `ICONS_WAKE` if that rename is still open.
-  - `CONTEXT.md` section 8 (rename) and README Controls: during a rename,
-    click the icon to change it.
-  - Tests: the scene shows the button only while renaming, and the
-    placeholder for a space without an icon; `title_icon_pressed` hits only
-    the button of the space being renamed; the request's notes for each
-    state.
-  - **[needs human]** check, on the desktop at 100 % and 150 %: outside a
-    rename, the icon shows no hand and a click does what the title bar
-    does. F2 on a space, then hover the icon: hand and hover fill. A click
-    opens the picker in front, with the rename still showing behind it.
-    Search "pho", pick an icon, then OK: the icon changes at once, and you
-    can type more of the name and press Enter. Esc in the picker changes
-    nothing. "Automatic" and "No icon" work; a space without an icon shows
-    the placeholder. Clicking in the picker never ends the rename. With
-    downloads declined, the picker opens with the note and its two
-    buttons.
-
 - [ ] **S11. Icons in the settings window (platform, app).** **[needs
   human]** Amended 2026-11-04 by D26: the header always shows an icon slot
   on a space's page, with the placeholder for a space without an icon.
@@ -1840,6 +1768,15 @@ moves.
   - Collides with: P15f (paint clipping) and anything in section T.
   - Done when: `mod.rs` is under about 700 lines and the K rules above hold.
 
+- [ ] **K17. Split `app/pointer.rs`.** Written when S10 pushed it to 804 lines
+  (2026-11-04). It holds mouse events, gestures, hover, and cursor shape.
+  - `hover.rs`: `PointerState`'s hover methods, `update_cursor`, `cursor_for`,
+    `update_hover`, and the info-tip arming they do, with their tests.
+  - `space_events.rs`: `on_space_event` and `prepare_space_event`.
+  - `mod.rs` keeps the gestures: `begin_interaction`, the drag, resize, and
+    marquee handlers.
+  - Done when: `mod.rs` is under about 600 lines and the K rules above hold.
+
 ## Q. Move the why next to the code (shrink `CONTEXT.md` section 6)
 
 `CONTEXT.md` section 6 explains many Win32 quirks in prose far from the code
@@ -2597,6 +2534,7 @@ for a machine that has it.
 | G1-G3 (D26) | With `--on-top` at 100 % and 150 %: open Settings on a space, then click other spaces in the scopes pane. Each outline fades in quickly, holds about a second, and fades out, with no flash and no outline left behind. Click a second space mid-fade: the first fades out while the second fades in. Fold and unfold a space while it is highlighted, and hide all spaces mid-fade; nothing sticks. With Windows' "Animation effects" off, it switches as before. With no highlight showing, idle CPU is as before. |
 | G4, G5 (D26) | In light and dark at 100 % and 150 %, on every page of Global, a space, and a lens: each heading's fields sit on one rounded card with hairlines between rows. Labels, check boxes, sliders and their marks, swatches, text boxes, and drop-downs show the card's color behind them, with no body-colored boxes. Notes under a field are grey and sit close under it. Disabled rows still grey out. Switching dark mode while the window is open repaints the cards. Tab order is as before. |
 | G6 (D26) | Appearance shows Material, Border, Shadow, and Items in that order; Colors shows Colors, Border, Selection, and Themes; General shows Startup, Desktop, Look, Space icons, and Updates; New spaces opens with "Everything not set here follows the Global appearance and layout." and its locked-space note sits under "Start new spaces locked". The materials note sits under "Background material". Every setting still previews, applies, and cancels as before. |
+| S9, S10 (D16) | On the desktop at 100 % and 150 %: outside a rename, the icon shows no hand and a click does what the title bar does. F2 on a space, then hover the icon: hand and hover fill. A click opens the picker in front, with the rename still showing behind it. Search "pho", pick an icon, then OK: the icon changes at once, and you can type more of the name and press Enter. Esc in the picker changes nothing. "Automatic" and "No icon" work; a space without an icon shows the placeholder. Clicking in the picker never ends the rename. With downloads declined, the picker opens with the note and its two buttons. |
 | Flames follow | With Startup and Delete set to Burn at 1000 ms (or `--debug` at ¼×), change a space's rect while it burns: move or resize it in Settings and Apply mid-hide, and change the display layout mid-show. The flames stay on the space's burning edge at its new place, never left where it was; a resized space's flames stand on its new edge. No flame window is left after the burn ends. |
 | Frame clock | On a 60 Hz and a 144 Hz display, and on a space moved to a second monitor with another refresh: Roll, Fade, Fly, Bounce, CRT, and Burn on hide and show at 1000 ms are smooth, with no hitch or jump; `--debug` at ⅒× speed is smooth too; hiding during the startup stagger, and the hotkey twice mid-animation, behave as before. With no animation running, Task Manager shows no "frame clock" thread busy and idle CPU is as before. Lock the session mid-animation: it finishes, and the app stays responsive after unlocking. |
 | No DWM shadow | Windows 11 with "Transparency effects" on, Acrylic, Blur, and Solid at 4 px and 8 px corners, at 100 % and 150 %: a space at rest has smooth rounded corners with no shadow; Fade, Dissolve, Gradient, Pixelate, and Burn on hide, show, and Delete leave no ghost box or outline at any point, and nothing pops off at the end; Roll rolls to a 1 px line with nothing left around it; CRT and Fly look as before. With "Transparency effects" off, spaces keep DWM's corners as before. |

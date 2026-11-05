@@ -9,7 +9,7 @@ use windows::Win32::UI::WindowsAndMessaging::{KillTimer, MB_SETFOREGROUND, MESSA
 use super::*;
 use crate::input::ShellItem;
 use crate::render::ZoomBar;
-use crate::ui::{CustomShortcut, LogLine};
+use crate::ui::{CustomShortcut, IconChoice, IconPickerRequest, LogLine};
 use crate::win32::debug_info::WindowRow;
 
 /// Tells the user something went wrong when there is no `Ui` to ask, such as
@@ -71,6 +71,22 @@ impl Ui {
         // SAFETY: `owner` is a live window owned by this thread, and the
         // picker is modal for the duration of the call.
         unsafe { crate::win32::app_picker::pick_apps(owner, title, dark) }
+    }
+
+    /// Opens the icon picker described by `request` and returns the choice, or
+    /// `None` when the user cancelled. Its owner is the settings window when
+    /// that is open, else the controller, as the other pickers'. Blocks in a
+    /// modal loop; other events are queued meanwhile.
+    pub fn pick_icon(&mut self, request: &IconPickerRequest<'_>) -> Option<IconChoice> {
+        let (owner, dark) = with_runtime(|runtime| {
+            (
+                runtime.settings.unwrap_or(runtime.controller),
+                runtime.ui_dark,
+            )
+        })?;
+        // SAFETY: `owner` is a live window owned by this thread, and the
+        // picker is modal for the duration of the call.
+        unsafe { crate::win32::icon_picker::pick_icon(owner, request, dark) }
     }
 
     /// Lists the installed apps and renders their icons on a background

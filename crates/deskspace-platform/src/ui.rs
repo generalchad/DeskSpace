@@ -17,6 +17,43 @@ pub enum CursorShape {
     SizeNorthWestSouthEast,
     /// Top-right or bottom-left corner.
     SizeNorthEastSouthWest,
+    /// A clickable control, such as a space's icon while its title is renamed.
+    Hand,
+}
+
+/// One icon set the icon picker offers.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PickerSet<'a> {
+    /// The set's prefix, as an `IconRef` names it.
+    pub prefix: &'a str,
+    /// The set's label.
+    pub label: &'a str,
+    /// The set's glyphs, or `None` while it does not load.
+    pub set: Option<&'a deskspace_core::icon_set::IconSet>,
+    /// The set's curated search words.
+    pub words: &'a [(&'a str, &'a str)],
+    /// Why the set has no glyphs, or a note to show under the search box.
+    pub note: Option<&'a str>,
+}
+
+/// What the icon picker is asked to show.
+#[derive(Debug, Clone, PartialEq)]
+pub struct IconPickerRequest<'a> {
+    pub title: &'a str,
+    pub sets: Vec<PickerSet<'a>>,
+    /// The icon to open on, selected and scrolled to when its set is offered.
+    pub current: Option<&'a deskspace_core::IconRef>,
+}
+
+/// What the icon picker returned.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IconChoice {
+    /// Match the title automatically.
+    Automatic,
+    /// Show no icon.
+    None,
+    /// Show this icon.
+    Icon(deskspace_core::IconRef),
 }
 
 /// What a custom shortcut opens (the "Custom shortcut" dialog, F-53).

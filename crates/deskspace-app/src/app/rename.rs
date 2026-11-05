@@ -198,10 +198,18 @@ impl App {
 
     /// Ends the rename; on commit, `title_commit` decides what the typed
     /// title does.
+    /// Whether `id`'s title is being renamed now.
+    pub(super) fn is_renaming_title(&self, id: SpaceId) -> bool {
+        self.edit.session().is_some_and(|session| {
+            session.surface == Surface::Space(id) && session.target == EditTarget::Title
+        })
+    }
+
     pub(super) fn finish_rename(&mut self, ui: &mut Ui, commit: bool) {
         let Some(session) = self.edit.take() else {
             return;
         };
+        self.pointer.title_icon_hover = None;
         ui.capture_text_input(false);
         Self::clear_timer(ui, Timer::Caret);
         let surface = session.surface;

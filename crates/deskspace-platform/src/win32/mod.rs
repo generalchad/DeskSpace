@@ -29,6 +29,7 @@ mod folder_watch;
 mod frame_clock;
 pub(crate) mod glyphs;
 pub(crate) mod hotkey;
+pub(crate) mod icon_picker;
 pub(crate) mod icons;
 mod info_tip;
 mod keyboard;

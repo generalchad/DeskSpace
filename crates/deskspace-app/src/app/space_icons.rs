@@ -15,15 +15,18 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
-use deskspace_config::{ConfigStore, IconDownloads, IconSetSpec, IconStore, default_set, icon_set};
+use deskspace_config::{
+    ConfigStore, ICON_SETS, IconDownloads, IconSetSpec, IconStore, default_set, icon_set,
+};
 use deskspace_core::icon_match::best_icon;
 #[cfg(test)]
 use deskspace_core::icon_set::Glyph;
 use deskspace_core::icon_set::IconSet;
 use deskspace_core::theme::Color;
-use deskspace_core::{Space, SpaceIcon};
-use deskspace_platform::{GlyphCache, Icon, Ui};
+use deskspace_core::{Command, Space, SpaceIcon, SpaceId};
+use deskspace_platform::{GlyphCache, Icon, IconChoice, IconPickerRequest, PickerSet, Ui};
 
+use super::App;
 use super::ICONS_WAKE;
 
 /// What one set's cache holds, or why it cannot be used.
@@ -96,6 +99,9 @@ pub(super) struct SpaceIcons {
     pending: Option<&'static IconSetSpec>,
     /// Whether the consent question showed this session.
     asked: bool,
+    /// The space whose icon picker waits for a set to load, opened by the
+    /// next `ICONS_WAKE` if that space is still being renamed.
+    pending_picker: Option<SpaceId>,
 }
 
 impl Default for SpaceIcons {
@@ -109,6 +115,7 @@ impl Default for SpaceIcons {
             results,
             pending: None,
             asked: false,
+            pending_picker: None,
         }
     }
 }
@@ -156,6 +163,28 @@ impl SpaceIcons {
 
     pub(super) fn take_pending(&mut self) -> Option<&'static IconSetSpec> {
         self.pending.take()
+    }
+
+    /// The set's glyphs, once it is ready.
+    pub(super) fn ready(&self, prefix: &str) -> Option<&IconSet> {
+        match self.sets.get(prefix)? {
+            SetState::Ready(set) => Some(set),
+            _ => None,
+        }
+    }
+
+    /// Whether the set's worker is still reading or downloading it.
+    pub(super) fn loading(&self, prefix: &str) -> bool {
+        matches!(self.sets.get(prefix), Some(SetState::Loading) | None)
+    }
+
+    /// Remembers a space whose picker waits for a set to load, or forgets it.
+    pub(super) fn set_pending_picker(&mut self, id: Option<SpaceId>) {
+        self.pending_picker = id;
+    }
+
+    pub(super) fn pending_picker(&self) -> Option<SpaceId> {
+        self.pending_picker
     }
 
     /// Reads the cache for `spec` on a worker, then wakes the app.
@@ -275,6 +304,85 @@ impl SpaceIcons {
     }
 }
 
+impl App {
+    /// Opens the icon picker for `id` while its title is renamed (D16), and
+    /// applies a choice at once. Keys go to the picker meanwhile, and the
+    /// rename stays open behind it. A set still loading waits for its wake,
+    /// so the picker opens with icons in it.
+    pub(super) fn pick_space_icon(&mut self, ui: &mut Ui, id: SpaceId) {
+        let Some(space) = self.config.desktop.space(id) else {
+            return;
+        };
+        let current = match space.icon() {
+            SpaceIcon::Chosen(icon) => Some(icon.clone()),
+            _ => None,
+        };
+        let at = space.rect().center();
+        for spec in ICON_SETS {
+            self.need_icon_set(ui, spec);
+        }
+        let wanted = current
+            .as_ref()
+            .and_then(|icon| icon_set(&icon.set))
+            .unwrap_or_else(default_set);
+        if self.space_icons.loading(wanted.prefix) {
+            self.space_icons.set_pending_picker(Some(id));
+            return;
+        }
+        self.space_icons.set_pending_picker(None);
+        let notes: Vec<Option<String>> = ICON_SETS
+            .iter()
+            .map(|spec| self.icon_set_note(spec))
+            .collect();
+        let sets: Vec<PickerSet<'_>> = ICON_SETS
+            .iter()
+            .zip(&notes)
+            .map(|(spec, note)| PickerSet {
+                prefix: spec.prefix,
+                label: spec.label,
+                set: self.space_icons.ready(spec.prefix),
+                words: spec.words,
+                note: note.as_deref(),
+            })
+            .collect();
+        let request = IconPickerRequest {
+            title: "Choose an icon",
+            sets,
+            current: current.as_ref(),
+        };
+        // The picker's search box takes the keys the rename was capturing.
+        ui.capture_text_input(false);
+        let choice = ui.pick_icon(&request);
+        ui.capture_text_input(true);
+        let icon = match choice {
+            Some(IconChoice::Automatic) => SpaceIcon::Automatic,
+            Some(IconChoice::None) => SpaceIcon::None,
+            Some(IconChoice::Icon(icon)) => SpaceIcon::Chosen(icon),
+            None => return,
+        };
+        self.commit(ui, Command::SetSpaceIcon { id, icon }, at);
+    }
+
+    /// What the picker says about `spec`'s set, or `None` while it is ready.
+    fn icon_set_note(&self, spec: &'static IconSetSpec) -> Option<String> {
+        match self.space_icons.state(spec.prefix) {
+            Some(SetState::Ready(_)) => None,
+            Some(SetState::Loading) | None => Some("Downloading the icons\u{2026}".to_owned()),
+            Some(SetState::Failed(error)) => {
+                Some(format!("The icons could not be loaded: {error}"))
+            }
+            Some(SetState::Missing) => Some(
+                if self.config.window.icon_downloads == IconDownloads::Declined {
+                    "Icon downloads are off. Turn them on in Settings > General."
+                } else {
+                    "The icons are not downloaded yet."
+                }
+                .to_owned(),
+            ),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -326,6 +434,49 @@ mod tests {
 
     fn chosen(name: &str) -> SpaceIcon {
         SpaceIcon::Chosen(IconRef::parse(name).expect("a reference"))
+    }
+
+    #[test]
+    fn the_picker_says_why_a_set_has_no_icons() {
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(deskspace_config::Config::new(), store, false, false);
+        let spec = default_set();
+        let prefix = spec.prefix.to_owned();
+
+        app.space_icons
+            .sets
+            .insert(prefix.clone(), SetState::Loading);
+        assert!(
+            app.icon_set_note(spec)
+                .is_some_and(|note| note.contains("Downloading"))
+        );
+
+        app.space_icons
+            .sets
+            .insert(prefix.clone(), SetState::Ready(Arc::new(games())));
+        assert_eq!(app.icon_set_note(spec), None);
+
+        app.space_icons
+            .sets
+            .insert(prefix.clone(), SetState::Failed("no network".into()));
+        assert!(
+            app.icon_set_note(spec)
+                .is_some_and(|note| note.contains("no network"))
+        );
+
+        app.space_icons
+            .sets
+            .insert(prefix.clone(), SetState::Missing);
+        app.config.window.icon_downloads = IconDownloads::Declined;
+        assert!(
+            app.icon_set_note(spec)
+                .is_some_and(|note| note.contains("Settings > General"))
+        );
+        app.config.window.icon_downloads = IconDownloads::Ask;
+        assert!(
+            app.icon_set_note(spec)
+                .is_some_and(|note| note.contains("not downloaded"))
+        );
     }
 
     #[test]

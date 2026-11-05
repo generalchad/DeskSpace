@@ -69,6 +69,11 @@ const ALLOWED: &[Allowed] = &[
         why: "One impl, the Painter's paint path.",
         task: "K16",
     },
+    Allowed {
+        path: "deskspace-app/src/app/pointer.rs",
+        why: "Mouse events, gestures, hover, and the cursor share one state.",
+        task: "K17",
+    },
 ];
 
 #[test]

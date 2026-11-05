@@ -7,8 +7,9 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetParent, IDC_ARROW, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE, LoadCursorW,
-    SetCursor, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP,
+    GetParent, IDC_ARROW, IDC_HAND, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE,
+    LoadCursorW, SetCursor, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN,
+    WM_RBUTTONUP,
 };
 
 use crate::input::{MouseButton, SpaceEvent};
@@ -40,6 +41,7 @@ pub(super) fn apply_cursor(shape: CursorShape) {
         CursorShape::SizeNorthSouth => IDC_SIZENS,
         CursorShape::SizeNorthWestSouthEast => IDC_SIZENWSE,
         CursorShape::SizeNorthEastSouthWest => IDC_SIZENESW,
+        CursorShape::Hand => IDC_HAND,
     };
     // SAFETY: stock cursors are shared system resources and are never freed.
     unsafe {

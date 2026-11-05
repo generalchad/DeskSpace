@@ -6220,3 +6220,76 @@ until I5-I6 all land, so no partial build hides the desktop.
     that order, with the moved notes under the rows named. Every setting
     still previews, applies, and cancels as before.
 
+
+- [x] **S9. The icon picker (platform).** Lands in the same commit as S10,
+  its first caller, which holds the on-screen check.
+  - `win32/icon_picker.rs`, a modal window copied from `app_picker.rs`
+    (owner, disabled-owner loop, dark mode, DPI). At the top, a set
+    dropdown, shown only when the request has more than one set (D16's
+    packs scaffold), and a search box (cue "Search icons") that filters as
+    you type through `deskspace_core::icon_match::search`. Below them, a
+    note line (`request.note` or the chosen set's), and an `LVS_ICON` list
+    view with `LVS_OWNERDATA`, so a set of thousands opens at once. It
+    labels each cell with the name, hyphens as spaces, and fills images
+    on demand (`LVN_GETDISPINFOW`) from a `GlyphCache` at 32 px, scaled, in
+    the window's text color. At the bottom, "Automatic", "No icon",
+    Cancel, and OK. OK is the default and enabled while a cell is
+    selected; Enter or a double-click on a cell is OK.
+  - `Ui::pick_icon(&IconPickerRequest) -> Option<IconChoice>` in
+    `runtime/ui_chrome.rs`, beside `pick_apps`: `IconPickerRequest<'a> {
+    title, sets: Vec<PickerSet<'a>>, current: Option<&IconRef> }`, with
+    `PickerSet { prefix, label, set: Option<&IconSet>, words, note:
+    Option<&str> }` (a set not ready has `None` and a note saying why), and
+    `IconChoice { Automatic, None, Icon(IconRef) }`. Its owner is the
+    settings window when open, else the controller, as `pick_apps`'s is.
+    It opens on `current`, selected and scrolled to.
+  - `win32/outside_click.rs` `is_outside`: a press on the picker is not
+    outside, as one on a popup menu is not, so a rename behind it stays
+    open (S10).
+  - Tests, pure: the cell label from a name; which cell the request opens
+    on; the dropdown shown only for two or more sets.
+
+- [x] **S10. Changing the icon while renaming (app, platform).** Includes
+  S9; one commit, tick and archive both. **[needs human]**
+  - `TitleIcon` gains `button: bool` and `hovered: bool`. While the space's
+    title is being renamed, `space_scene` always sets `title_icon`, with
+    `button: true`. The image is the space's icon or `None`, which the
+    painter draws as a placeholder: a rounded outline in the title color
+    at reduced alpha, with Segoe Fluent's "Add" glyph (`E710`). A hovered
+    button gets the item hover fill behind it. Outside a rename nothing
+    changes (S rule 4).
+  - `CursorShape::Hand` (`IDC_HAND`; map it beside the others), shown
+    while the pointer is over the button during a rename.
+    `PointerState` tracks the hover so the scene can draw it.
+  - `app/pointer.rs` `prepare_space_event`, before the click commits the
+    rename: a left press inside the button of the title being renamed opens
+    the picker and returns false, leaving the rename open. Add the check as
+    one named method (`title_icon_pressed`).
+  - `App::pick_space_icon(ui, id)` (in `space_icons.rs`): turn key capture
+    off (`ui.capture_text_input(false)`) so the picker's search box gets
+    keys. Build the request: every `ICON_SETS` row, with `need_icon_set`'s
+    state as each set's note ("Downloading the icons…", "Icon downloads
+    are off. Turn them on in Settings > General.", or the failure). Then
+    `ui.pick_icon`, then capture back on. A choice commits `SetSpaceIcon`
+    at once (`self.commit`) and refreshes the space; the rename goes on,
+    and Esc later cancels only the text. If the set is not ready and
+    consent is `Allowed` or `Ask`, call `need_icon_set` first (it decides through `next_step`, S rule 2); when the
+    download is still running, remember the space (`pending_picker`) and
+    open the picker from `ICONS_WAKE` if that rename is still open.
+  - `CONTEXT.md` section 8 (rename) and README Controls: during a rename,
+    click the icon to change it.
+  - Tests: the scene shows the button only while renaming, and the
+    placeholder for a space without an icon; `title_icon_pressed` hits only
+    the button of the space being renamed; the request's notes for each
+    state.
+  - **[needs human]** check, on the desktop at 100 % and 150 %: outside a
+    rename, the icon shows no hand and a click does what the title bar
+    does. F2 on a space, then hover the icon: hand and hover fill. A click
+    opens the picker in front, with the rename still showing behind it.
+    Search "pho", pick an icon, then OK: the icon changes at once, and you
+    can type more of the name and press Enter. Esc in the picker changes
+    nothing. "Automatic" and "No icon" work; a space without an icon shows
+    the placeholder. Clicking in the picker never ends the rename. With
+    downloads declined, the picker opens with the note and its two
+    buttons.
+

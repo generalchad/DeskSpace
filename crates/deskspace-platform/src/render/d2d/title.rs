@@ -4,7 +4,7 @@
 use deskspace_core::space::DEFAULT_TITLE_HEIGHT;
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::Graphics::Direct2D::{
-    D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, D2D1_DRAW_TEXT_OPTIONS_NONE,
+    D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ROUNDED_RECT,
 };
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_CLUSTER_METRICS, DWRITE_MEASURING_MODE_NATURAL, IDWriteFactory, IDWriteTextFormat,
@@ -12,7 +12,7 @@ use windows::Win32::Graphics::DirectWrite::{
 };
 
 use super::edit::draw_edit_title;
-use super::geometry::{color_f, draw_text, rect_f};
+use super::geometry::{color_f, draw_text, inset, rect_f};
 use super::{DrawContext, Painter, PreparedScene};
 
 /// The ellipsis a title cut from its start begins with.
@@ -155,6 +155,9 @@ const TITLE_ICON_GAP: f32 = 6.0;
 const LOCK_GLYPH: &[u16] = &[0xE72E];
 /// Segoe Fluent Icons / Segoe MDL2 Assets "Back" glyph, in both fonts.
 const BACK_GLYPH: &[u16] = &[0xE72B];
+/// Segoe Fluent Icons / Segoe MDL2 Assets "Add" glyph, in both fonts: the
+/// placeholder of a space with no icon while its title is renamed.
+const ADD_GLYPH: &[u16] = &[0xE710];
 /// The lock glyph's alpha, and its gap from the title bar's right edge.
 const LOCK_ALPHA: u8 = 170;
 const LOCK_MARGIN: f32 = 4.0;
@@ -207,6 +210,7 @@ pub(super) unsafe fn draw_title(
     } = ctx;
     let scene = &prepared.scene;
     let title_icon = scene.title_icon.as_ref();
+    let has_image = title_icon.is_some_and(|title| title.image.is_some());
     let bitmap = title_icon
         .and_then(|title| title.image.as_ref())
         .and_then(|icon| painter.bitmap_for(target, icon));
@@ -240,10 +244,10 @@ pub(super) unsafe fn draw_title(
                 DWRITE_MEASURING_MODE_NATURAL,
             );
         }
-        if let (Some(bitmap), Some(title)) = (bitmap, title_icon) {
+        if let (Some(bitmap), Some(title)) = (&bitmap, title_icon) {
             let icon = title.rect;
             target.DrawBitmap(
-                &bitmap,
+                bitmap,
                 Some(&rect_f(
                     icon.x as f32,
                     icon.y as f32,
@@ -254,6 +258,9 @@ pub(super) unsafe fn draw_title(
                 D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
                 None,
             );
+        }
+        if let Some(title) = title_icon.filter(|title| title.button) {
+            draw_title_icon_button(ctx, prepared, title, has_image);
         }
         if scene.editing.is_some() {
             draw_edit_title(ctx, prepared, text.left, text.right, title_height);
@@ -285,6 +292,72 @@ pub(super) unsafe fn draw_title(
                 LOCK_GLYPH,
                 format,
                 &lock,
+                brush,
+                D2D1_DRAW_TEXT_OPTIONS_NONE,
+                DWRITE_MEASURING_MODE_NATURAL,
+            );
+        }
+    }
+}
+
+/// Draws the title icon as a button while the title is renamed (D16): the
+/// hover fill behind it, and, for a space with no icon, a rounded outline with
+/// Segoe Fluent's "Add" glyph where the picture would be.
+///
+/// # Safety
+/// Call between `BeginDraw` and `EndDraw` on `ctx.target`.
+unsafe fn draw_title_icon_button(
+    ctx: DrawContext,
+    prepared: &PreparedScene,
+    title: &crate::render::TitleIcon,
+    has_image: bool,
+) {
+    let DrawContext {
+        graphics,
+        target,
+        brush,
+    } = ctx;
+    let scene = &prepared.scene;
+    let icon = rect_f(
+        title.rect.x as f32,
+        title.rect.y as f32,
+        title.rect.right() as f32,
+        title.rect.bottom() as f32,
+    );
+    let radius = (icon.bottom - icon.top) * 0.2;
+    // SAFETY: caller is inside BeginDraw/EndDraw.
+    unsafe {
+        if title.hovered {
+            brush.SetColor(&color_f(scene.hover_fill));
+            target.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect: icon,
+                    radiusX: radius,
+                    radiusY: radius,
+                },
+                brush,
+            );
+        }
+        if has_image {
+            return;
+        }
+        brush.SetColor(&color_f(scene.title_text.fade(90)));
+        target.DrawRoundedRectangle(
+            &D2D1_ROUNDED_RECT {
+                rect: inset(icon, 0.5),
+                radiusX: radius,
+                radiusY: radius,
+            },
+            brush,
+            1.0,
+            None,
+        );
+        if let Some(format) = &graphics.glyph_format {
+            brush.SetColor(&color_f(scene.title_text.fade(160)));
+            target.DrawText(
+                ADD_GLYPH,
+                format,
+                &icon,
                 brush,
                 D2D1_DRAW_TEXT_OPTIONS_NONE,
                 DWRITE_MEASURING_MODE_NATURAL,

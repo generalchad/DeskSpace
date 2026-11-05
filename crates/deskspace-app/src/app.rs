@@ -31,6 +31,7 @@ mod rename;
 mod selection;
 mod settings_session;
 mod space_icons;
+mod title_icon;
 mod undo;
 mod update;
 mod view;
@@ -951,6 +952,14 @@ impl EventHandler for App {
                 }
                 if changed {
                     self.repaint_spaces(ui);
+                }
+                // A picker that waited for a set to load opens now, unless
+                // the rename it belonged to has ended.
+                if let Some(space) = self.space_icons.pending_picker() {
+                    self.space_icons.set_pending_picker(None);
+                    if self.is_renaming_title(space) {
+                        self.pick_space_icon(ui, space);
+                    }
                 }
             }
             Event::Wake { .. } => {}

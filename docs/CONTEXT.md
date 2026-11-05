@@ -98,6 +98,7 @@ platform, data-driven UI) are `ENGINEERING.md` section 3.
   | `clipboard` | cut / copy / paste |
   | `menus` | space, item, and tray menus, `create_space` |
   | `space_icons` | `SpaceIcons`: the title icons' sets, loaded off the main thread, the automatic match memo, the glyph cache, and the download consent (D16) |
+  | `title_icon` | the title icon as a button while a space's title is renamed (D16) |
   | `lens` | keeping folder watches in line with the model, swapping in a lens's list, browsing into subfolders |
   | `undo` | `UndoStack`, recording an action, and undoing or redoing it (ROADMAP D11) |
   | `animation` | turning the settings and Windows' switch into each window's `Play` (ROADMAP D12) |
@@ -579,7 +580,7 @@ Everything with `unsafe` is under `win32/`:
 | Area | Modules |
 |------|---------|
 | Runtime and controller | `runtime`, `controller`, `tray`, `console`, `hotkey`, `outside_click` |
-| Windows | `window_class` and `window_state` (class registration and `GWLP_USERDATA` state; every window class uses both), `space_window`, `dwm`, `composition`, `drag_ghost`, `info_tip`, `menu`, `settings_window`, `debug_window`, `color_picker`, `dark_mode`, `dialog`, `app_picker`, `app_catalog`, `shortcut_dialog`, `zoom_bar` |
+| Windows | `window_class` and `window_state` (class registration and `GWLP_USERDATA` state; every window class uses both), `space_window`, `dwm`, `composition`, `drag_ghost`, `info_tip`, `menu`, `settings_window`, `icon_picker`, `debug_window`, `color_picker`, `dark_mode`, `dialog`, `app_picker`, `app_catalog`, `shortcut_dialog`, `zoom_bar` |
 | Input | `keyboard` (the low-level hook), `drop_target` |
 | Shell | `desktop_items`, `icons`, `glyphs`, `shell_items`, `shell_view`, `shell_selection`, `display_settings`, `clipboard`, `file_op`, `drag_image`, `folder_watch`, `shortcuts` |
 | Desktop takeover | `desktop_shell`, `desktop_icons`, `watchdog`, `desktop_entry` |
@@ -994,7 +995,9 @@ exact steps, ranges, edge cases, and the code behind them.
   Reset at 100 %, and hides 2 s after the last zoom or when the pointer
   leaves it.
 - Renaming a space (menu or F2) commits on Enter or a click away and cancels
-  on Escape. A typed title on a lens is a nickname that stops the title
+  on Escape. While it is open, the title icon is a button: a click opens the
+  icon picker (D16), the picked icon applies at once, and the rename stays open
+  behind the picker. A typed title on a lens is a nickname that stops the title
   following the folder. An empty one follows again, as the Lenses page's
   "Show as" says (Folder name when that is Custom), as one undo entry; on a
   normal space, or on a lens that already follows its folder, it is ignored.

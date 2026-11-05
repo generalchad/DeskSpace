@@ -55,6 +55,12 @@ impl SpaceStyle {
 pub struct TitleIcon {
     pub rect: Rect,
     pub image: Option<Icon>,
+    /// Whether the icon is a button: while the space's title is being renamed
+    /// (D16, D26). A button with no image draws a placeholder, so a space
+    /// without an icon still has something to click.
+    pub button: bool,
+    /// Whether the pointer is over the button, which shows a hover fill.
+    pub hovered: bool,
 }
 
 /// What a drop on a window lands in.
