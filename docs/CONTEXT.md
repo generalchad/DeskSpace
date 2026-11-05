@@ -921,7 +921,12 @@ in `ui.rs`. What spans them:
   marked dots, and picker ring take Windows' accent in the shade Windows'
   own settings use (`UiColors::for_system`, WinRT `UISettings`), and the
   default accent's shades when it cannot be read; an open settings window
-  follows an accent change.
+  follows an accent change. The settings window, the debug window, and the
+  dialogs theme their controls through one table,
+  `dark_mode::theme_children`: only `DarkMode_Explorer` draws a dark
+  scroll bar, so every window that scrolls takes it (a page, a list, a
+  multi-line text box), and each drop-down's list, a window of its own, is
+  themed through its combo box.
 - **The debug window** (`--debug`, ROADMAP D14; `win32/debug_window/`,
   `app/debug/`). Modeless and data-driven like settings: the app builds a
   `DebugPanel` from `DEBUG_CONTROLS` and pushes it only when a value

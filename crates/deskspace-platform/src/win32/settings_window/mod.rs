@@ -46,18 +46,17 @@ use windows::Win32::UI::WindowsAndMessaging::{
     BM_GETCHECK, BM_SETCHECK, BN_CLICKED, BS_AUTOCHECKBOX, BS_DEFPUSHBUTTON, BS_OWNERDRAW,
     BS_PUSHBUTTON, CB_ADDSTRING, CB_GETCURSEL, CB_SETCURSEL, CBN_SELCHANGE, CBS_DROPDOWNLIST,
     CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DestroyWindow, EN_CHANGE, EN_KILLFOCUS,
-    ES_AUTOHSCROLL, ES_NUMBER, ES_READONLY, ES_RIGHT, EnumChildWindows, GetClassNameW,
-    GetClientRect, GetCursorPos, GetParent, GetWindowTextLengthW, GetWindowTextW, HWND_TOP,
-    IsIconic, LB_ADDSTRING, LB_GETCURSEL, LB_RESETCONTENT, LB_SETCURSEL, LB_SETITEMHEIGHT,
-    LBN_SELCHANGE, LBS_HASSTRINGS, LBS_NOTIFY, LBS_OWNERDRAWFIXED, SW_HIDE, SW_RESTORE, SW_SHOW,
-    SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetForegroundWindow, SetWindowPos, SetWindowTextW,
-    ShowWindow, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_CTLCOLORBTN,
-    WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_DRAWITEM, WM_ERASEBKGND, WM_HSCROLL,
-    WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SETFONT, WM_VSCROLL, WS_CAPTION,
-    WS_CHILD, WS_CLIPCHILDREN, WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT, WS_MINIMIZEBOX,
-    WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP, WS_VSCROLL,
+    ES_AUTOHSCROLL, ES_NUMBER, ES_READONLY, ES_RIGHT, GetClientRect, GetCursorPos, GetParent,
+    GetWindowTextLengthW, GetWindowTextW, HWND_TOP, IsIconic, LB_ADDSTRING, LB_GETCURSEL,
+    LB_RESETCONTENT, LB_SETCURSEL, LB_SETITEMHEIGHT, LBN_SELCHANGE, LBS_HASSTRINGS, LBS_NOTIFY,
+    LBS_OWNERDRAWFIXED, SW_HIDE, SW_RESTORE, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW,
+    SetForegroundWindow, SetWindowPos, SetWindowTextW, ShowWindow, WINDOW_EX_STYLE, WINDOW_STYLE,
+    WM_CLOSE, WM_COMMAND, WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC,
+    WM_DRAWITEM, WM_ERASEBKGND, WM_HSCROLL, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT,
+    WM_SETFONT, WM_VSCROLL, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN, WS_EX_CLIENTEDGE,
+    WS_EX_CONTROLPARENT, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP, WS_VSCROLL,
 };
-use windows::core::{BOOL, PCWSTR, w};
+use windows::core::{PCWSTR, w};
 
 use crate::error::PlatformError;
 use crate::input::{Event, SettingsEvent};
@@ -67,7 +66,7 @@ use crate::ui::{
     SliderMark,
 };
 use crate::win32::app_icon::{Badge, WindowIcons};
-use crate::win32::dark_mode::{self, ControlTheme, UiColors};
+use crate::win32::dark_mode::{self, UiColors};
 use crate::win32::system::{wide, work_area_at};
 use crate::win32::window_class::{self, WindowClass};
 use crate::win32::{runtime, window_state};
@@ -371,7 +370,7 @@ pub(crate) fn create(form: &SettingsForm, dark: bool) -> Result<HWND, PlatformEr
             std::mem::size_of_val(&mica) as u32,
         );
         dark_mode::set_caption_dark(hwnd, dark);
-        theme_controls(hwnd, dark);
+        dark_mode::theme_children(hwnd, dark);
 
         let _ = ShowWindow(hwnd, SW_SHOW);
         let _ = SetForegroundWindow(hwnd);
@@ -397,36 +396,13 @@ pub(crate) fn set_dark(hwnd: HWND, dark: bool) {
             return;
         }
         dark_mode::set_caption_dark(hwnd, dark);
-        theme_controls(hwnd, dark);
+        dark_mode::theme_children(hwnd, dark);
         let _ = RedrawWindow(
             Some(hwnd),
             None,
             None,
             RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_FRAME,
         );
-    }
-}
-
-/// Gives every control the dark or light visual style for its class.
-unsafe fn theme_controls(window: HWND, dark: bool) {
-    unsafe extern "system" fn visit(control: HWND, dark: LPARAM) -> BOOL {
-        let mut class = [0u16; 32];
-        // SAFETY: `control` is a live descendant being enumerated; the
-        // buffer is sized for the call.
-        let length = unsafe { GetClassNameW(control, &mut class) } as usize;
-        let theme = match String::from_utf16_lossy(&class[..length]).as_str() {
-            "Button" | "msctls_trackbar32" => Some(ControlTheme::Explorer),
-            "ComboBox" | "Edit" => Some(ControlTheme::FileDialog),
-            _ => None,
-        };
-        if let Some(theme) = theme {
-            dark_mode::theme_control(control, theme, dark.0 != 0);
-        }
-        BOOL::from(true)
-    }
-    // SAFETY: the callback only themes the enumerated controls.
-    unsafe {
-        let _ = EnumChildWindows(Some(window), Some(visit), LPARAM(dark as isize));
     }
 }
 

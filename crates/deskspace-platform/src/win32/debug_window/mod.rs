@@ -23,12 +23,12 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::UI::HiDpi::AdjustWindowRectExForDpi;
 use windows::Win32::UI::WindowsAndMessaging::{
     BM_GETCHECK, BN_CLICKED, CB_GETCURSEL, CBN_SELCHANGE, CreateWindowExW, DefWindowProcW,
-    DestroyWindow, EnumChildWindows, GA_ROOT, GetAncestor, GetClassNameW, GetClientRect,
-    LBN_SELCHANGE, MINMAXINFO, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW,
-    SetForegroundWindow, SetWindowPos, ShowWindow, WM_CLOSE, WM_COMMAND, WM_CTLCOLORBTN,
-    WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_DPICHANGED, WM_ERASEBKGND,
-    WM_GETMINMAXINFO, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_NOTIFY, WM_SETFONT, WM_SIZE,
-    WM_VSCROLL, WS_CLIPCHILDREN, WS_EX_CONTROLPARENT, WS_OVERLAPPEDWINDOW,
+    DestroyWindow, EnumChildWindows, GA_ROOT, GetAncestor, GetClientRect, LBN_SELCHANGE,
+    MINMAXINFO, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetForegroundWindow,
+    SetWindowPos, ShowWindow, WM_CLOSE, WM_COMMAND, WM_CTLCOLORBTN, WM_CTLCOLOREDIT,
+    WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_DPICHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO,
+    WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_NOTIFY, WM_SETFONT, WM_SIZE, WM_VSCROLL,
+    WS_CLIPCHILDREN, WS_EX_CONTROLPARENT, WS_OVERLAPPEDWINDOW,
 };
 use windows::core::{BOOL, PCWSTR, w};
 
@@ -37,7 +37,7 @@ use crate::error::PlatformError;
 use crate::input::{DebugEvent, Event};
 use crate::ui::{DebugControlKind, DebugPanel, LogLine};
 use crate::win32::app_icon::{Badge, WindowIcons};
-use crate::win32::dark_mode::{self, ControlTheme};
+use crate::win32::dark_mode;
 use crate::win32::dialog::DialogChrome;
 use crate::win32::dpi::{monitor_dpi_at, scale_for, window_dpi};
 use crate::win32::settings_window::colorref;
@@ -158,7 +158,7 @@ pub(crate) fn create(panel: &DebugPanel, dark: bool) -> Result<HWND, PlatformErr
         let icons = WindowIcons::set(hwnd, Badge::Debug);
         with_state(hwnd, |state| state.icons = icons);
         dark_mode::set_caption_dark(hwnd, dark);
-        theme_controls(hwnd, dark);
+        dark_mode::theme_children(hwnd, dark);
         relayout(hwnd);
         let _ = ShowWindow(hwnd, SW_SHOW);
         let _ = SetForegroundWindow(hwnd);
@@ -325,7 +325,7 @@ unsafe fn rebuild(hwnd: HWND, panel: &DebugPanel) {
         }
         build_panel(hwnd, panel);
         let dark = with_state(hwnd, |state| state.chrome.colors.dark).unwrap_or(false);
-        theme_controls(hwnd, dark);
+        dark_mode::theme_children(hwnd, dark);
         layout_page(hwnd);
     }
 }
@@ -414,7 +414,7 @@ unsafe fn restyle(hwnd: HWND, dpi: u32, dark: bool) {
         let old = with_state(hwnd, |state| std::mem::replace(&mut state.chrome, chrome));
         drop(old);
         dark_mode::set_caption_dark(hwnd, dark);
-        theme_controls(hwnd, dark);
+        dark_mode::theme_children(hwnd, dark);
         let tables = with_state(hwnd, |state| {
             state
                 .panel
@@ -438,29 +438,6 @@ unsafe fn restyle(hwnd: HWND, dpi: u32, dark: bool) {
             None,
             RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_FRAME,
         );
-    }
-}
-
-/// Gives every control the dark or light visual style for its class.
-unsafe fn theme_controls(hwnd: HWND, dark: bool) {
-    unsafe extern "system" fn visit(control: HWND, dark: LPARAM) -> BOOL {
-        let mut class = [0u16; 32];
-        // SAFETY: `control` is a live descendant being enumerated; the
-        // buffer is sized for the call.
-        let length = unsafe { GetClassNameW(control, &mut class) } as usize;
-        let theme = match String::from_utf16_lossy(&class[..length]).as_str() {
-            "Button" | "ListBox" | "SysListView32" => Some(ControlTheme::Explorer),
-            "ComboBox" | "Edit" => Some(ControlTheme::FileDialog),
-            _ => None,
-        };
-        if let Some(theme) = theme {
-            dark_mode::theme_control(control, theme, dark.0 != 0);
-        }
-        BOOL::from(true)
-    }
-    // SAFETY: the callback only themes the enumerated controls.
-    unsafe {
-        let _ = EnumChildWindows(Some(hwnd), Some(visit), LPARAM(dark as isize));
     }
 }
 

@@ -1,5 +1,6 @@
-//! Dark mode for DeskSpace's own UI: popup menus, the settings window's
-//! caption, and its controls.
+//! Dark mode for DeskSpace's own UI: popup menus, window captions, and the
+//! controls and scroll bars of the settings window, the debug window, and the
+//! dialogs.
 //!
 //! Win32 has no documented dark mode for menus or classic controls. Menus
 //! follow the process "app mode" set through two unnamed uxtheme exports
@@ -13,10 +14,13 @@
 use std::sync::OnceLock;
 
 use deskspace_core::theme::Color;
-use windows::Win32::Foundation::HWND;
+use windows::Win32::Foundation::{HWND, LPARAM};
 use windows::Win32::Graphics::Dwm::{DWMWA_USE_IMMERSIVE_DARK_MODE, DwmSetWindowAttribute};
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
-use windows::Win32::UI::Controls::SetWindowTheme;
+use windows::Win32::UI::Controls::{COMBOBOXINFO, GetComboBoxInfo, SetWindowTheme};
+use windows::Win32::UI::WindowsAndMessaging::{
+    EnumChildWindows, GWL_STYLE, GetClassNameW, GetWindowLongPtrW, WS_HSCROLL, WS_VSCROLL,
+};
 use windows::core::{BOOL, PCSTR, PCWSTR, w};
 
 /// `PreferredAppMode` values for `SetPreferredAppMode`.
@@ -105,6 +109,67 @@ pub(crate) enum ControlTheme {
     FileDialog,
 }
 
+impl ControlTheme {
+    /// The dark class for a control of window class `class`, which has a
+    /// scroll bar of its own when `scrolls`; `None` leaves it as it is.
+    ///
+    /// Only `DarkMode_Explorer` draws a dark scroll bar, so any window that
+    /// scrolls takes it: a settings page, the debug window's pane, and a
+    /// multi-line text box, where `DarkMode_CFD` left the bar white.
+    /// Notepad++'s dark mode makes the same choice for its edits.
+    /// https://github.com/notepad-plus-plus/notepad-plus-plus/blob/master/PowerEditor/src/NppDarkMode.cpp
+    fn for_class(class: &str, scrolls: bool) -> Option<Self> {
+        match class {
+            "Edit" if scrolls => Some(Self::Explorer),
+            "ComboBox" | "Edit" => Some(Self::FileDialog),
+            "Button" | "ListBox" | "SysListView32" | "msctls_trackbar32" => Some(Self::Explorer),
+            _ if scrolls => Some(Self::Explorer),
+            _ => None,
+        }
+    }
+}
+
+/// Gives every control under `window` the dark or light visual style for its
+/// class, its scroll bars included. A drop-down's list is a window of its own,
+/// outside the children, so it is themed through its combo box; otherwise a
+/// long list, such as the installed fonts, scrolled on a white bar.
+pub(crate) fn theme_children(window: HWND, dark: bool) {
+    unsafe extern "system" fn visit(control: HWND, dark: LPARAM) -> BOOL {
+        let dark = dark.0 != 0;
+        let mut class = [0u16; 32];
+        // SAFETY: `control` is a live descendant being enumerated; the
+        // buffer is sized for the call, and the style read has no
+        // preconditions.
+        let (class, style) = unsafe {
+            let length = GetClassNameW(control, &mut class) as usize;
+            (
+                String::from_utf16_lossy(&class[..length]),
+                GetWindowLongPtrW(control, GWL_STYLE) as u32,
+            )
+        };
+        let scrolls = style & (WS_VSCROLL.0 | WS_HSCROLL.0) != 0;
+        if let Some(theme) = ControlTheme::for_class(&class, scrolls) {
+            theme_control(control, theme, dark);
+        }
+        if class == "ComboBox" {
+            let mut info = COMBOBOXINFO {
+                cbSize: std::mem::size_of::<COMBOBOXINFO>() as u32,
+                ..Default::default()
+            };
+            // SAFETY: `control` is a live combo box and `info` is sized.
+            if unsafe { GetComboBoxInfo(control, &mut info) }.is_ok() && !info.hwndList.is_invalid()
+            {
+                theme_control(info.hwndList, ControlTheme::Explorer, dark);
+            }
+        }
+        BOOL::from(true)
+    }
+    // SAFETY: the callback only themes the enumerated controls.
+    unsafe {
+        let _ = EnumChildWindows(Some(window), Some(visit), LPARAM(dark as isize));
+    }
+}
+
 /// Applies `theme`'s dark class to `control`, or restores the default
 /// (light) visual style.
 pub(crate) fn theme_control(control: HWND, theme: ControlTheme, dark: bool) {
@@ -189,6 +254,25 @@ impl UiColors {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn anything_that_scrolls_takes_the_class_with_a_dark_scroll_bar() {
+        use ControlTheme::{Explorer, FileDialog};
+        assert_eq!(ControlTheme::for_class("Edit", false), Some(FileDialog));
+        assert_eq!(ControlTheme::for_class("Edit", true), Some(Explorer));
+        assert_eq!(ControlTheme::for_class("ComboBox", true), Some(FileDialog));
+        assert_eq!(ControlTheme::for_class("ListBox", true), Some(Explorer));
+        assert_eq!(
+            ControlTheme::for_class("DeskSpaceSettingsPage", true),
+            Some(Explorer),
+            "a page that scrolls"
+        );
+        assert_eq!(
+            ControlTheme::for_class("DeskSpaceSettingsPage", false),
+            None
+        );
+        assert_eq!(ControlTheme::for_class("Static", false), None);
+    }
 
     #[test]
     fn text_contrasts_with_the_body_in_both_modes() {
