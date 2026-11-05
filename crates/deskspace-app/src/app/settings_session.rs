@@ -218,6 +218,14 @@ impl App {
         }
     }
 
+    /// Whether the settings window shows space `id`'s pages.
+    pub(super) fn settings_shows(&self, id: SpaceId) -> bool {
+        self.settings_ui
+            .session
+            .as_ref()
+            .is_some_and(|session| session.scope == Some(id))
+    }
+
     pub(super) fn refresh_settings(&mut self, ui: &mut Ui) {
         self.settings_ui.refresh_owed = false;
         if let Some(form) = self.settings_form() {
@@ -284,6 +292,19 @@ impl App {
             SettingsEvent::HeaderButton => {
                 if let Some(id) = session.scope {
                     self.delete_space_from_settings(ui, id);
+                }
+            }
+            // The name and the icon commit at once, as on the desktop, and
+            // Cancel keeps them (D16).
+            SettingsEvent::HeaderRenamed { title } => {
+                if let Some(id) = session.scope {
+                    self.rename_space_to(ui, id, &title);
+                    self.refresh_settings(ui);
+                }
+            }
+            SettingsEvent::HeaderIconPressed => {
+                if let Some(id) = session.scope {
+                    self.pick_space_icon(ui, id);
                 }
             }
             SettingsEvent::ScopeChanged { scope } => {
@@ -711,6 +732,51 @@ mod tests {
     fn app() -> App {
         let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
         App::new(Config::new(), store, false, false)
+    }
+
+    #[test]
+    fn a_header_rename_commits_only_a_new_name() {
+        let mut app = app();
+        let space = crate::fixtures::create_space(
+            &mut app.config.desktop,
+            "Work",
+            deskspace_core::Rect::new(0, 0, 240, 120),
+        );
+        assert_eq!(
+            app.title_command(space, "  Play  "),
+            Some(Command::RenameSpace {
+                id: space,
+                title: "Play".into()
+            }),
+            "trimmed"
+        );
+        assert_eq!(app.title_command(space, "Work"), None, "unchanged");
+        assert_eq!(app.title_command(space, "   "), None, "empty");
+    }
+
+    #[test]
+    fn a_header_rename_of_a_lens_survives_cancel() {
+        let mut app = app();
+        let lens = crate::fixtures::create_lens(
+            &mut app.config.desktop,
+            "Downloads",
+            deskspace_core::Rect::new(0, 0, 240, 120),
+            "C:/Users/me/Downloads",
+        );
+        let mut session = Session::new(&app.config);
+        let command = app.title_command(lens, "Inbox").expect("a new name");
+        crate::fixtures::apply(&mut app.config.desktop, command);
+        // `rename_space_to` takes the rename into the Cancel snapshot.
+        session.resnapshot(app.config.desktop.space(lens).unwrap());
+        let saved = session
+            .saved_spaces
+            .iter()
+            .find(|saved| saved.id == lens)
+            .unwrap();
+        assert!(matches!(
+            saved.restore_title(),
+            Some(Command::SetLensTitle { text, .. }) if text == "Inbox"
+        ));
     }
 
     #[test]

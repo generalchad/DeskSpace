@@ -961,10 +961,10 @@ impl EventHandler for App {
                     self.refresh_settings(ui);
                 }
                 // A picker that waited for a set to load opens now, unless
-                // the rename it belonged to has ended.
+                // the rename or settings page it belonged to has gone.
                 if let Some(space) = self.space_icons.pending_picker() {
                     self.space_icons.set_pending_picker(None);
-                    if self.is_renaming_title(space) {
+                    if self.is_renaming_title(space) || self.settings_shows(space) {
                         self.pick_space_icon(ui, space);
                     }
                 }

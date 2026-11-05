@@ -921,6 +921,12 @@ in `ui.rs`. What spans them:
   that Cancel undoes, a load on a space customizes it, and a theme never
   changes `ui_mode`.
   These also commit at once, so Cancel does not undo them:
+  - a space's name and icon from the top line (D16): a double-click on the
+    name edits it in place (Enter or the focus leaving keeps it, Esc drops
+    it; the edit takes both keys from the dialog manager), and a
+    double-click on the icon or its + opens the icon picker. The rename goes
+    through `App::rename_space_to`, the desktop rename's own commit, and into
+    the snapshot so Cancel keeps it;
   - the Lens page's "Change folder…", which writes the new path into the
     snapshot so Cancel keeps it;
   - the Shortcuts page's X deletes an item after a confirmation

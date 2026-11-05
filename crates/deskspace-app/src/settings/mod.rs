@@ -263,6 +263,7 @@ pub fn build_form(
             switch: None,
             button: None,
             icon: None,
+            renamable: false,
         },
         Some(space) => SettingsHeader {
             icon: Some(
@@ -272,6 +273,7 @@ pub fn build_form(
                     .cloned()
                     .map_or(HeaderIcon::Placeholder, HeaderIcon::Glyph),
             ),
+            renamable: true,
             title: space.title().to_owned(),
             switch: Some(SettingsSwitch {
                 label: "Customize this space".into(),

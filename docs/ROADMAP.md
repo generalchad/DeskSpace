@@ -1419,13 +1419,13 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-59 | Scripting verbs for the running instance (out-of-process extension point) | M7 | Open; needs design (`TASKS.md` R16) |
 | F-60 | Translation: the UI follows the Windows display language, with a Language override | M9 | Open; format decided in D20, the rest of the design is `TASKS.md` R18 |
 | F-61 | Debug window (`--debug`): live log console, test-space tools, diagnostics, and simulations | Tooling | Built; awaiting on-screen check (`TASKS.md` section V, X4-X20 and extras) |
-| F-62 | Space icons: an icon beside the title, matched from the space's name, changeable in the rename box and the space's settings | M5 | Partial: the model, the icon-set library, the cache, the signed download, the title icon, and the download consent are built (S1-S8, S13, S14); the picker and the settings icons are next (S9-S12), decided in D16, with their checks in `TASKS.md` section V |
+| F-62 | Space icons: an icon beside the title, matched from the space's name, changeable in the rename box and the space's settings | M5 | Built (S1-S14), decided in D16; awaiting the on-screen checks in `TASKS.md` section V |
 | F-63 | Details columns: choose, resize, reorder, Date created | M4 | Done; check pending (`TASKS.md` V: W30, W31, W32); decided in D18 |
 | F-64 | Browse into subfolders inside a lens | M4 | Done; check pending (`TASKS.md` V: W42, W43); decided in D18 |
 | F-65 | Group by, as Explorer (every space) | M4 | Done; check pending (`TASKS.md` V: W37, W38); decided in D18 |
 | F-66 | Measuring guides while moving or resizing a space: alignment lines, gaps in pixels, and equal-gap and equal-size marks (optional) | M6 | Open; decided in D21 (M6 item 4) |
 | F-67 | A lens follows its folder when it is renamed or moved | M4 | Done; check pending (`TASKS.md` V: W45); decided in D19 |
-| F-68 | Settings window polish: a fading highlight, a one-line icon and name header, scrolling long names, and cards | M3 | Open; decided in D26, tasks in `TASKS.md` section G and S11, S12 |
+| F-68 | Settings window polish: a fading highlight, a one-line icon and name header, scrolling long names, and cards | M3 | Open; decided in D26; S11, S12, G1-G6, and G10-G12 are built; G7-G9 are `TASKS.md` section G |
 
 
 ## 8. Open questions

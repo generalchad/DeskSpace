@@ -260,6 +260,9 @@ pub struct SettingsHeader {
     /// The slot left of the title; `None` has no slot (Global), and the
     /// title stays at the left edge.
     pub icon: Option<HeaderIcon>,
+    /// A double-click on the title edits it in place, reported as
+    /// `SettingsEvent::HeaderRenamed`.
+    pub renamable: bool,
 }
 
 /// What the header's icon slot shows.
@@ -267,8 +270,8 @@ pub struct SettingsHeader {
 pub enum HeaderIcon {
     /// The space's icon.
     Glyph(Glyph),
-    /// A space without an icon: an outlined "+" that S12's double-click
-    /// will open the picker from.
+    /// A space without an icon: an outlined "+", which a double-click opens
+    /// the picker from, as it does on an icon.
     Placeholder,
 }
 

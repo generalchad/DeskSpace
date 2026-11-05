@@ -68,9 +68,10 @@ use crate::ui::{
 };
 use crate::win32::app_icon::{Badge, WindowIcons};
 use crate::win32::dark_mode::{self, UiColors};
-use crate::win32::system::{wide, work_area_at};
+use crate::win32::system::{loword, wide, work_area_at};
 use crate::win32::window_class::{self, WindowClass};
 use crate::win32::{runtime, window_state};
+use windows::Win32::UI::WindowsAndMessaging::{WA_INACTIVE, WM_ACTIVATE, WM_SETCURSOR};
 
 use build::build;
 use commands::{on_field_command, on_scroll};
@@ -91,6 +92,8 @@ const ID_SCOPES: usize = 6;
 const ID_HEADER_SWITCH: usize = 7;
 const ID_HEADER_BUTTON: usize = 8;
 const ID_HEADER_ICON: usize = 9;
+const ID_HEADER_TITLE: usize = 10;
+const ID_HEADER_EDIT: usize = 11;
 /// A muted Windows critical red: the wash and edge of the destructive header
 /// button (a space's "Delete space").
 const DELETE_RED: Color = Color::rgb(0xC4, 0x2B, 0x1C);
@@ -195,6 +198,8 @@ pub(super) struct SettingsState {
     /// Set while the window itself is changing control values, so the
     /// resulting notifications are not reported as user edits.
     updating: bool,
+    /// The header's name edit is open (`header::on_title_command`).
+    renaming: bool,
     colors: UiColors,
     body_brush: HBRUSH,
     /// The card fill behind a group of fields.
@@ -332,6 +337,7 @@ pub(crate) fn create(form: &SettingsForm, dark: bool) -> Result<HWND, PlatformEr
             dpi: 0,
             command_bar_top: 0,
             updating: true,
+            renaming: false,
             colors: UiColors::for_system(dark),
             body_brush: HBRUSH::default(),
             card_brush: HBRUSH::default(),
@@ -377,6 +383,9 @@ pub(crate) fn create(form: &SettingsForm, dark: bool) -> Result<HWND, PlatformEr
         );
         dark_mode::set_caption_dark(hwnd, dark);
         dark_mode::theme_children(hwnd, dark);
+        if let Some(controls) = with_state(hwnd, |state| state.header) {
+            header::theme_tooltip(controls, dark);
+        }
 
         let _ = ShowWindow(hwnd, SW_SHOW);
         let _ = SetForegroundWindow(hwnd);
@@ -403,6 +412,9 @@ pub(crate) fn set_dark(hwnd: HWND, dark: bool) {
         }
         dark_mode::set_caption_dark(hwnd, dark);
         dark_mode::theme_children(hwnd, dark);
+        if let Some(controls) = with_state(hwnd, |state| state.header) {
+            header::theme_tooltip(controls, dark);
+        }
         let _ = RedrawWindow(
             Some(hwnd),
             None,
@@ -469,6 +481,8 @@ unsafe fn on_command(window: HWND, wparam: WPARAM, lparam: LPARAM) {
             ID_SCOPES if code == LBN_SELCHANGE => on_scope_changed(window),
             ID_HEADER_SWITCH if code == BN_CLICKED => on_header_switch(window, control),
             ID_HEADER_BUTTON if code == BN_CLICKED => settings_event(SettingsEvent::HeaderButton),
+            ID_HEADER_TITLE => header::on_title_command(window, code),
+            ID_HEADER_ICON => header::on_icon_command(code),
             id if id >= CONTROL_BASE => on_field_command(window, id, code, control),
             _ => {}
         }
@@ -616,6 +630,21 @@ unsafe extern "system" fn wndproc(
             WM_PAINT => {
                 on_paint(window);
                 LRESULT(0)
+            }
+            WM_SETCURSOR => {
+                if header::set_icon_cursor(window, HWND(wparam.0 as *mut core::ffi::c_void)) {
+                    LRESULT(1)
+                } else {
+                    DefWindowProcW(window, message, wparam, lparam)
+                }
+            }
+            WM_ACTIVATE => {
+                if loword(wparam.0 as isize) as u32 != WA_INACTIVE && header::refocus_rename(window)
+                {
+                    LRESULT(0)
+                } else {
+                    DefWindowProcW(window, message, wparam, lparam)
+                }
             }
             WM_CLOSE => {
                 settings_event(SettingsEvent::Cancel);

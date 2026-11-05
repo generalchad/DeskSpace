@@ -20,7 +20,6 @@ are collected in section V instead of blocking:
 - section K (K10-K16), each a pure move with rules that leave nothing to
   design;
 - O4, which needs no code;
-- section S (S9-S12), without waiting for their checks;
 - anything else not marked **[needs decision]**, "still to design", or in
   section D.
 
@@ -713,6 +712,9 @@ section V.
 
 ## S. Space icons (ROADMAP D16, F-62)
 
+Every S task is built and archived; their checks are in section V. The rules
+below stay for any task added here.
+
 Read D16 first, amendments included; it is the spec. Do the tasks in order,
 one commit each. M5 item 7 says to build this with or after F-28 (title bar
 style), which has no tasks yet. These tasks build on today's title bar, and
@@ -746,49 +748,6 @@ Rules for every S task:
    through `App::record_effects`, labelled "Change icon", so Ctrl+Z puts
    the old icon back; `SetSpaceIcon` is already in `touched_by`.
 
-- [ ] **S12. Renaming in the settings header (platform, app).** **[needs
-  human]** After S10 and S11. Amended 2026-11-04 by D26: the icon opens the
-  picker on a double-click at any time, not only during the name's edit.
-  - `SettingsHeader.renamable: bool` (true for a space scope). In
-    `settings_window/header.rs`, double-clicking the title (`SS_NOTIFY`,
-    `STN_DBLCLK`) puts an edit over it with the text selected and focused.
-    The edit answers `WM_GETDLGCODE` with `DLGC_WANTALLKEYS`, so Enter and
-    Esc reach it rather than the window's OK and Cancel. Enter, or focus
-    leaving for anything but the header icon or the picker, raises
-    `SettingsEvent::HeaderRenamed { title }`; Esc ends the edit and
-    changes nothing. If G8 has landed, the edit hides the scrolling title
-    and stops its scroll while it is open (G8 says how).
-  - Double-clicking the header icon (S11's static, `STN_DBLCLK`), with or
-    without the edit open, raises `SettingsEvent::HeaderIconPressed`. A
-    single click does nothing. Over the icon the cursor is a hand
-    (`WM_SETCURSOR` in the settings window's procedure, for that control
-    only), and a tooltip says "Double-click to change the icon": a second
-    tool on G8's header tooltip if G8 has landed, or else create that
-    tooltip here as G8 describes, and G8 reuses it. Opening the picker
-    does not end an open edit. `apply_header` updates the icon and the
-    label without closing an open edit.
-  - App, `on_settings_event`: `HeaderRenamed` commits `RenameSpace` at once,
-    through the same helper the desktop rename's commit uses (extract it
-    from `finish_rename` if it is inline), ignoring an empty or unchanged
-    title. `HeaderIconPressed` calls `pick_space_icon` (S10); the picker is
-    owned by the settings window. Neither goes into `SpaceSnapshot`, so
-    Cancel leaves both (D16), and add them to `CONTEXT.md`'s "these also
-    commit at once" list.
-  - Tests: both events reach their `Command`; an empty or unchanged title
-    commits nothing; a rename made this way survives settings Cancel.
-  - **[needs human]** check: on a space's page, double-click the name: an
-    edit opens with the name selected. Type, then Enter: the header, the
-    scopes pane, and the space on the desktop show the new name, and the
-    window stays open. Esc in the edit keeps the old name and the window
-    open. Double-click the icon, once with the edit closed and once with
-    it open: the picker opens over the settings window each time, an open
-    edit stays open behind it, and a choice shows at once in the header,
-    the scopes pane, and on the desktop. A single click on the icon does
-    nothing; the cursor over it is a hand and its tooltip shows. A space
-    with no icon: double-click the placeholder, pick one, and it replaces
-    the placeholder. Cancel afterwards keeps both changes. Global's header
-    does not edit and has no icon.
-
 ## G. Settings window polish (ROADMAP D26, F-68)
 
 Read D26 first; it is the spec. There are three strands, and each can run
@@ -802,11 +761,9 @@ G1, G4, and G7 are pure code that only their partner task calls, so each
 lands in its partner's commit. A junior can write and test the pure half
 first, and a second person can take the Win32 half on the same branch.
 
-The header's icon and inline rename are S11 and S12 (section S, amended for
-D26). They wait on the icon picker (S9, S10). G8 and G9 do not wait for them.
-`settings_window/header.rs` is created by whichever of S11 and G8 lands
-first. That task moves `build_header` (`build.rs`) and `apply_header`
-(`update.rs`) into it, unchanged, so the other task finds them there.
+The header's icon and inline rename landed as S11 and S12 (archived), in
+`settings_window/header.rs`, where G8 finds `build_header`, `apply_header`,
+the title static, and the icon slot's tooltip to add its own tool to.
 
 These tasks are written for juniors and interns. G1, G4, G6, and G7 touch no
 `unsafe` code. The others cross the junior line in section P, so each one
@@ -866,9 +823,9 @@ otherwise, a name in `code` that does not exist yet is one the task creates.
     `win32/info_tip.rs` for creating it, without its tracking. Theme it for
     dark mode in `set_dark`: `theme_controls` visits child windows only, and
     the tooltip is not one.
-  - If S12 has landed, the name's edit hides the title and stops the scroll
-    while it is open, and closing the edit restarts it. If S12 has not
-    landed, S12 does this.
+  - S12's name edit (`header::on_title_command`) hides the title while it
+    is open: stop the scroll then, and restart it when the edit closes
+    (`header::close_rename`).
   - Tests, pure, in `header.rs` or `title_scroll.rs`: when to restart (text,
     width, or DPI changed) and when to scroll (overflow, and the system
     switch).
@@ -2476,6 +2433,7 @@ for a machine that has it.
 | G4, G5 (D26) | In light and dark at 100 % and 150 %, on every page of Global, a space, and a lens: each heading's fields sit on one rounded card with hairlines between rows. Labels, check boxes, sliders and their marks, swatches, text boxes, and drop-downs show the card's color behind them, with no body-colored boxes. Notes under a field are grey and sit close under it. Disabled rows still grey out. Switching dark mode while the window is open repaints the cards. Tab order is as before. |
 | G6 (D26) | Appearance shows Material, Border, Shadow, and Items in that order; Colors shows Colors, Border, Selection, and Themes; General shows Startup, Desktop, Look, Space icons, and Updates; New spaces opens with "Everything not set here follows the Global appearance and layout." and its locked-space note sits under "Start new spaces locked". The materials note sits under "Background material". Every setting still previews, applies, and cancels as before. |
 | Page switching | In dark and light, at 100 % and 150 %: click through every page of Global and of a space, by mouse and with the arrow keys. Each page appears in one step, with no blank frame or flash of the window body and no card drawn before its controls; a page taller than the window still starts at its top. With `--debug`, the console shows a "settings: switched page" line per switch; note its elapsed_us before and after this change if you can. Open a space's Shortcuts page, switch away before its icons load, then back: the icons are there. Edit a field, switch pages, then Cancel and OK: both still work, and Settings reopens on the last page. |
+| S12 (D16, D26) | On a space's page, at 100 % and 150 %, in light and dark: double-click the name: an edit opens over it with the name selected. Type, then Enter: the top line, the scopes pane, and the space on the desktop show the new name, and the window stays open. Esc in the edit keeps the old name and the window open, and neither key presses OK or Cancel. Click elsewhere in the window, or press OK, while editing: the typed name is kept. Clearing a lens's name puts its default title back. Double-click the icon, once with the edit closed and once with it open: the picker opens over the settings window each time, an open edit stays open behind it and has the focus again afterwards, and a choice shows at once on the top line, in the scopes pane, and on the desktop. While the picker is open, typing goes only to the picker, and after it closes other apps get their keys (nothing stays captured). A single click on the icon does nothing; the cursor over it is a hand and its tooltip says "Double-click to change the icon", dark in dark mode. A space with no icon: double-click the +, pick one, and it replaces the +. With an icon set still downloading, the picker opens once it arrives, while the page shows. Cancel afterwards keeps both changes, and Ctrl+Z undoes the rename. Global's top line does not edit and has no icon. |
 | S11 (D16, D26) | In light and dark, at 100 % and 150 %: a space with an icon shows it in the scopes pane in place of its kind's symbol (decided 2026-11-05: the icon replaces the symbol), and on its page's top line left of its name, aligned with the text. A space without an icon keeps its kind's symbol in the scopes pane, laid out as before, and shows an outlined + on the top line. A dimmed scope's icon is dimmed. The top-line icon takes no click yet (S12). Global's top line has no icon and its title has not moved. Change a space's icon from the desktop while Settings is open: both places follow; an icon set that finishes downloading while Settings is open fills in. Switch dark mode: the icons redraw in the new text color. |
 | Rail groups | At 100 % and 150 %, in light and dark: Global's pane shows Look, Fonts, New items, DeskSpace, and Animations, each title with a caret pointing down, and a space shows This space (View, Shortcuts) then Look, a lens This space (Lens, View, Shortcuts) then Look. Switching from Global's General to a space opens its first page. Click a title: its pages hide and the caret points right; click again: they return. The click never selects the title or changes the page. Collapse the group of the page shown: the page stays, and no row is selected until you pick one. Switch scopes: Look stays collapsed if it was. With the arrow keys, Up and Down step over titles in both directions (Up from Startup reaches About), and moving into a collapsed group opens it at its first entry going down and its last going up. Reopen Settings: every group is open again. |
 | Dark scroll bars | In dark mode, at 100 % and 150 %: every scroll bar is dark, with no white track. Settings: a page taller than the window (G10), the scopes pane with enough spaces to scroll, and the open list of a font family drop-down. Debug window: the section pane, the section list, a long readout (Model or Diagnostics), the console, and an open family list. The installed-apps picker's list and the icon picker's set drop-down. Switch to light mode with each window open: every bar turns light again. The debug readouts' borders still look right in both modes. |

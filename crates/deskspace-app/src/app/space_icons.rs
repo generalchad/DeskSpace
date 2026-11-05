@@ -303,10 +303,11 @@ impl SpaceIcons {
 }
 
 impl App {
-    /// Opens the icon picker for `id` while its title is renamed (D16), and
-    /// applies a choice at once. Keys go to the picker meanwhile, and the
-    /// rename stays open behind it. A set still loading waits for its wake,
-    /// so the picker opens with icons in it.
+    /// Opens the icon picker for `id`, from its title's rename on the desktop
+    /// (D16) or the settings window's header, and applies a choice at once.
+    /// Keys go to the picker meanwhile, and a desktop rename stays open
+    /// behind it. A set still loading waits for its wake, so the picker opens
+    /// with icons in it.
     pub(super) fn pick_space_icon(&mut self, ui: &mut Ui, id: SpaceId) {
         let Some(space) = self.config.desktop.space(id) else {
             return;
@@ -348,10 +349,17 @@ impl App {
             sets,
             current: current.as_ref(),
         };
-        // The picker's search box takes the keys the rename was capturing.
-        ui.capture_text_input(false);
+        // The picker's search box takes the keys a desktop rename was
+        // capturing; from the settings window nothing was captured, and
+        // turning the capture on would swallow every key.
+        let renaming = self.is_renaming_title(id);
+        if renaming {
+            ui.capture_text_input(false);
+        }
         let choice = ui.pick_icon(&request);
-        ui.capture_text_input(true);
+        if renaming {
+            ui.capture_text_input(true);
+        }
         let icon = match choice {
             Some(IconChoice::Automatic) => SpaceIcon::Automatic,
             Some(IconChoice::None) => SpaceIcon::None,

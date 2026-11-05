@@ -6409,3 +6409,46 @@ until I5-I6 all land, so no partial build hides the desktop.
     nothing in its scopes row, which is laid out as before; a dimmed
     scope's icon is dimmed; the header icon takes no click; Global's header
     has no icon and its title has not moved.
+
+- [x] **S12. Renaming in the settings header (platform, app).** **[needs
+  human]** After S10 and S11. Amended 2026-11-04 by D26: the icon opens the
+  picker on a double-click at any time, not only during the name's edit.
+  - `SettingsHeader.renamable: bool` (true for a space scope). In
+    `settings_window/header.rs`, double-clicking the title (`SS_NOTIFY`,
+    `STN_DBLCLK`) puts an edit over it with the text selected and focused.
+    The edit answers `WM_GETDLGCODE` with `DLGC_WANTALLKEYS`, so Enter and
+    Esc reach it rather than the window's OK and Cancel. Enter, or focus
+    leaving for anything but the header icon or the picker, raises
+    `SettingsEvent::HeaderRenamed { title }`; Esc ends the edit and
+    changes nothing. If G8 has landed, the edit hides the scrolling title
+    and stops its scroll while it is open (G8 says how).
+  - Double-clicking the header icon (S11's static, `STN_DBLCLK`), with or
+    without the edit open, raises `SettingsEvent::HeaderIconPressed`. A
+    single click does nothing. Over the icon the cursor is a hand
+    (`WM_SETCURSOR` in the settings window's procedure, for that control
+    only), and a tooltip says "Double-click to change the icon": a second
+    tool on G8's header tooltip if G8 has landed, or else create that
+    tooltip here as G8 describes, and G8 reuses it. Opening the picker
+    does not end an open edit. `apply_header` updates the icon and the
+    label without closing an open edit.
+  - App, `on_settings_event`: `HeaderRenamed` commits `RenameSpace` at once,
+    through the same helper the desktop rename's commit uses (extract it
+    from `finish_rename` if it is inline), ignoring an empty or unchanged
+    title. `HeaderIconPressed` calls `pick_space_icon` (S10); the picker is
+    owned by the settings window. Neither goes into `SpaceSnapshot`, so
+    Cancel leaves both (D16), and add them to `CONTEXT.md`'s "these also
+    commit at once" list.
+  - Tests: both events reach their `Command`; an empty or unchanged title
+    commits nothing; a rename made this way survives settings Cancel.
+  - **[needs human]** check: on a space's page, double-click the name: an
+    edit opens with the name selected. Type, then Enter: the header, the
+    scopes pane, and the space on the desktop show the new name, and the
+    window stays open. Esc in the edit keeps the old name and the window
+    open. Double-click the icon, once with the edit closed and once with
+    it open: the picker opens over the settings window each time, an open
+    edit stays open behind it, and a choice shows at once in the header,
+    the scopes pane, and on the desktop. A single click on the icon does
+    nothing; the cursor over it is a hand and its tooltip shows. A space
+    with no icon: double-click the placeholder, pick one, and it replaces
+    the placeholder. Cancel afterwards keeps both changes. Global's header
+    does not edit and has no icon.
