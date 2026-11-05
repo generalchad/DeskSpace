@@ -6532,3 +6532,12 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Collides with: P15f (paint clipping at the content's edge).
   - Done when: `draw_item` is under about 100 lines and the gates pass. It is a pure
     move, so it needs no section V row.
+
+- [x] **K17. Split `app/pointer.rs`.** Written when S10 pushed it to 804 lines
+  (2026-11-04). It holds mouse events, gestures, hover, and cursor shape.
+  - `hover.rs`: `PointerState`'s hover methods, `update_cursor`, `cursor_for`,
+    `update_hover`, and the info-tip arming they do, with their tests.
+  - `space_events.rs`: `on_space_event` and `prepare_space_event`.
+  - `mod.rs` keeps the gestures: `begin_interaction`, the drag, resize, and
+    marquee handlers.
+  - Done when: `mod.rs` is under about 600 lines and the K rules above hold.

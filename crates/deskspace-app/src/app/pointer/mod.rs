@@ -1,22 +1,19 @@
-//! `App` pointer: space events, selection gestures, hover, and resizing (R1).
+//! `App` pointer gestures: selection, drag, resize, and the marquee (R1).
+
+mod hover;
+mod space_events;
 
 use deskspace_core::geometry::{Point, Rect, Size};
 use deskspace_core::{ItemId, ResizeEdges, Space, SpaceId, ViewLayout};
 
-use deskspace_platform::{
-    CheckBoxMode, CursorShape, DragImage, MouseButton, SpaceEvent, Ui, drag_threshold,
-};
+use deskspace_platform::{CheckBoxMode, DragImage, Ui, drag_threshold};
 
 use crate::settings::STATUS_BUTTONS;
 
 use super::drag::Drag;
 use super::selection::marquee_selection;
 
-use super::{App, RESIZE_BORDER, Surface, Timer};
-
-/// How long the pointer must rest on an item before its info tip appears,
-/// matching Explorer's tooltip delay.
-const INFO_TIP_DELAY_MS: u32 = 600;
+use super::{App, RESIZE_BORDER, Surface};
 
 /// A left press on an already-selected item without Ctrl/Shift, resolved on
 /// release if it did not become a drag.
@@ -100,13 +97,6 @@ pub(super) struct PointerState {
 }
 
 impl PointerState {
-    /// The item hovered on `surface`, when that surface owns the hover.
-    pub(super) fn hovered_item_on(&self, surface: Surface) -> Option<ItemId> {
-        self.hovered
-            .filter(|(owner, _)| *owner == surface)
-            .map(|(_, item)| item)
-    }
-
     /// The dragged items on `surface`, empty when another surface is dragged.
     pub(super) fn dragged_on(&self, surface: Surface) -> Vec<ItemId> {
         self.dragged
@@ -121,30 +111,6 @@ impl PointerState {
         self.marquee
             .filter(|(owner, _)| *owner == surface)
             .map(|(_, rect)| rect)
-    }
-
-    /// The hovered item and its surface, if any.
-    pub(super) fn hovered(&self) -> Option<(Surface, ItemId)> {
-        self.hovered
-    }
-
-    /// Forgets the hover, as when it is dismissed outright.
-    pub(super) fn clear_hover(&mut self) {
-        self.hovered = None;
-    }
-
-    /// Forgets the hover when it is on `surface`.
-    pub(super) fn clear_hover_on(&mut self, surface: Surface) {
-        if self.hovered.is_some_and(|(owner, _)| owner == surface) {
-            self.hovered = None;
-        }
-    }
-
-    /// Forgets the hover when it is `item`.
-    pub(super) fn clear_hover_for_item(&mut self, item: ItemId) {
-        if self.hovered.is_some_and(|(_, hovered)| hovered == item) {
-            self.hovered = None;
-        }
     }
 }
 
@@ -171,117 +137,6 @@ const SPACE_PRESS_TARGETS: [SpacePressTarget; 5] = [
 ];
 
 impl App {
-    pub(super) fn on_space_event(&mut self, ui: &mut Ui, id: SpaceId, event: SpaceEvent) {
-        let surface = Surface::of(id);
-        if !self.prepare_space_event(ui, surface, &event) {
-            return;
-        }
-        match event {
-            SpaceEvent::MouseDown {
-                x,
-                y,
-                button: MouseButton::Left,
-                ctrl,
-                shift,
-            } => self.begin_interaction(ui, surface, Point::new(x, y), ctrl, shift),
-            SpaceEvent::MouseDown {
-                x,
-                y,
-                button: MouseButton::Right,
-                ..
-            } => self.begin_right_press(ui, surface, Point::new(x, y)),
-            SpaceEvent::MouseMove { x, y } => self.on_pointer_move(ui, surface, Point::new(x, y)),
-            SpaceEvent::Wheel {
-                x,
-                y,
-                delta,
-                ctrl,
-                shift,
-                tilt,
-            } => {
-                self.on_wheel(
-                    ui,
-                    surface,
-                    super::wheel::WheelInput {
-                        point: Point::new(x, y),
-                        delta,
-                        ctrl,
-                        shift,
-                        tilt,
-                    },
-                );
-            }
-            SpaceEvent::MouseUp {
-                button: MouseButton::Left,
-                ..
-            } => self.end_drag(ui),
-            SpaceEvent::CaptureLost => self.on_capture_lost(ui),
-            SpaceEvent::MouseUp {
-                x,
-                y,
-                button: MouseButton::Right,
-            } => self.end_right_press(ui, surface, Point::new(x, y)),
-            SpaceEvent::DoubleClick { x, y } => self.on_double_click(ui, surface, Point::new(x, y)),
-            SpaceEvent::BackButton => self.on_back_button(ui, surface),
-            SpaceEvent::MouseLeave => self.on_pointer_leave(ui, surface),
-            SpaceEvent::FilesDropped {
-                x,
-                y,
-                paths,
-                action,
-            } => self.on_files_dropped(ui, surface, Point::new(x, y), paths, action),
-            SpaceEvent::ShellItemsDropped { x, y, items } => {
-                self.on_shell_items_dropped(ui, surface, Point::new(x, y), items);
-            }
-            SpaceEvent::DpiChanged { .. } => self.on_surface_dpi_changed(ui, surface),
-            _ => {}
-        }
-    }
-
-    /// Prepares a space event, or returns false when its surface is gone. It
-    /// commits a rename under the click and makes a press act like a desktop click.
-    fn prepare_space_event(&mut self, ui: &mut Ui, surface: Surface, event: &SpaceEvent) -> bool {
-        // The chrome-less desktop layer reuses the space window: id 0 is it,
-        // any other id a real space. A space window can outlive its space by
-        // one queued event, so ignore anything they report.
-        let exists = match surface {
-            Surface::Space(id) => self.config.desktop.space(id).is_some(),
-            Surface::Desktop => self.layer_active(),
-        };
-        if !exists {
-            return false;
-        }
-        // Clicking anywhere commits a rename in progress before the click is
-        // handled, as clicking away from a title does elsewhere; so does the
-        // mouse's back button, which empties the lens the rename is in. A
-        // press on the title icon button opens the icon picker and leaves the
-        // rename open behind it (D16).
-        if self.edit.is_active()
-            && matches!(
-                event,
-                SpaceEvent::MouseDown { .. }
-                    | SpaceEvent::DoubleClick { .. }
-                    | SpaceEvent::BackButton
-            )
-        {
-            if self.title_icon_pressed(ui, surface, event) {
-                return false;
-            }
-            self.finish_rename(ui, true);
-        }
-        // A space is part of the desktop, and never takes activation, so a
-        // click here is made to behave like one on the desktop: focus it and
-        // clear its icon selection.
-        if matches!(event, SpaceEvent::MouseDown { .. }) {
-            // A new press starts over; one on the Back button sets it again.
-            self.pointer.back_press = None;
-            self.dismiss_info_tip(ui);
-            self.refresh_shell_display(ui);
-            ui.on_desktop_click();
-        }
-        true
-    }
-
     fn on_capture_lost(&mut self, ui: &mut Ui) {
         self.pointer.right_press = None;
         self.pointer.right_dragged = false;
@@ -540,117 +395,6 @@ impl App {
         }
     }
 
-    pub(super) fn update_cursor(&self, ui: &mut Ui, id: SpaceId, point: Point) {
-        if self.title_icon_button_at(id, point) {
-            ui.set_space_cursor(id.0, CursorShape::Hand);
-            return;
-        }
-        let edges = self
-            .config
-            .desktop
-            .space(id)
-            .map_or(ResizeEdges::NONE, |space| {
-                space.resize_edges_at(point, RESIZE_BORDER)
-            });
-        let cursor = if !edges.any() && self.details_divider_at(id, point).is_some() {
-            CursorShape::SizeWestEast
-        } else {
-            cursor_for(edges)
-        };
-        ui.set_space_cursor(id.0, cursor);
-    }
-
-    pub(super) fn update_hover(&mut self, ui: &mut Ui, surface: Surface, point: Point) {
-        let hovered = self
-            .surface_item_at(surface, point)
-            .map(|item| (surface, item));
-        let status_hover = match (surface, hovered) {
-            (Surface::Space(id), None) => self
-                .config
-                .desktop
-                .space(id)
-                .and_then(|space| crate::scene::status_button_at(space, point))
-                .map(|index| (surface, index)),
-            _ => None,
-        };
-        // A lens's title bar tips the folder it displays (W27). While that
-        // space is being renamed the tip would cover the edit, so it is not
-        // armed then.
-        let title_hover = match (surface, hovered, status_hover) {
-            (Surface::Space(id), None, None) => self
-                .config
-                .desktop
-                .space(id)
-                .filter(|space| space.is_lens() && space.title_bar().contains(point))
-                .filter(|_| self.edit.surface() != Some(surface))
-                .map(|_| id),
-            _ => None,
-        };
-        let icon_hover = match surface {
-            Surface::Space(id) if self.title_icon_button_at(id, point) => Some(id),
-            _ => None,
-        };
-        if hovered == self.pointer.hovered
-            && status_hover == self.pointer.status_hover
-            && title_hover == self.pointer.title_hover
-            && icon_hover == self.pointer.title_icon_hover
-        {
-            return;
-        }
-        let previous = std::mem::replace(&mut self.pointer.hovered, hovered);
-        let previous_status = std::mem::replace(&mut self.pointer.status_hover, status_hover);
-        let previous_title = std::mem::replace(&mut self.pointer.title_hover, title_hover);
-        self.pointer.title_icon_hover = icon_hover;
-        // A different item (or none) cancels any shown tip and its delay.
-        ui.hide_info_tip();
-        Self::clear_timer(ui, Timer::InfoTip);
-        if hovered.is_some() || status_hover.is_some() || title_hover.is_some() {
-            Self::set_timer(ui, Timer::InfoTip, INFO_TIP_DELAY_MS);
-        }
-        if let Some((owner, _)) = previous.filter(|(owner, _)| *owner != surface) {
-            self.refresh_surface(ui, owner);
-        }
-        if let Some((owner, _)) = previous_status.filter(|(owner, _)| *owner != surface) {
-            self.refresh_surface(ui, owner);
-        }
-        if let Some(owner) = previous_title.filter(|owner| Surface::of(*owner) != surface) {
-            self.refresh_surface(ui, Surface::of(owner));
-        }
-        self.refresh_surface(ui, surface);
-    }
-
-    fn on_pointer_leave(&mut self, ui: &mut Ui, surface: Surface) {
-        self.dismiss_info_tip(ui);
-        let mut repaint = false;
-        if self
-            .pointer
-            .hovered
-            .is_some_and(|(owner, _)| owner == surface)
-        {
-            self.pointer.hovered = None;
-            repaint = true;
-        }
-        if self
-            .pointer
-            .status_hover
-            .is_some_and(|(owner, _)| owner == surface)
-        {
-            self.pointer.status_hover = None;
-            repaint = true;
-        }
-        if self
-            .pointer
-            .title_hover
-            .is_some_and(|owner| Surface::of(owner) == surface)
-        {
-            self.pointer.title_hover = None;
-            repaint = true;
-        }
-        if repaint {
-            self.refresh_surface(ui, surface);
-        }
-    }
-
     /// A double-click's second press arrives as the double-click alone, so on
     /// the Back button it goes up again, as two clicks would, rather than fold
     /// the space.
@@ -763,16 +507,6 @@ pub(super) fn resize_edges_now(
     (edges, (active_x, active_y))
 }
 
-fn cursor_for(edges: ResizeEdges) -> CursorShape {
-    match (edges.left, edges.top, edges.right, edges.bottom) {
-        (true, true, _, _) | (_, _, true, true) => CursorShape::SizeNorthWestSouthEast,
-        (true, _, _, true) | (_, true, true, _) => CursorShape::SizeNorthEastSouthWest,
-        (true, ..) | (_, _, true, _) => CursorShape::SizeWestEast,
-        (_, true, ..) | (.., true) => CursorShape::SizeNorthSouth,
-        _ => CursorShape::Arrow,
-    }
-}
-
 /// What a double-click at `point` (desktop coordinates) acts on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DoubleClickTarget {
@@ -866,33 +600,6 @@ mod tests {
         assert!(right_drag_started(press, Point::new(100, 104), threshold));
         assert!(right_drag_started(press, Point::new(96, 100), threshold));
         assert!(right_drag_started(press, Point::new(100, 96), threshold));
-    }
-
-    #[test]
-    fn resize_cursor_matches_grabbed_edges() {
-        let edges = |left, top, right, bottom| ResizeEdges {
-            left,
-            top,
-            right,
-            bottom,
-        };
-        assert_eq!(cursor_for(ResizeEdges::NONE), CursorShape::Arrow);
-        assert_eq!(
-            cursor_for(edges(true, false, false, false)),
-            CursorShape::SizeWestEast
-        );
-        assert_eq!(
-            cursor_for(edges(false, false, false, true)),
-            CursorShape::SizeNorthSouth
-        );
-        assert_eq!(
-            cursor_for(edges(false, false, true, true)),
-            CursorShape::SizeNorthWestSouthEast
-        );
-        assert_eq!(
-            cursor_for(edges(false, true, true, false)),
-            CursorShape::SizeNorthEastSouthWest
-        );
     }
 
     #[test]

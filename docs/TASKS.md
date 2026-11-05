@@ -81,7 +81,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | An `Effect` a pure decision returns, and `App::run` that carries it out (R17) | `deskspace-app/src/app/effect.rs` |
 | What a space looks like, refresh/re-flow, takeover | `deskspace-app/src/app/view.rs` |
 | Surface (space or desktop layer) lookups | `deskspace-app/src/app/hit.rs` |
-| Mouse, resize, hover | `deskspace-app/src/app/pointer.rs` |
+| Mouse, resize, hover | `deskspace-app/src/app/pointer/` (`mod.rs` gestures, `hover.rs` hover and cursor, `space_events.rs` the event entry) |
 | The mouse wheel: zoom, Details sideways, the view's axis | `deskspace-app/src/app/wheel.rs` |
 | Ctrl+wheel, zoom, the zoom pop-up's behavior | `deskspace-app/src/app/zoom.rs` |
 | Drag, drag image, drag out | `deskspace-app/src/app/drag.rs` |
@@ -622,7 +622,7 @@ Work that collides when run in parallel:
   - R14 (table-driven settings fields) would rewrite the pages W10, W20,
     W23, W35, and W38 build. Do not start R14 while those are open.
   - Section K: `win32/space_window/` is split (K8); put new hit tests and
-    paint code in `app/pointer.rs` and `render/d2d/`, not in its `mod.rs`.
+    paint code in `app/pointer/` and `render/d2d/`, not in its `mod.rs`.
   - T (animations): the title icon (W9), status bar (W19), headers (W18,
     W37), and Back button (W43) paint through the normal paint path, so
     animations snapshot them for free. Each task's check includes one
@@ -1665,15 +1665,6 @@ moves.
     `Painter`'s paint path, `draw_scene`, `draw_items`, and the bitmap cache.
   - Collides with: P15f (paint clipping) and anything in section T.
   - Done when: `mod.rs` is under about 700 lines and the K rules above hold.
-
-- [ ] **K17. Split `app/pointer.rs`.** Written when S10 pushed it to 804 lines
-  (2026-11-04). It holds mouse events, gestures, hover, and cursor shape.
-  - `hover.rs`: `PointerState`'s hover methods, `update_cursor`, `cursor_for`,
-    `update_hover`, and the info-tip arming they do, with their tests.
-  - `space_events.rs`: `on_space_event` and `prepare_space_event`.
-  - `mod.rs` keeps the gestures: `begin_interaction`, the drag, resize, and
-    marquee handlers.
-  - Done when: `mod.rs` is under about 600 lines and the K rules above hold.
 
 ## Q. Move the why next to the code (shrink `CONTEXT.md` section 6)
 
