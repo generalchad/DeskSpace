@@ -13,6 +13,7 @@
 //! (`window_state`) and is freed exactly once, in `WM_NCDESTROY`.
 
 mod frame;
+mod highlight;
 mod mouse;
 mod zorder;
 
@@ -23,9 +24,8 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::WM_MOUSELEAVE;
 use windows::Win32::UI::WindowsAndMessaging::{
     CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, GetParent, GetWindowRect, HTCLIENT,
-    HWND_BOTTOM, HWND_TOPMOST, IDC_ARROW, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE,
-    IsWindowVisible, KillTimer, LWA_ALPHA, LoadCursorW, MA_NOACTIVATE, SC_MINIMIZE,
-    SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetCursor,
+    HWND_BOTTOM, HWND_TOPMOST, IsWindowVisible, KillTimer, LWA_ALPHA, MA_NOACTIVATE, SC_MINIMIZE,
+    SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
     SetLayeredWindowAttributes, SetTimer, SetWindowPos, ShowWindow, WINDOW_EX_STYLE,
     WM_CAPTURECHANGED, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
     WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEHWHEEL, WM_MOUSEMOVE,
@@ -47,11 +47,13 @@ use crate::win32::shadow_window::{ShadowPlacement, ShadowWindow};
 use crate::win32::space_animation::{self, Animation};
 use crate::win32::system::{hiword, is_windows_11, loword};
 use crate::win32::window_class::{self, WindowClass};
-use crate::win32::{drop_target, dwm, messages, runtime, window_state};
+use crate::win32::{drop_target, dwm, frame_clock, messages, runtime, window_state};
 
 use frame::{Frame, shadow_alpha, update_region};
+pub(crate) use highlight::store_scene;
 use mouse::{
-    on_button_down, on_button_up, on_mouse_leave, on_mouse_move, on_mouse_wheel, to_desktop,
+    apply_cursor, on_button_down, on_button_up, on_mouse_leave, on_mouse_move, on_mouse_wheel,
+    to_desktop,
 };
 use zorder::on_window_pos_changing;
 pub(crate) use zorder::{set_on_top, sink, window_above};
@@ -120,6 +122,8 @@ pub(super) struct SpaceState {
     cursor: CursorShape,
     /// The animation playing on the window, if any (`space_animation`).
     pub(super) animation: Option<Animation>,
+    /// The settings window's highlight outline and its fade.
+    highlight: highlight::Highlight,
     /// The window's visual tree, when composition gives it its blur.
     visuals: Option<SpaceVisuals>,
     /// What of the DWM backing an animation has left in place
@@ -162,6 +166,7 @@ pub(crate) fn create(options: SpaceWindowOptions) -> Result<HWND, PlatformError>
         tracking_leave: false,
         cursor: CursorShape::Arrow,
         animation: None,
+        highlight: highlight::Highlight::new(),
         visuals: None,
         backing: Backing::WHOLE,
         shadow: None,
@@ -392,6 +397,8 @@ pub(crate) fn set_scene(hwnd: HWND, scene: SpaceScene) {
             if let Some(painter) = state.painter.as_mut() {
                 painter.retain_icons(prepared.scene());
             }
+            let previous = state.scene.as_ref().map(|scene| scene.scene().highlight);
+            state.highlight.follow(previous, prepared.scene(), hwnd);
             state.scene = Some(prepared);
         });
         let _ = InvalidateRect(Some(hwnd), None, false);
@@ -402,33 +409,7 @@ pub(crate) fn set_scene(hwnd: HWND, scene: SpaceScene) {
 /// a mouse event on the space, so the cursor is over it (or captured by it)
 /// and is updated at once. WM_SETCURSOR is not sent while the mouse is
 /// captured, so waiting for it would leave the old shape during a drag.
-pub(crate) fn set_cursor(hwnd: HWND, shape: CursorShape) {
-    // SAFETY: `hwnd` is a live space window; the borrow does not re-enter.
-    let changed = unsafe {
-        with_state(hwnd, |state| {
-            std::mem::replace(&mut state.cursor, shape) != shape
-        })
-    };
-    if changed == Some(true) {
-        apply_cursor(shape);
-    }
-}
-
-fn apply_cursor(shape: CursorShape) {
-    let id = match shape {
-        CursorShape::Arrow => IDC_ARROW,
-        CursorShape::SizeWestEast => IDC_SIZEWE,
-        CursorShape::SizeNorthSouth => IDC_SIZENS,
-        CursorShape::SizeNorthWestSouthEast => IDC_SIZENWSE,
-        CursorShape::SizeNorthEastSouthWest => IDC_SIZENESW,
-    };
-    // SAFETY: stock cursors are shared system resources and are never freed.
-    unsafe {
-        if let Ok(cursor) = LoadCursorW(None, id) {
-            SetCursor(Some(cursor));
-        }
-    }
-}
+pub(crate) use mouse::set_cursor;
 
 pub(crate) fn set_style(hwnd: HWND, style: SpaceStyle) {
     // SAFETY: `hwnd` is a live space window; the borrow does not re-enter
@@ -587,10 +568,12 @@ unsafe fn paint(window: HWND) {
     // short.
     unsafe {
         let checked_out = with_state(window, |state| {
+            let mut frame = state.frame.paint(window_dpi(window));
+            frame.highlight = state.highlight.level();
             (
                 state.painter.take(),
                 state.scene.take(),
-                state.frame.paint(window_dpi(window)),
+                frame,
                 state.animation.as_ref().map(Animation::frame),
             )
         });
@@ -661,7 +644,9 @@ unsafe extern "system" fn wndproc(
             }
             WM_ERASEBKGND => LRESULT(1),
             messages::FRAME => {
+                frame_clock::delivered(window);
                 space_animation::on_frame(window);
+                highlight::on_frame(window);
                 LRESULT(0)
             }
             WM_TIMER if wparam.0 == REPAINT_TIMER_ID => {

@@ -7,7 +7,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetParent, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP,
+    GetParent, IDC_ARROW, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE, LoadCursorW,
+    SetCursor, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP,
 };
 
 use crate::input::{MouseButton, SpaceEvent};
@@ -15,6 +16,38 @@ use crate::ui::CursorShape;
 use crate::win32::system::{hiword, loword};
 
 use super::{is_hosted, space_event, with_state};
+
+/// Sets the pointer shown over the space. The app calls this while handling
+/// a mouse event on the space, so the cursor is over it (or captured by it)
+/// and is updated at once. WM_SETCURSOR is not sent while the mouse is
+/// captured, so waiting for it would leave the old shape during a drag.
+pub(crate) fn set_cursor(hwnd: HWND, shape: CursorShape) {
+    // SAFETY: `hwnd` is a live space window; the borrow does not re-enter.
+    let changed = unsafe {
+        with_state(hwnd, |state| {
+            std::mem::replace(&mut state.cursor, shape) != shape
+        })
+    };
+    if changed == Some(true) {
+        apply_cursor(shape);
+    }
+}
+
+pub(super) fn apply_cursor(shape: CursorShape) {
+    let id = match shape {
+        CursorShape::Arrow => IDC_ARROW,
+        CursorShape::SizeWestEast => IDC_SIZEWE,
+        CursorShape::SizeNorthSouth => IDC_SIZENS,
+        CursorShape::SizeNorthWestSouthEast => IDC_SIZENWSE,
+        CursorShape::SizeNorthEastSouthWest => IDC_SIZENESW,
+    };
+    // SAFETY: stock cursors are shared system resources and are never freed.
+    unsafe {
+        if let Ok(cursor) = LoadCursorW(None, id) {
+            SetCursor(Some(cursor));
+        }
+    }
+}
 
 /// Mouse-button bits of the `wParam` key state on mouse messages. Defined here
 /// to avoid pulling in `Win32_System_SystemServices` for three constants.

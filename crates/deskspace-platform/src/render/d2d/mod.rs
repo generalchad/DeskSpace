@@ -628,10 +628,11 @@ impl Painter {
             }
 
             // Drawn last, so the settings window's highlight sits over the
-            // border.
-            if scene.highlight {
+            // border. Its level comes from the window, which fades it (D26).
+            if frame.highlight > 0.0 {
                 let radius = (frame.outline_radius - HIGHLIGHT_GAP).max(0.0);
-                brush.SetColor(&color_f(scene.selected_fill.with_alpha(255)));
+                let alpha = (255.0 * frame.highlight.clamp(0.0, 1.0)).round() as u8;
+                brush.SetColor(&color_f(scene.selected_fill.with_alpha(alpha)));
                 target.DrawRoundedRectangle(
                     &D2D1_ROUNDED_RECT {
                         rect: inset(whole, HIGHLIGHT_GAP),
@@ -950,6 +951,9 @@ pub(crate) struct PaintFrame {
     /// follow DWM's corners.
     pub outline_radius: f32,
     pub border: Option<BorderStroke>,
+    /// The settings window's highlight outline's level, 0 (off) to 1 (full).
+    /// The space window fills it from its own fade.
+    pub highlight: f32,
 }
 
 /// The border a painter draws, in window pixels.

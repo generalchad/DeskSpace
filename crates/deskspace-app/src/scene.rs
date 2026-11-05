@@ -93,6 +93,9 @@ pub struct ViewState {
     /// Draw a highlight outline, marking the space selected in the settings
     /// window.
     pub highlight: bool,
+    /// Whether that outline fades in and out rather than switching, as
+    /// Windows' "Animation effects" says.
+    pub highlight_fades: bool,
     /// The item with keyboard focus, drawn with a focus rectangle.
     pub focused: Option<ItemId>,
     /// A lens whose folder cannot be listed (missing, or refused because it
@@ -302,6 +305,7 @@ pub fn space_scene_with_details(
         locked: space.locked(),
         folded: space.folded(),
         highlight: view.highlight,
+        highlight_fades: view.highlight_fades,
         drop_into: if space.is_lens() {
             DropInto::Folder
         } else {
@@ -498,6 +502,7 @@ pub fn desktop_layer_scene(
         locked: false,
         folded: false,
         highlight: false,
+        highlight_fades: false,
         drop_into: DropInto::Space,
         placeholder: None,
         notice: None,
@@ -1928,6 +1933,24 @@ mod tests {
         );
         assert!(scene.highlight);
         assert!(!ViewState::default().highlight);
+    }
+
+    #[test]
+    fn the_settings_highlight_fades_when_asked() {
+        let space = space();
+        let theme = Theme::default();
+        let scene = space_scene(
+            &space,
+            surface_look(&theme, &theme.palette(true)),
+            ViewState {
+                highlight: true,
+                highlight_fades: true,
+                ..ViewState::default()
+            },
+            &mut IconCache::new(),
+        );
+        assert!(scene.highlight_fades);
+        assert!(!ViewState::default().highlight_fades);
     }
 
     #[test]

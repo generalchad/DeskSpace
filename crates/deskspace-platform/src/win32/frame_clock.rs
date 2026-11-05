@@ -52,9 +52,10 @@ pub(crate) fn any_animating() -> bool {
     !clock().windows.is_empty()
 }
 
-/// A window's frames: it gets one after every composition while this
-/// lives. An animation holds it, so its frames stop when it ends, however
-/// it ends, the window's destruction included.
+/// A window's frames: it gets one after every composition while any
+/// subscription to it lives. A window may hold several, so one reason to
+/// animate ending does not stop another; the frames stop when the last one
+/// is dropped, however it ends, the window's destruction included.
 #[derive(Debug)]
 pub(crate) struct Subscription(WindowKey);
 
@@ -149,12 +150,20 @@ fn rest_after(waited: bool, elapsed: Duration) -> Option<Duration> {
     (!waited || elapsed < SHORTEST_WAIT).then(|| FALLBACK_REFRESH.saturating_sub(elapsed))
 }
 
-/// The animating windows, each with whether a frame sent to it is still
-/// waiting in its queue. A window whose UI thread is busy gets one frame,
-/// not a backlog of them.
+/// The animating windows, each with how many subscriptions it holds and
+/// whether a frame sent to it is still waiting in its queue. A window whose
+/// UI thread is busy gets one frame, not a backlog of them, however many
+/// subscriptions it has.
 #[derive(Debug, Default)]
 struct Subscribers {
-    entries: Vec<(WindowKey, bool)>,
+    entries: Vec<Entry>,
+}
+
+#[derive(Debug)]
+struct Entry {
+    window: WindowKey,
+    subscriptions: u32,
+    waiting: bool,
 }
 
 impl Subscribers {
@@ -165,18 +174,32 @@ impl Subscribers {
     }
 
     fn add(&mut self, window: WindowKey) {
-        if !self.entries.iter().any(|(each, _)| *each == window) {
-            self.entries.push((window, false));
+        if let Some(entry) = self.entry(window) {
+            entry.subscriptions += 1;
+        } else {
+            self.entries.push(Entry {
+                window,
+                subscriptions: 1,
+                waiting: false,
+            });
         }
     }
 
+    /// Drops one subscription. The window leaves at its last one.
     fn remove(&mut self, window: WindowKey) {
-        self.entries.retain(|(each, _)| *each != window);
+        let Some(index) = self.index(window) else {
+            return;
+        };
+        let entry = &mut self.entries[index];
+        entry.subscriptions -= 1;
+        if entry.subscriptions == 0 {
+            self.entries.remove(index);
+        }
     }
 
     fn delivered(&mut self, window: WindowKey) {
-        if let Some(entry) = self.entries.iter_mut().find(|(each, _)| *each == window) {
-            entry.1 = false;
+        if let Some(entry) = self.entry(window) {
+            entry.waiting = false;
         }
     }
 
@@ -187,12 +210,21 @@ impl Subscribers {
     /// Fills `due` with the windows owed a frame, and marks them waiting.
     fn take_due(&mut self, due: &mut Vec<WindowKey>) {
         due.clear();
-        for (window, waiting) in &mut self.entries {
-            if !*waiting {
-                *waiting = true;
-                due.push(*window);
+        for entry in &mut self.entries {
+            if !entry.waiting {
+                entry.waiting = true;
+                due.push(entry.window);
             }
         }
+    }
+
+    fn index(&self, window: WindowKey) -> Option<usize> {
+        self.entries.iter().position(|entry| entry.window == window)
+    }
+
+    fn entry(&mut self, window: WindowKey) -> Option<&mut Entry> {
+        let index = self.index(window)?;
+        self.entries.get_mut(index)
     }
 }
 
@@ -223,11 +255,15 @@ mod tests {
     }
 
     #[test]
-    fn a_window_subscribes_once_and_leaves_for_good() {
+    fn a_window_stays_while_any_subscription_lives() {
         let mut windows = Subscribers::new();
         windows.add(ONE);
         windows.add(ONE);
         assert_eq!(due(&mut windows), [ONE]);
+        windows.remove(ONE);
+        assert!(!windows.is_empty(), "one subscription is left");
+        windows.delivered(ONE);
+        assert_eq!(due(&mut windows), [ONE], "it is listed once per frame");
         windows.remove(ONE);
         assert!(windows.is_empty());
         windows.delivered(ONE);

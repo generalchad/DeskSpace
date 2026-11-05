@@ -900,7 +900,7 @@ Rules for every S task:
 Read D26 first; it is the spec. There are three strands, and each can run
 alongside the others:
 
-- the highlight fades: G2, then G1 with G3;
+- the highlight fades: done (G1-G3);
 - cards: G4 with G5, then G6;
 - long names in a space's header: G7 with G8, then G9.
 
@@ -918,91 +918,6 @@ These tasks are written for juniors and interns. G1, G4, G6, and G7 touch no
 `unsafe` code. The others cross the junior line in section P, so each one
 says why and names what a senior reviews. Unless a task says
 otherwise, a name in `code` that does not exist yet is one the task creates.
-
-- [ ] **G1. The highlight's fade (platform, pure).** Lands in the same
-  commit as G3, its first caller; tick and archive both. A junior can write
-  and test it first, then hand the branch on.
-  - `render/highlight.rs`, beside `render/transition.rs`: `pub const
-    HIGHLIGHT_FADE_IN: Duration` (150 ms) and `HIGHLIGHT_FADE_OUT` (250 ms),
-    and `pub struct HighlightFade { from: f32, to: f32, start: Duration }`.
-    Its methods:
-    - `at_rest(on: bool) -> Self`;
-    - `level(now) -> f32`, which eases from `from` to `to` with
-      `math::smoothstep`;
-    - `toward(on: bool, now)`, which restarts from `level(now)`;
-    - `jump(on: bool)`;
-    - `is_done(now) -> bool`.
-  - A fade's length is its full duration times `(to - from).abs()`, so a
-    fade reversed half-way takes half the time and starts with no jump.
-  - Tests: at rest it stays at 0 or 1. A full fade in reaches 1 at 150 ms
-    and a fade out reaches 0 at 250 ms. The level only rises during a fade in
-    and only falls during a fade out. It never leaves 0..1. Reversing at
-    half-way starts from the level it had and ends early in proportion.
-    `is_done` is true from the end on.
-  - It cannot land alone: with no caller, clippy's `-D warnings` fails on
-    dead code, and `#[expect]` is not the answer.
-
-- [ ] **G2. Let a window hold two frame subscriptions (platform).** G3 gives
-  a space window a second reason to want frames while an animation may hold
-  the first. Today `Subscribers` (`win32/frame_clock.rs`) keeps one entry
-  per window. The first `Subscription` to drop removes it, which would stop
-  the other one's frames.
-  - `Subscribers` counts per window: `add` increments, `remove` decrements,
-    and the entry goes at 0. A window is still owed one frame per
-    composition, however many subscriptions it has.
-  - `messages::FRAME` in the space window's procedure
-    (`space_window/mod.rs`) calls `frame_clock::delivered(window)` once,
-    then `space_animation::on_frame`. Move the `delivered` call out of
-    `on_frame` to do this.
-  - Update `Subscription`'s doc comment: a window may hold several, and it
-    gets frames while any of them lives.
-  - Tests in `frame_clock.rs`, on `Subscribers` alone: two adds and one
-    remove still list the window in `take_due`; the second remove empties
-    it; a window with two subscriptions is listed once per `take_due`.
-  - Senior review: `Subscribers` is shared with the frame thread under
-    `CLOCK`'s lock. The change itself stays inside that type.
-  - Done when: the gates pass and nothing else changes. The "Frame clock"
-    row in section V already covers it, so add no row.
-
-- [ ] **G3. Fade the highlight in and out (platform, app).** **[needs
-  human]** After G2. Includes G1; one commit, `(G1, G3)`.
-  - App: `SpaceScene` gains `highlight_fades: bool` (`render/scene.rs`,
-    with a `///` doc), filled in `space_scene` (`deskspace-app/src/scene.rs`).
-    It is true unless Windows' "Animation effects" is off. Decide it as
-    `play_for` (`app/animation.rs`) does, including the debug tweak's
-    `ignore_windows`. `Timer::Highlight` and `HIGHLIGHT_MS` stay as they are.
-    Scene test: copy `the_settings_highlight_reaches_the_scene`.
-  - Platform: put the window side in a new `space_window/highlight.rs`,
-    because `space_window/mod.rs` is already past the size limit's 800
-    lines. `SpaceState` gains a `highlight` that holds a `HighlightFade`
-    and an `Option<frame_clock::Subscription>`.
-    - Every place that stores a new `PreparedScene` in `state.scene`
-      (`set_scene`, and `show_scene` in `space_animation.rs`) goes through
-      one helper. Leave `paint` alone: it only puts back the scene it took
-      out. The helper compares the old scene's `highlight` with the
-      new one's. On a change it calls `toward` and subscribes when
-      `highlight_fades` is set, and calls `jump` when it is not. A fold's
-      deferred scene therefore fades when it lands.
-    - `messages::FRAME` then also calls the highlight's frame step. The step
-      invalidates the window while the level moves, and drops the
-      subscription once `is_done`.
-  - Paint: `PaintFrame` (`space_window/frame.rs`) gains `highlight: f32`,
-    set from the fade's level at paint time. The painter (`render/d2d/mod.rs`,
-    the block after the border) draws while the level is above 0, at
-    `selected_fill` with alpha `255 × level`, and no longer reads
-    `scene.highlight`.
-  - `CONTEXT.md` section 6, "Highlight": it fades in and out, and switches
-    while Windows' "Animation effects" is off.
-  - Senior review: the paint and window code is `unsafe`. Every new block
-    keeps or gains its `// SAFETY:` comment.
-  - **[needs human]** check, with `--on-top` at 100 % and 150 %: open
-    Settings on a space, then click other spaces in the scopes pane. Each
-    outline fades in quickly, holds about a second, and fades out, with no
-    flash and no outline left behind. Click a second space mid-fade: the
-    first fades out while the second fades in. Fold and unfold a space
-    while it is highlighted, and hide all spaces mid-fade; nothing sticks.
-    With Windows' "Animation effects" off, it switches as before. With no
-    highlight showing, idle CPU is as before.
 
 - [ ] **G4. Plan a page's cards (platform, pure).** Lands in the same
   commit as G5, its first caller, as G1 does with G3.
@@ -2760,6 +2675,7 @@ for a machine that has it.
 |----|---------------|
 | Drawn shadows (D15) | Windows 11 with "Transparency effects" on, at 100 % and 150 % (O2 and O3 ran at 125 %), over Acrylic and Blur as well as Solid: the shadow reads as a soft shadow, not a box. With "Transparency effects" off, Solid at 16 px shows a drawn shadow while 4 and 8 px keep DWM's own; Windows 10 casts one at every radius. On a machine with a desktop host, `--placement desktop-*` casts none (O2 could not cover that here). Roll, Fly, Bounce, and CRT move and crop the shadow with the space; Fade, Dissolve, Gradient, Pixelate, and Burn fade it out to nothing with no ghost box left. Settings > Appearance: "Show shadow" greys "Shadow size" and "Shadow opacity"; Size (2–48 px) and Opacity (0–100 %) preview live and Cancel restores. `--debug` → Windows: "Outline every shadow window" draws a 1 px magenta box around each one, "Hide every shadow" hides them for the session, the "Shadow settings" box edits and saves the three settings (reflected in an open Settings window, kept on Cancel), and the Windows table lists each `DeskSpaceShadow` below its space. The structure and the pixels (one per space, z-order, rect, ex-styles, click-through, Clear/desktop/layer, show_shadow off, a per-space size, half the setting beside and three quarters below, both falloffs to 0, the drop band, the corner, opacity 0, and the Solid cut-out) passed O2 and O3 on 2026-10-27 at 125 % on the composition path (`archive/ROADMAP-progress-log.md`). |
 | Animation refactor | The 2026-10-19 animation and painter refactors change no pixels, so check that everything looks as before, at 100 % and 150 %, on Acrylic and Solid: every effect on hide, show, Delete, and Fold, and Gradient, Roll, and Fly from each edge (Automatic: Roll and Gradient from the top, Fly to the nearest edge); Pixelate, Dissolve, and Burn at detail 1 and 10; the debug window's preview on one space and on all, pressed twice mid-way, its Kind box named Startup, Delete, Fold, and slow motion; exit plays every space out in reverse reading order. Items, labels, check boxes, the focus rectangle, the rename box, the lock glyph, and the settings highlight sit where they did; the drag image, the debug badge on the window icon, and the zoom pop-up look as before. |
+| G1-G3 (D26) | With `--on-top` at 100 % and 150 %: open Settings on a space, then click other spaces in the scopes pane. Each outline fades in quickly, holds about a second, and fades out, with no flash and no outline left behind. Click a second space mid-fade: the first fades out while the second fades in. Fold and unfold a space while it is highlighted, and hide all spaces mid-fade; nothing sticks. With Windows' "Animation effects" off, it switches as before. With no highlight showing, idle CPU is as before. |
 | Flames follow | With Startup and Delete set to Burn at 1000 ms (or `--debug` at ¼×), change a space's rect while it burns: move or resize it in Settings and Apply mid-hide, and change the display layout mid-show. The flames stay on the space's burning edge at its new place, never left where it was; a resized space's flames stand on its new edge. No flame window is left after the burn ends. |
 | Frame clock | On a 60 Hz and a 144 Hz display, and on a space moved to a second monitor with another refresh: Roll, Fade, Fly, Bounce, CRT, and Burn on hide and show at 1000 ms are smooth, with no hitch or jump; `--debug` at ⅒× speed is smooth too; hiding during the startup stagger, and the hotkey twice mid-animation, behave as before. With no animation running, Task Manager shows no "frame clock" thread busy and idle CPU is as before. Lock the session mid-animation: it finishes, and the app stays responsive after unlocking. |
 | No DWM shadow | Windows 11 with "Transparency effects" on, Acrylic, Blur, and Solid at 4 px and 8 px corners, at 100 % and 150 %: a space at rest has smooth rounded corners with no shadow; Fade, Dissolve, Gradient, Pixelate, and Burn on hide, show, and Delete leave no ghost box or outline at any point, and nothing pops off at the end; Roll rolls to a 1 px line with nothing left around it; CRT and Fly look as before. With "Transparency effects" off, spaces keep DWM's corners as before. |

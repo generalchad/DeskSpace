@@ -381,6 +381,7 @@ impl App {
                 .settings_ui
                 .highlighted()
                 .is_some_and(|id| surface == Surface::Space(id)),
+            highlight_fades: self.animations_play(),
             focused: (self.selection.surface == Some(surface))
                 .then_some(self.selection.focused)
                 .flatten(),

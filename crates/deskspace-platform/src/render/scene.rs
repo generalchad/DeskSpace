@@ -117,6 +117,9 @@ pub struct SpaceScene {
     /// Draws a highlight outline just inside the frame, following the corner
     /// radius, to point out the space selected in the settings window.
     pub highlight: bool,
+    /// Whether the highlight fades in and out rather than switching: off
+    /// while Windows' "Animation effects" is off.
+    pub highlight_fades: bool,
     /// What a drop on this window lands in, which decides the modifiers and
     /// menu entries the drop target offers.
     pub drop_into: DropInto,

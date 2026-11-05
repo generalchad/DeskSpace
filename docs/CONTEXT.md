@@ -691,6 +691,7 @@ one arm in `App::on_event`, whose match is exhaustive.
 - Everything else about a space window lives where it happens: `dwm.rs` owns
   the material, corners, and border; `composition.rs` the visual tree and
   the startup choice; `space_animation.rs` and `frame_clock.rs` the frames;
+  `space_window/highlight.rs` the settings highlight's fade;
   `space_window/mod.rs` the backing and resizing and `space_window/mouse.rs`
   the mouse modifiers; and
   `shadow_window.rs` / `render/shadow.rs` the shadow. ROADMAP D12 and D15
@@ -807,8 +808,12 @@ in `ui.rs`. What spans them:
   restores `window` wholesale.
 - **Highlight.** Selecting a space in the scopes pane, or opening the window
   on one, highlights it on the desktop for about 1.2 s
-  (`SpaceScene::highlight`, cleared by `Timer::Highlight`). Selecting another
-  space moves it; Cancel, OK, and closing the window clear it.
+  (`SpaceScene::highlight`, cleared by `Timer::Highlight`). The outline fades
+  in over 150 ms and out over 250 ms rather than switching, which the
+  platform plays (`render/highlight.rs`, `space_window/highlight.rs`), and
+  switches while Windows' "Animation effects" is off, as `play_for` decides
+  for animations. Selecting another space moves it; Cancel, OK, and closing
+  the window clear it.
 - **The app's form** (`settings/`): the scopes are Global, then every space
   indented, dimmed while it follows Global. Each row shows its kind's glyph in
   the row's text color, so a dimmed row dims its glyph too. Global lists every

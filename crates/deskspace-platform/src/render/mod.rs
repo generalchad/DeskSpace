@@ -4,6 +4,7 @@ pub mod d2d;
 pub mod dissolve;
 pub mod flames;
 pub(crate) mod glyph;
+pub(crate) mod highlight;
 pub(crate) mod math;
 pub mod scene;
 pub mod shadow;

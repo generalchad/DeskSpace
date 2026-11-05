@@ -6026,3 +6026,89 @@ until I5-I6 all land, so no partial build hides the desktop.
     loading at all, and the "newer" backup still holds the original.
   - Done when: both guard tests pass, and `CONTEXT.md` section 5 says what an
     unknown word does, beside `ThemeFile`'s rules.
+
+- [x] **G1. The highlight's fade (platform, pure).** Lands in the same
+  commit as G3, its first caller; tick and archive both. A junior can write
+  and test it first, then hand the branch on.
+  - `render/highlight.rs`, beside `render/transition.rs`: `pub const
+    HIGHLIGHT_FADE_IN: Duration` (150 ms) and `HIGHLIGHT_FADE_OUT` (250 ms),
+    and `pub struct HighlightFade { from: f32, to: f32, start: Duration }`.
+    Its methods:
+    - `at_rest(on: bool) -> Self`;
+    - `level(now) -> f32`, which eases from `from` to `to` with
+      `math::smoothstep`;
+    - `toward(on: bool, now)`, which restarts from `level(now)`;
+    - `jump(on: bool)`;
+    - `is_done(now) -> bool`.
+  - A fade's length is its full duration times `(to - from).abs()`, so a
+    fade reversed half-way takes half the time and starts with no jump.
+  - Tests: at rest it stays at 0 or 1. A full fade in reaches 1 at 150 ms
+    and a fade out reaches 0 at 250 ms. The level only rises during a fade in
+    and only falls during a fade out. It never leaves 0..1. Reversing at
+    half-way starts from the level it had and ends early in proportion.
+    `is_done` is true from the end on.
+  - It cannot land alone: with no caller, clippy's `-D warnings` fails on
+    dead code, and `#[expect]` is not the answer.
+
+- [x] **G2. Let a window hold two frame subscriptions (platform).** G3 gives
+  a space window a second reason to want frames while an animation may hold
+  the first. Today `Subscribers` (`win32/frame_clock.rs`) keeps one entry
+  per window. The first `Subscription` to drop removes it, which would stop
+  the other one's frames.
+  - `Subscribers` counts per window: `add` increments, `remove` decrements,
+    and the entry goes at 0. A window is still owed one frame per
+    composition, however many subscriptions it has.
+  - `messages::FRAME` in the space window's procedure
+    (`space_window/mod.rs`) calls `frame_clock::delivered(window)` once,
+    then `space_animation::on_frame`. Move the `delivered` call out of
+    `on_frame` to do this.
+  - Update `Subscription`'s doc comment: a window may hold several, and it
+    gets frames while any of them lives.
+  - Tests in `frame_clock.rs`, on `Subscribers` alone: two adds and one
+    remove still list the window in `take_due`; the second remove empties
+    it; a window with two subscriptions is listed once per `take_due`.
+  - Senior review: `Subscribers` is shared with the frame thread under
+    `CLOCK`'s lock. The change itself stays inside that type.
+  - Done when: the gates pass and nothing else changes. The "Frame clock"
+    row in section V already covers it, so add no row.
+
+- [x] **G3. Fade the highlight in and out (platform, app).** **[needs
+  human]** After G2. Includes G1; one commit, `(G1, G3)`.
+  - App: `SpaceScene` gains `highlight_fades: bool` (`render/scene.rs`,
+    with a `///` doc), filled in `space_scene` (`deskspace-app/src/scene.rs`).
+    It is true unless Windows' "Animation effects" is off. Decide it as
+    `play_for` (`app/animation.rs`) does, including the debug tweak's
+    `ignore_windows`. `Timer::Highlight` and `HIGHLIGHT_MS` stay as they are.
+    Scene test: copy `the_settings_highlight_reaches_the_scene`.
+  - Platform: put the window side in a new `space_window/highlight.rs`,
+    because `space_window/mod.rs` is already past the size limit's 800
+    lines. `SpaceState` gains a `highlight` that holds a `HighlightFade`
+    and an `Option<frame_clock::Subscription>`.
+    - Every place that stores a new `PreparedScene` in `state.scene`
+      (`set_scene`, and `show_scene` in `space_animation.rs`) goes through
+      one helper. Leave `paint` alone: it only puts back the scene it took
+      out. The helper compares the old scene's `highlight` with the
+      new one's. On a change it calls `toward` and subscribes when
+      `highlight_fades` is set, and calls `jump` when it is not. A fold's
+      deferred scene therefore fades when it lands.
+    - `messages::FRAME` then also calls the highlight's frame step. The step
+      invalidates the window while the level moves, and drops the
+      subscription once `is_done`.
+  - Paint: `PaintFrame` (`space_window/frame.rs`) gains `highlight: f32`,
+    set from the fade's level at paint time. The painter (`render/d2d/mod.rs`,
+    the block after the border) draws while the level is above 0, at
+    `selected_fill` with alpha `255 × level`, and no longer reads
+    `scene.highlight`.
+  - `CONTEXT.md` section 6, "Highlight": it fades in and out, and switches
+    while Windows' "Animation effects" is off.
+  - Senior review: the paint and window code is `unsafe`. Every new block
+    keeps or gains its `// SAFETY:` comment.
+  - **[needs human]** check, with `--on-top` at 100 % and 150 %: open
+    Settings on a space, then click other spaces in the scopes pane. Each
+    outline fades in quickly, holds about a second, and fades out, with no
+    flash and no outline left behind. Click a second space mid-fade: the
+    first fades out while the second fades in. Fold and unfold a space
+    while it is highlighted, and hide all spaces mid-fade; nothing sticks.
+    With Windows' "Animation effects" off, it switches as before. With no
+    highlight showing, idle CPU is as before.
+
