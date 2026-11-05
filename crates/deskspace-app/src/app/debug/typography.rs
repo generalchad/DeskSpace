@@ -207,36 +207,31 @@ fn button(id: u32, label: &str) -> DebugControl {
 }
 
 impl App {
-    /// Applies a typography-box control. Returns whether the debug window must
-    /// be rebuilt so its own text follows the new fonts.
-    pub(super) fn on_typography_setting(
-        &mut self,
-        ui: &mut Ui,
-        id: u32,
-        input: DebugInput,
-    ) -> bool {
+    /// Applies a typography-box control and asks for the Debug window to be
+    /// rebuilt on the next refresh tick, so its own text follows the fonts.
+    pub(super) fn on_typography_setting(&mut self, ui: &mut Ui, id: u32, input: DebugInput) {
         if id == RESET_ID {
             if let Some(tools) = self.debug.as_mut() {
                 tools.typography = Typography::default();
             }
             self.apply_typography(ui);
-            return true;
+            return;
         }
         if id == LANGUAGE_ID {
             if let (DebugInput::Choose(index), Some(tools)) = (input, self.debug.as_mut()) {
                 tools.language = *Language::ALL.get(index).unwrap_or(&Language::English);
             }
-            return false;
+            return;
         }
         let Some((role, part)) = Part::from_id(id) else {
-            return false;
+            return;
         };
         let DebugInput::Choose(index) = input else {
-            return false;
+            return;
         };
         let names = families(self);
         let Some(tools) = self.debug.as_mut() else {
-            return false;
+            return;
         };
         let font = tools.typography.font(role).clone();
         let updated = match part {
@@ -268,8 +263,8 @@ impl App {
             },
         };
         tools.typography.set(role, updated);
+        tools.rebuild_debug = true;
         self.apply_typography(ui);
-        true
     }
 
     fn apply_typography(&mut self, ui: &mut Ui) {

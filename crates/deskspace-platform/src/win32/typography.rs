@@ -78,11 +78,13 @@ pub(crate) fn installed_families() -> Vec<String> {
             if length == 0 {
                 continue;
             }
-            let mut buffer = vec![0u16; length as usize];
-            if strings.GetString(0, &mut buffer[..]).is_err() {
+            // `GetString` writes a terminator, so the buffer is one longer
+            // than the reported length.
+            let mut buffer = vec![0u16; length as usize + 1];
+            if strings.GetString(0, &mut buffer).is_err() {
                 continue;
             }
-            let name = String::from_utf16_lossy(&buffer);
+            let name = String::from_utf16_lossy(&buffer[..length as usize]);
             if !name.trim().is_empty() {
                 names.push(name);
             }
@@ -91,4 +93,23 @@ pub(crate) fn installed_families() -> Vec<String> {
     names.sort_by_key(|name| name.to_lowercase());
     names.dedup();
     names
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_system_font_collection_lists_families() {
+        let families = installed_families();
+        // A buffer one short of the reported length made every GetString fail
+        // and left the Debug box with no family but Windows default.
+        assert!(families.len() > 10, "{} families", families.len());
+        let lowered: Vec<String> = families.iter().map(|name| name.to_lowercase()).collect();
+        assert!(
+            lowered.windows(2).all(|pair| pair[0] <= pair[1]),
+            "sorted ignoring case"
+        );
+        assert!(families.iter().all(|name| !name.contains('\0')));
+    }
 }
