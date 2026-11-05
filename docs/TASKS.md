@@ -15,7 +15,7 @@ its section.
 are collected in section V instead of blocking:
 - section P's "Juniors and interns" list, the best place for a first task,
   ranked most severe first, so take one from the top;
-- section K (K9-K16), each a pure move with rules that leave nothing to
+- section K (K10-K16), each a pure move with rules that leave nothing to
   design;
 - O4, which needs no code;
 - section S (S9-S12), without waiting for their checks;
@@ -115,7 +115,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Shell: open, item menu, drag out | `deskspace-platform/src/win32/shell_items.rs` |
 | Shortcuts from dropped shell items, custom targets | `deskspace-platform/src/win32/shortcuts.rs` |
 | The installed-apps picker and its cache, the custom shortcut dialog | `deskspace-platform/src/win32/{app_picker,app_catalog,shortcut_dialog,dialog}.rs` |
-| Desktop enumeration, icons | `deskspace-platform/src/win32/desktop_items.rs`, `win32/icons.rs` (the cache and its load worker), `icon_queue.rs` (what the worker loads next) |
+| Desktop enumeration, icons | `deskspace-platform/src/win32/desktop_items.rs`, `win32/icons/` (`mod.rs` the cache, `load.rs` the shell reads, `worker.rs` the load worker), `icon_queue.rs` (what the worker loads next) |
 | Icon-set glyphs (SVG to pixels) | `deskspace-platform/src/render/glyph.rs` (the document), `render/d2d/glyph.rs` (the rasterizer), `win32/glyphs.rs` (the cache) |
 | Takeover: hide icons, watchdog | `deskspace-platform/src/win32/{desktop_icons,watchdog}.rs` |
 | CI and release | `.github/workflows/{ci,release,icons}.yml`, `crates/deskspace-app/build.rs` |
@@ -1575,19 +1575,6 @@ Rules for every K task:
 - Done when: fmt, clippy, and tests pass with the same test count;
   `git diff --stat` shows mostly moved lines; and the file map above names
   the new files.
-
-- [ ] **K9. Split `win32/icons.rs`.** 793 lines of non-test code (measured
-  2026-11-02), and the next change would pass the guideline, so it goes before P24.
-  Turn it into `win32/icons/mod.rs` plus:
-  - `worker.rs`: `start_worker`, `run_worker`, `next_request`, `should_report`,
-    and `report_loaded`, with `Worker` and `WorkerState`, and their tests.
-  - `load.rs`: everything that reads an icon from the shell, from `load_icon` to
-    `composite_overlay`, including `shell_item_icon` and `resample`, and their tests.
-  - `mod.rs` keeps `IconUser`, `IconKind`, `Key`, `GenericIcon`, `CachedIcon`, and
-    `IconCache`. It re-exports `shell_item_icon` and `resample`, so `app_catalog` and
-    the other callers do not change.
-  - Done when: `mod.rs` is well under 800 lines of non-test code and the K rules
-    above hold.
 
 K10-K16 split the files `ALLOWED` listed as "none yet" (line counts are non-test
 lines, measured 2026-11-03). Each lands alone, in any order, but read the

@@ -5919,3 +5919,16 @@ until I5-I6 all land, so no partial build hides the desktop.
     it.
   - Run `actionlint` (`TOOLS.md` section 1). Done when it passes and CI is green on
     the commit.
+
+- [x] **K9. Split `win32/icons.rs`.** 793 lines of non-test code (measured
+  2026-11-02), and the next change would pass the guideline, so it goes before P24.
+  Turn it into `win32/icons/mod.rs` plus:
+  - `worker.rs`: `start_worker`, `run_worker`, `next_request`, `should_report`,
+    and `report_loaded`, with `Worker` and `WorkerState`, and their tests.
+  - `load.rs`: everything that reads an icon from the shell, from `load_icon` to
+    `composite_overlay`, including `shell_item_icon` and `resample`, and their tests.
+  - `mod.rs` keeps `IconUser`, `IconKind`, `Key`, `GenericIcon`, `CachedIcon`, and
+    `IconCache`. It re-exports `shell_item_icon` and `resample`, so `app_catalog` and
+    the other callers do not change.
+  - Done when: `mod.rs` is well under 800 lines of non-test code and the K rules
+    above hold.
