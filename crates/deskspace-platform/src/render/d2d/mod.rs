@@ -153,6 +153,7 @@ fn is_device_lost(code: HRESULT) -> bool {
 /// thread-local destructors would otherwise release COM objects after COM is
 /// gone.
 pub(crate) fn release_graphics() {
+    glyph::release();
     GRAPHICS.with(|cell| cell.borrow_mut().take());
 }
 

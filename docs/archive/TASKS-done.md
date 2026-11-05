@@ -6614,3 +6614,17 @@ until I5-I6 all land, so no partial build hides the desktop.
     DPI: the scroll restarts. Minimize and restore: it stops, then starts.
     With "Animation effects" off, the name ends in "…" and still shows its
     tip. Task Manager shows no busy "frame clock" thread during the pauses.
+- [x] **B44. Keep one Direct2D context for drawing glyphs (platform).**
+  - Why: `rasterize` (`render/d2d/glyph.rs`) made a new Direct3D device and
+    Direct2D context for every glyph, about 55 ms each in a release build
+    (2026-11-05). The icon picker draws about 100 cells a page, so it froze
+    for seconds on opening, scrolling, and every search keystroke. The
+    settings window's scopes pane and header, and the title icons at startup
+    or after a zoom or theme change, paid the same per icon.
+  - A thread-local `Rasterizer` keeps the device context and the target and
+    readback bitmaps for the last size drawn. A lost device empties it and
+    the glyph is drawn once more on a new one; `release_graphics` drops it
+    before COM goes.
+  - Tests: one context draws every glyph on a thread, and `release` drops
+    it; a new size draws whole, and the old size still does after it.
+  - **[needs human]** check: see section V, B44.
