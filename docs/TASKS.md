@@ -1782,26 +1782,6 @@ Logs, tooling, readability, docs, and checks that may close a task.
   - Done when: a run prints the state, and with a space on another virtual desktop
     the check fails and names the cloak.
 
-- [ ] **P44. Turn the press targets in `begin_interaction` into a table
-  (refactor).** `App::begin_interaction` (`app/pointer.rs`) first asks five chrome
-  targets in turn whether a press is theirs: `back_button_clicked`,
-  `status_button_clicked`, `begin_column_resize`, `begin_header_press`, and
-  `group_header_clicked`. Each check is its own `if let Surface::Space(id) = surface`
-  with the same shape. A new target is a sixth copy, and SonarCloud rates the
-  function's cognitive complexity 37, over its limit of 30 (`rust:S3776`).
-  - All five take `(&mut self, &mut Ui, SpaceId, Point) -> bool`. Put them, in today's
-    order, in a `const SPACE_PRESS_TARGETS: [fn(&mut App, &mut Ui, SpaceId, Point) ->
-    bool; 5]` in `pointer.rs`. Each row keeps its comment. The order matters, since a
-    divider is checked before the header, and the table's doc says so.
-  - `begin_interaction` asks them in one place: `if let Surface::Space(id) = surface
-    && SPACE_PRESS_TARGETS.iter().any(|claim| claim(self, ui, id, point))`.
-  - Move the check-box branch, unchanged, into a method that returns whether it took
-    the press, called next.
-  - Collides with: P15f, which may add a press target. Then it is one more row.
-  - Done when: the gates pass with the same test count, and the function is clearly
-    under 30 on SonarCloud's next analysis. It changes no behavior, so it needs no
-    section V row.
-
 - [ ] **P33. Let the compiler find `draw_item` when a layout is added (refactor).**
   `draw_item` (`render/d2d/item.rs`, 191 lines) turns `scene.item_layout` into three
   booleans (`details`, `tiles`, and `content`) and draws each layout's extras under

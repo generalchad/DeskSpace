@@ -148,6 +148,28 @@ impl PointerState {
     }
 }
 
+/// A chrome target that may claim a press on a space.
+type SpacePressTarget = fn(&mut App, &mut Ui, SpaceId, Point) -> bool;
+
+/// The chrome targets a press on a space may claim, in the order they are
+/// asked. A divider is checked before the header, and the Back button before
+/// the title bar can start a move.
+const SPACE_PRESS_TARGETS: [SpacePressTarget; 5] = [
+    // A click on a browsed lens's Back button shows the parent folder, before
+    // the title bar can start a move.
+    App::back_button_clicked,
+    // A click on a status-bar view button switches this space's view (W19).
+    App::status_button_clicked,
+    // A press on a Details divider resizes its column, so it must not also
+    // sort.
+    App::begin_column_resize,
+    // A press on a Details header waits for its release: a click sorts, and a
+    // drag moves the column.
+    App::begin_header_press,
+    // A press on a group's header folds or opens the group.
+    App::group_header_clicked,
+];
+
 impl App {
     pub(super) fn on_space_event(&mut self, ui: &mut Ui, id: SpaceId, event: SpaceEvent) {
         let surface = Surface::of(id);
@@ -322,56 +344,14 @@ impl App {
         ctrl: bool,
         shift: bool,
     ) {
-        // A click on a browsed lens's Back button shows the parent folder,
-        // before the title bar can start a move.
         if let Surface::Space(id) = surface
-            && self.back_button_clicked(ui, id, point)
+            && SPACE_PRESS_TARGETS
+                .iter()
+                .any(|claim| claim(self, ui, id, point))
         {
             return;
         }
-        // A click on a status-bar view button switches this space's view
-        // (W19).
-        if let Surface::Space(id) = surface
-            && self.status_button_clicked(ui, id, point)
-        {
-            return;
-        }
-        // A press on a Details divider resizes its column, so it must not also
-        // sort.
-        if let Surface::Space(id) = surface
-            && self.begin_column_resize(ui, id, point)
-        {
-            return;
-        }
-        // A press on a Details header waits for its release: a click sorts,
-        // and a drag moves the column.
-        if let Surface::Space(id) = surface
-            && self.begin_header_press(ui, id, point)
-        {
-            return;
-        }
-        // A press on a group's header folds or opens the group.
-        if let Surface::Space(id) = surface
-            && self.group_header_clicked(ui, id, point)
-        {
-            return;
-        }
-        // A click on an item's check box either toggles that item in the
-        // selection (auto-check-select) or the independent tick set, and moves
-        // the highlight to it.
-        if let Some(item) = self.checkbox_at(surface, point) {
-            let previous = self.selection.surface.replace(surface);
-            if self.surface_check_box_mode(surface) == CheckBoxMode::Independent {
-                self.selection.toggle_checked(item);
-                self.selection.select_only(surface, item);
-            } else {
-                self.selection.toggle(item);
-                self.selection.focus(item);
-            }
-            if let Some(previous) = previous.filter(|previous| *previous != surface) {
-                self.refresh_surface(ui, previous);
-            }
-            self.refresh_surface(ui, surface);
+        if self.checkbox_pressed(ui, surface, point) {
             return;
         }
         let previous = self.selection.surface.replace(surface);
@@ -456,6 +436,28 @@ impl App {
             self.refresh_surface(ui, previous);
         }
         self.refresh_surface(ui, surface);
+    }
+
+    /// A click on an item's check box either toggles that item in the
+    /// selection (auto-check-select) or the independent tick set, and moves the
+    /// highlight to it.
+    fn checkbox_pressed(&mut self, ui: &mut Ui, surface: Surface, point: Point) -> bool {
+        let Some(item) = self.checkbox_at(surface, point) else {
+            return false;
+        };
+        let previous = self.selection.surface.replace(surface);
+        if self.surface_check_box_mode(surface) == CheckBoxMode::Independent {
+            self.selection.toggle_checked(item);
+            self.selection.select_only(surface, item);
+        } else {
+            self.selection.toggle(item);
+            self.selection.focus(item);
+        }
+        if let Some(previous) = previous.filter(|previous| *previous != surface) {
+            self.refresh_surface(ui, previous);
+        }
+        self.refresh_surface(ui, surface);
+        true
     }
 
     fn begin_right_press(&mut self, ui: &mut Ui, surface: Surface, point: Point) {
