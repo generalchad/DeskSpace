@@ -542,8 +542,8 @@ function Get-ScreenPixels {
         try {
             $lines = [DeskSpaceOnScreen]::GetDIBits($screen, $bitmap, 0, $height, $buffer, [ref]$info, 0)
             if ($lines -ne $height) {
-                $error = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
-                throw "GetDIBits read $lines of $height rows (Win32 error $error)"
+                $win32Error = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+                throw "GetDIBits read $lines of $height rows (Win32 error $win32Error)"
             }
             [System.Runtime.InteropServices.Marshal]::Copy($buffer, $bytes, 0, $bytes.Length)
         } finally {

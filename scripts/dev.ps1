@@ -90,9 +90,9 @@ foreach ($arg in $AppArgs) {
     if ($arg -match '^--([A-Za-z][A-Za-z-]*)$') {
         $name = $Matches[1]
         # -eq ignores case, so `--ontop` and `--on-top` both find OnTop.
-        $switch = $scriptSwitches | Where-Object { $_ -eq ($name -replace '-', '') }
-        if ($switch) {
-            Set-Variable -Name $switch -Value ([switch]$true)
+        $scriptSwitch = $scriptSwitches | Where-Object { $_ -eq ($name -replace '-', '') }
+        if ($scriptSwitch) {
+            Set-Variable -Name $scriptSwitch -Value ([switch]$true)
             continue
         }
         $arg = '--' + ($name -creplace '(?<=[a-z0-9])([A-Z])', '-$1').ToLowerInvariant()

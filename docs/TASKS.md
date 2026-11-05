@@ -1771,20 +1771,6 @@ A rare loss of a user's file, memory that only grows, a broken install's shell e
 
 Logs, tooling, readability, docs, and checks that may close a task.
 
-- [ ] **P41. Rename script variables that shadow PowerShell's own (scripts).**
-  PowerShell sets `$switch` inside a `switch` statement and keeps its error list in
-  `$Error`; names are not case sensitive. `scripts/dev.ps1` assigns `$switch` in its
-  argument loop, and `Get-ScreenPixels` in `scripts/onscreen/OnScreen.psm1` assigns
-  `$error` after `GetDIBits`. Neither breaks
-  today, but the next edit nearby could. SonarCloud reports both (`S8626`).
-  - Rename `$switch` to `$scriptSwitch`, and `$error` to `$win32Error`, everywhere
-    each is used. Change nothing else.
-  - Test `dev.ps1`'s argument handling on a copy with its build, launch, and
-    `Remove-Item` steps stubbed, as `TOOLS.md` section 2 says. Never run the real
-    script with `-Fresh`.
-  - Done when: the stubbed copy maps `--ontop` and `--on-top` to `-OnTop` as before,
-    and `OnScreen.psm1` still imports (`Import-Module` it in a fresh `pwsh`).
-
 - [ ] **P18b. Make a failed capture explain itself (scripts).** Part of P18. In
   `scripts/onscreen/OnScreen.psm1`, add `Get-CaptureState`: each DeskSpace window's
   cloak state (`DwmGetWindowAttribute`, `DWMWA_CLOAKED`), the session
