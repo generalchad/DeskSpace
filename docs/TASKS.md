@@ -15,11 +15,12 @@ its section.
 are collected in section V instead of blocking:
 - section P's "Juniors and interns" list, the best place for a first task,
   ranked most severe first, so take one from the top;
-- section B's icon picker tasks, in order: B45 (log lines) first;
+- section B's icon picker tasks, in order: B45 (log lines) first; then
+  B51, B53, and B55 from "Measure and trim the UI thread";
 - section G (settings window polish): the pure half of G13;
 - section K (K10-K13, K15, K16), each a pure move with rules that leave
   nothing to design;
-- O4, which needs no code;
+- O4, which needs no code, and O5;
 - anything else not marked **[needs decision]**, "still to design", or in
   section D.
 
@@ -241,7 +242,7 @@ matching on `Surface` at the call site.
 
 A B task is a behavior-preserving refactor: the test count only grows, and no
 user-visible change is expected. The exceptions are performance work: B32-B36,
-B39-B43 (the lens-performance costs left by B33/B37), and B44-B50 below.
+B39-B43 (the lens-performance costs left by B33/B37), and B44-B55 below.
 Finished ones are in `archive/TASKS-done.md`.
 
 Not listed here on purpose: `settings/pages.rs` `look_pages` (278 lines),
@@ -361,6 +362,94 @@ Rules for every task here:
   - Tests for the pure parts: the request queue and the generation rule.
   - **[needs human]** check: B48's, and a fast scroll from the top to the end
     of the grid never stalls.
+
+### Measure and trim the UI thread (B51-B55)
+
+Planned 2026-11-05 from a read of the code, not from a profile, so the first
+tasks measure and the later ones wait for the numbers. The rules of B44-B50
+hold here too: measure before and after in a release build, same results,
+and no committed test that asserts a time. The budget is 8 ms of UI-thread
+work per event (section W, "Performance").
+
+- [ ] **B51. Log how long a space's scene takes (app, platform).** Any
+  contributor; it adds log lines only.
+  - Why: every scene a space gets is built whole, and nothing says what that
+    costs. B52 waits for this number.
+  - Copy `settings: switched page` (`win32/settings_window/nav.rs`). Add:
+    - `scene: built`, timed across `App::refresh_space` (`app/view.rs`), with
+      the space id, the scene's item count, and the view mode;
+    - `scene: prepared`, timed across `PreparedScene`'s constructor
+      (`render/d2d/prepared.rs`);
+    - `scene: painted`, timed across a space window's paint, with its size.
+  - These run on every hover change, so log them at `trace`. Log the same line
+    at `debug` as well when it takes over 4 ms, so a `-v` log shows only the
+    slow ones.
+  - Done when: the gates pass and a `./scripts/dev.ps1 -Release -Verbosity 2`
+    run shows each line. Say in the commit body that you saw them, or that a
+    person must.
+
+- [ ] **B52. Hover and the caret without a new scene (app, platform).**
+  **Seniors only.** After: B51.
+  - Why: a hover change (`App::update_hover`, `app/pointer/hover.rs`) and each
+    caret blink of a rename (530 ms, `app/rename.rs`) call `refresh_space`.
+    That rebuilds the whole `SpaceScene`, formats every visible Details, Tiles,
+    or Content row's texts again (`view_cells`), and encodes every string to
+    UTF-16 again, to change one flag.
+  - First, with B51's lines: hover across a 50,000-file lens in Details at
+    150 %, with every column on. If `built` plus `prepared` stays under 0.5 ms,
+    delete this task with the numbers as the reason.
+  - Otherwise, design and bring it to the maintainer. The outline:
+    `Ui::set_space_hover(id, Option<u64>)` and `Ui::set_space_caret(id, bool)`
+    patch the window's stored `PreparedScene` and invalidate only the item's or
+    the title's rect. Every other change still pushes a whole scene. The
+    scene's own fields stay the truth for the next full build, so a test checks
+    that a patched `PreparedScene` equals one prepared from the rebuilt scene.
+  - While an animation plays, a patch changes only the stored scene; the frame
+    it draws keeps its snapshot.
+
+- [ ] **B53. Shade the flames with less work per pixel (platform).** Any
+  contributor; pure code.
+  - Why: `flames::paint` (`render/flames.rs`) runs on the UI thread for every
+    frame of a Burn. `paint_tongue` works out `below.powf(TIP_FALLOFF)` and
+    `brightness` for every pixel, though both depend only on the row and the
+    tongue, and `paint` clears the whole overlay (`pixels.fill(0)`), about
+    4.7 MB for a 1200 × 900 space, though the tongues cover a small part.
+  - Hoist the row and tongue constants out of the pixel loop. Have `paint`
+    clear only the rows the previous frame drew: it takes a `&mut Rows` (a new
+    pure type in `flames.rs`, the range of rows last drawn) that the overlay
+    keeps, and returns the rows it drew this time.
+  - Tests: copy today's `paint` into the test module as `reference_paint`. Over
+    several times, sets of tongues, and a frame of other tongues before each,
+    the new `paint` gives the same pixels. Keep every existing test.
+  - Measure a 1200 × 900 overlay over 60 frames with a throwaway `#[ignore]`
+    test, before and after.
+  - Collides with T29, which rewrites `paint_tongue`: take B53 first.
+
+- [ ] **B54. Upload only the rows the flames changed (platform; Win32).**
+  After: B53 and T41c. Senior review: `unsafe` Win32.
+  - Why: `UpdateLayeredWindow` copies the whole overlay every frame.
+  - Call `UpdateLayeredWindowIndirect` with `prcDirty` set to the union of this
+    frame's and the last frame's rows from B53, linked beside the call
+    (https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-updatelayeredwindowindirect).
+    The first frame, and the first after the overlay moves (`follow`), still
+    send the whole window.
+  - Measure the call with a `trace` line, before and after.
+  - **[needs human]** check: Burn looks as before on Startup and Delete, at
+    100 % and 150 %, and no flame pixel is left behind where a tongue was.
+
+- [ ] **B55. Log the startup timeline (app, platform).** Any contributor; it
+  adds log lines only.
+  - Why: "fast startup" is a goal (`CONTEXT.md` section 1) that no number
+    backs.
+  - One `debug` line per phase, `startup: <phase>`, with the milliseconds on
+    the clock the log console already keeps (`START` in `debug_log.rs`; start
+    it at the top of `main` if it is not started there already): the config
+    loaded, the runtime made, the desktop's items listed, the first scene
+    pushed, the first space painted (a one-shot flag in the platform), and the
+    icon worker first idle. Name each phase after the function that ends it.
+  - Done when: a `./scripts/dev.ps1 -Release -Verbosity 1` run shows each line
+    once, and the commit body records one run's numbers with the number of
+    spaces and items, or says a person must.
 
 ## L. Adding items to spaces (ROADMAP F-50, F-53..F-55)
 
@@ -2401,6 +2490,24 @@ monitor) is reported as **not covered**, never passed.
   - Change nothing else in a row, and run no check (O tasks run them).
   - Done when: every row is marked or left unmarked on purpose, and the
     groups are written as tasks.
+
+- [ ] **O5. Measure idle CPU and wake-ups (scripts).** **(junior)** M7 item 5
+  asks for idle CPU near zero, and nothing measures it.
+  - `scripts/onscreen/idle.ps1`, importing `OnScreen.psm1`: start DeskSpace on
+    a scratch config with five spaces and one lens on a quiet folder
+    (`Start-DeskSpace`, which runs the debug build with `--no-icons`; idle cost
+    does not depend on either), wait 15 s for listings to settle, then sample
+    for 60 s: the process's CPU time (`TotalProcessorTime`) and its threads'
+    context switches per second (`Get-Counter` on `\Thread(deskspace*)\Context
+    Switches/sec`). Print both, and the busiest thread.
+  - Pass under 0.1 % CPU and 5 wake-ups a second; above either, the script
+    fails and names the thread. The thresholds are named at the top of the
+    script, as a first guess to tune.
+  - Never run it while the maintainer has a build running: `Start-DeskSpace`
+    calls `dev.ps1`, which stops one.
+  - Done when: a run prints both numbers; record the first run, with the date
+    and the machine, in the commit body. A failure is a **Found while working**
+    line naming the thread, not a fix in this task.
 
 - **R20. Test the app without Win32 (`ENGINEERING.md` section 3).**
   `deskspace-platform` is about 55 % of the code (2026-10-21) and holds two
