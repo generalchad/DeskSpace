@@ -555,3 +555,14 @@ light mode: the settings window opened on Global, on a plain space, and on
 a lens, and stayed up; the rail, scopes, and header labels and the button
 text drew as before, and the lens's Folder note showed its path. Not
 covered: 150 %.
+
+### 2026-11-04: W2, a lens follows its folder
+
+On a hand-made lens over `C:\Temp\lens-test` with a custom title, at
+100 %: creating and deleting files in the folder showed in the lens at
+once. Renaming the folder on the same volume was followed, with the
+"Folder moved:" notice and every item kept, and the title did not change,
+which is what a custom title does (D19; W45 owns the title-following
+check). The row's "the lens empties, and fills again when renamed back"
+predated D19, so the row is gone and W5 now makes its folder unavailable
+by deleting or moving it.
