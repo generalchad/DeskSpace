@@ -157,6 +157,7 @@ impl App {
             | DebugId::AnimationsChanged
             | DebugId::ExplorerRestarted
             | DebugId::CrashNow
+            | DebugId::BlockUiThread
             | DebugId::SaveNow
             | DebugId::ClearIconCache => DebugControlKind::Button { enabled: true },
             DebugId::ReflowAll => DebugControlKind::Button {
@@ -308,6 +309,7 @@ impl App {
                 }
             }
             DebugId::CrashNow => self.crash_now(ui),
+            DebugId::BlockUiThread => self.block_ui_thread(),
             DebugId::SpaceTable | DebugId::InputState => {}
             DebugId::MarkLog => self.mark_log(),
             DebugId::LogEvents => {

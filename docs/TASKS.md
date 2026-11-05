@@ -1820,16 +1820,6 @@ A user can lose their layout, an attacker could reach every install, or the next
 
 A rare loss of a user's file, memory that only grows, a broken install's shell entries, or groundwork a senior's fix needs.
 
-- [ ] **P32a. A debug button that blocks the UI thread (debug tool).** Part of P32,
-  which needs it to reproduce the bug. Add "Block the UI thread 2 s" to the debug
-  window, built the way `DebugId::ThemeChanged` is: a `DebugId` (next free value) and
-  its `ALL` entry in `app/debug/ids.rs`, a row in `table.rs`, an arm in `mod.rs`, and
-  the method in `simulate.rs`. The method logs at `info`, calls
-  `std::thread::sleep`, and logs again.
-  - It exists only under the hidden `--debug` flag, so no user can press it.
-  - Done when: the gates pass, and `debug_ids_are_unique` and
-    `debug_ids_round_trip` (`ids.rs`) cover the new id.
-
 #### Low
 
 Logs, tooling, readability, docs, and checks that may close a task.

@@ -310,6 +310,11 @@ pub(crate) const DEBUG_CONTROLS: &[DebugRow] = &[
         section: DebugSectionId::Simulate,
         label: "Crash now",
     },
+    DebugRow {
+        id: DebugId::BlockUiThread,
+        section: DebugSectionId::Simulate,
+        label: "Block the UI thread 2 s",
+    },
 ];
 
 #[cfg(test)]
