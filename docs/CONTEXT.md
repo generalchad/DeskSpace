@@ -873,7 +873,11 @@ in `ui.rs`. What spans them:
   the row's text color, so a dimmed row dims its glyph too. The categories
   pane lists each scope's pages in titled groups (`settings/nav_groups.rs`,
   the one source for the pane and `listed_pages`), the five look pages
-  first under Look. Global lists every page but View, Shortcuts and Lens:
+  first under Look. A click on a group's title collapses or expands it,
+  shown by its caret; the platform keeps which titles are collapsed for the
+  window's life, across scope changes, and a page in a collapsed group shows
+  with no rail row selected. The keyboard steps over titles and opens a
+  collapsed group it moves into (`settings_window/nav.rs`). Global lists every page but View, Shortcuts and Lens:
   Fonts holds Spaces and Windows (`settings/fonts.rs`: a card per text
   role, edits writing `Config::typography` and previewed through
   `App::sync_typography`; a reset per page), and New items holds New spaces

@@ -1,14 +1,16 @@
 //! Refreshes an open settings window in place from a new SettingsForm.
 
-use super::build::fill_list;
 use super::commands::{show_page, window_text};
-use super::nav::{NavRow, entry_row, nav_rows};
+use super::nav::{NavRow, entry_row, fill_list, nav_rows};
 use super::*;
 use windows::Win32::UI::WindowsAndMessaging::CB_RESETCONTENT;
 
-/// Selects `row` in a rail list. Edits arrive on every slider tick; touching
-/// the list only when it changed keeps it from repainting each time.
-unsafe fn sync_selection(list: HWND, rebuilt: bool, row: usize) {
+/// Selects `row` in a rail list, or nothing for `None` (an entry inside a
+/// collapsed group). Edits arrive on every slider tick; touching the list
+/// only when it changed keeps it from repainting each time.
+unsafe fn sync_selection(list: HWND, rebuilt: bool, row: Option<usize>) {
+    // -1 (usize::MAX) is "no selection" to LB_SETCURSEL and LB_GETCURSEL.
+    let row = row.unwrap_or(usize::MAX);
     // SAFETY: `list` is a live list box of the settings window.
     unsafe {
         let current = SendMessageW(list, LB_GETCURSEL, None, None).0;
@@ -115,7 +117,7 @@ struct HeaderUpdate {
 struct UpdatePlan {
     updates: Vec<Update>,
     apply: Option<HWND>,
-    rail: Option<(HWND, Vec<NavRow>, bool, usize)>,
+    rail: Option<(HWND, Vec<NavRow>, bool, Option<usize>)>,
     page: Option<usize>,
     pages: Vec<HWND>,
     scopes: Option<(HWND, Vec<SettingsScope>, bool, usize)>,
@@ -160,7 +162,7 @@ unsafe fn plan_update(hwnd: HWND, form: &SettingsForm) -> Option<UpdatePlan> {
                 plan_field(old, controls, new, &mut updates);
                 *old = new.clone();
             }
-            let new_rows = nav_rows(&form.nav);
+            let new_rows = nav_rows(&form.nav, &state.collapsed);
             let rebuild = state.nav_rows != new_rows;
             let selected_row = entry_row(&new_rows, form.nav.selected);
             let page = form.nav.page_of(form.nav.selected);
@@ -267,7 +269,7 @@ unsafe fn update_pages(updates: Vec<Update>, apply: Option<HWND>, form: &Setting
 /// Rebuilds or selects the rail and scopes pane, and shows the named page.
 unsafe fn update_panes(
     settings: HWND,
-    rail: Option<(HWND, Vec<NavRow>, bool, usize)>,
+    rail: Option<(HWND, Vec<NavRow>, bool, Option<usize>)>,
     page: Option<usize>,
     pages: Vec<HWND>,
     scopes: Option<(HWND, Vec<SettingsScope>, bool, usize)>,
@@ -287,7 +289,7 @@ unsafe fn update_panes(
             if rebuild {
                 fill_list(list, scopes.iter().map(|scope| scope.label.as_str()));
             }
-            sync_selection(list, rebuild, selected);
+            sync_selection(list, rebuild, Some(selected));
         }
     }
 }

@@ -94,6 +94,13 @@ pub(super) unsafe fn on_draw_scope(window: HWND, item: &DRAWITEMSTRUCT) {
     }
 }
 
+/// Segoe Fluent Icons / Segoe MDL2 Assets "ChevronDown" and "ChevronRight":
+/// a rail group's caret, open and collapsed.
+const GLYPH_CHEVRON_DOWN: u16 = 0xE70D;
+const GLYPH_CHEVRON_RIGHT: u16 = 0xE76C;
+/// The width a group title keeps for its caret, at 96 DPI.
+const CARET_WIDTH: i32 = 16;
+
 /// Paints one row of the navigation rail: group titles in secondary text,
 /// entries in normal text, an accent bar on the selected entry, and an accent
 /// dot on a marked one.
@@ -101,18 +108,21 @@ pub(super) unsafe fn on_draw_item(window: HWND, item: &DRAWITEMSTRUCT) {
     // SAFETY: `item.hDC` is a live DC owned by the list box during
     // WM_DRAWITEM; the borrowed data is cloned out before any GDI call.
     unsafe {
-        let Some((colors, body, accent, font, strong, dpi, row)) = with_state(window, |state| {
-            Some((
-                state.colors,
-                state.body_brush,
-                state.accent_brush,
-                state.font,
-                state.strong_font,
-                state.dpi,
-                state.nav_rows.get(item.itemID as usize).cloned(),
-            ))
-        })
-        .flatten() else {
+        let Some((colors, body, accent, font, strong, glyphs, dpi, row)) =
+            with_state(window, |state| {
+                Some((
+                    state.colors,
+                    state.body_brush,
+                    state.accent_brush,
+                    state.font,
+                    state.strong_font,
+                    state.glyph_font,
+                    state.dpi,
+                    state.nav_rows.get(item.itemID as usize).cloned(),
+                ))
+            })
+            .flatten()
+        else {
             return;
         };
         FillRect(item.hDC, &item.rcItem, body);
@@ -124,7 +134,7 @@ pub(super) unsafe fn on_draw_item(window: HWND, item: &DRAWITEMSTRUCT) {
         // pages under it are indented, so it reads as a section header
         // rather than one more page.
         let (text, row_font, indent) = match &row {
-            NavRow::Title(_) => (colors.text, strong, 0),
+            NavRow::Title { .. } => (colors.text, strong, 0),
             NavRow::Entry { nested, .. } => (
                 if selected {
                     colors.text
@@ -150,6 +160,21 @@ pub(super) unsafe fn on_draw_item(window: HWND, item: &DRAWITEMSTRUCT) {
         let mut rect = item.rcItem;
         rect.left += inset + indent;
         rect.right -= inset;
+        // A group title ends in its caret: down while open, right while
+        // collapsed, as Windows 11's own navigation draws them.
+        if let NavRow::Title { collapsed, .. } = &row {
+            let caret = RECT {
+                left: rect.right - scaled(CARET_WIDTH, dpi),
+                ..rect
+            };
+            let glyph = if *collapsed {
+                GLYPH_CHEVRON_RIGHT
+            } else {
+                GLYPH_CHEVRON_DOWN
+            };
+            crate::win32::system::draw_glyph(item.hDC, glyphs, glyph, caret, colors.secondary_text);
+            rect.right = caret.left;
+        }
         draw_text(
             item.hDC,
             row.label(),

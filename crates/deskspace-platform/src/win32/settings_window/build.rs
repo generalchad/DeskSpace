@@ -3,7 +3,7 @@
 
 use super::cards::PageCards;
 use super::commands::show_page;
-use super::nav::{NavRow, entry_row, nav_rows};
+use super::nav::{NavRow, entry_row, fill_list, nav_rows, rail_list, watch_title_clicks};
 use super::scroll::set_bar;
 use super::update::{apply_enabled, apply_header};
 use super::*;
@@ -525,12 +525,15 @@ unsafe fn build_panes(
             x += width + builder.s(6);
             dividers.push((x - builder.s(3), margin, margin + panes_height));
         }
-        let nav_rows = nav_rows(nav);
+        // A new window opens with every group expanded.
+        let nav_rows = nav_rows(nav, &[]);
         let list = rail_list(builder, hwnd, (x, margin, rail, panes_height), ID_LIST);
         if let Some(created) = list {
+            watch_title_clicks(created);
             fill_list(created, nav_rows.iter().map(NavRow::label));
-            let selected = entry_row(&nav_rows, nav.selected);
-            SendMessageW(created, LB_SETCURSEL, Some(WPARAM(selected)), None);
+            if let Some(selected) = entry_row(&nav_rows, nav.selected) {
+                SendMessageW(created, LB_SETCURSEL, Some(WPARAM(selected)), None);
+            }
         }
         x += rail + builder.s(6);
         dividers.push((x - builder.s(3), margin, margin + panes_height));
@@ -746,55 +749,6 @@ unsafe fn create_pages(
             Ok(page?)
         })
         .collect()
-}
-
-/// Creates an owner-drawn list box for a rail pane (scopes or categories).
-unsafe fn rail_list(
-    builder: &Builder,
-    parent: HWND,
-    bounds: (i32, i32, i32, i32),
-    id: usize,
-) -> Option<HWND> {
-    // SAFETY: creating and configuring a child list box of our own window.
-    unsafe {
-        let list = builder.control(
-            parent,
-            ControlSpec {
-                class: WC_LISTBOXW,
-                text: "",
-                style: (LBS_OWNERDRAWFIXED | LBS_NOTIFY | LBS_HASSTRINGS) as u32
-                    | WS_VSCROLL.0
-                    | WS_TABSTOP.0,
-                ex_style: WINDOW_EX_STYLE(0),
-                bounds,
-                id,
-            },
-        )?;
-        SendMessageW(
-            list,
-            LB_SETITEMHEIGHT,
-            Some(WPARAM(0)),
-            Some(LPARAM(builder.s(NAV_ROW_HEIGHT) as isize)),
-        );
-        Some(list)
-    }
-}
-
-/// Replaces a rail list's rows with `labels`.
-pub(super) unsafe fn fill_list<'a>(list: HWND, labels: impl Iterator<Item = &'a str>) {
-    // SAFETY: `list` is a live list box; each string outlives its message.
-    unsafe {
-        SendMessageW(list, LB_RESETCONTENT, None, None);
-        for label in labels {
-            let text = wide(label);
-            SendMessageW(
-                list,
-                LB_ADDSTRING,
-                None,
-                Some(LPARAM(text.as_ptr() as isize)),
-            );
-        }
-    }
 }
 
 #[cfg(test)]

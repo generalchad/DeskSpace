@@ -166,6 +166,8 @@ pub(super) struct SettingsState {
     list: Option<HWND>,
     /// The rail's rows, rebuilt when the nav changes.
     nav_rows: Vec<NavRow>,
+    /// The titles of the rail's collapsed groups, kept across scope changes.
+    collapsed: Vec<String>,
     /// The scopes pane, when the form had scopes at build time.
     scopes_list: Option<HWND>,
     /// The scopes pane's rows, rebuilt when they change.
@@ -312,6 +314,7 @@ pub(crate) fn create(form: &SettingsForm, dark: bool) -> Result<HWND, PlatformEr
             scrolls: Vec::new(),
             list: None,
             nav_rows: Vec::new(),
+            collapsed: Vec::new(),
             scopes_list: None,
             scope_rows: Vec::new(),
             header_title: None,
