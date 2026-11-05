@@ -73,8 +73,9 @@ pub(crate) struct DebugTools {
     marks: u32,
     /// Whether every shadow is hidden for this session (ROADMAP D15).
     pub(crate) hide_shadows: bool,
-    /// The type scale the Debug window edits (G12), session only.
-    pub(crate) typography: deskspace_core::typography::Typography,
+    /// The type scale the Debug window's typography box applied over the
+    /// saved one, for this session only; `None` follows the saved scale.
+    pub(crate) typography: Option<deskspace_core::typography::Typography>,
     /// The interface language for the samples (G12), session only.
     pub(crate) language: deskspace_core::text::Language,
     /// The installed families, read once when the window opens.
@@ -100,7 +101,7 @@ impl DebugTools {
             log_events: false,
             marks: 0,
             hide_shadows: false,
-            typography: deskspace_core::typography::Typography::default(),
+            typography: None,
             language: deskspace_core::text::Language::default(),
             fonts: None,
             rebuild_debug: false,

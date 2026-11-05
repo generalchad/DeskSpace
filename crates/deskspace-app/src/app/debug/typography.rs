@@ -3,7 +3,7 @@
 //! lines proving the catalog resolves. Session only (ROADMAP D14).
 
 use deskspace_core::text::{self, Key, Language};
-use deskspace_core::typography::{FONT_WEIGHTS, Font, Role, Typography};
+use deskspace_core::typography::{FONT_WEIGHTS, Font, Role};
 use deskspace_platform::{DebugControl, DebugControlKind, Ui};
 
 use super::DebugInput;
@@ -88,10 +88,7 @@ fn sizes(current: f32) -> Vec<f32> {
 /// The box's controls, in role order: each role's family, size, and weight,
 /// then Reset, the Language choice, and the two sample lines.
 pub(super) fn controls(app: &App, ui: &Ui) -> Vec<DebugControl> {
-    let typography = app
-        .debug
-        .as_ref()
-        .map_or_else(Typography::default, |tools| tools.typography.clone());
+    let typography = app.typography();
     let names = families(app);
     let language = app
         .debug
@@ -212,9 +209,10 @@ impl App {
     pub(super) fn on_typography_setting(&mut self, ui: &mut Ui, id: u32, input: DebugInput) {
         if id == RESET_ID {
             if let Some(tools) = self.debug.as_mut() {
-                tools.typography = Typography::default();
+                tools.typography = None;
+                tools.rebuild_debug = true;
             }
-            self.apply_typography(ui);
+            self.sync_typography(ui);
             return;
         }
         if id == LANGUAGE_ID {
@@ -230,10 +228,11 @@ impl App {
             return;
         };
         let names = families(self);
+        let mut typography = self.typography().clone();
         let Some(tools) = self.debug.as_mut() else {
             return;
         };
-        let font = tools.typography.font(role).clone();
+        let font = typography.font(role).clone();
         let updated = match part {
             Part::Family => {
                 let family = names
@@ -262,16 +261,9 @@ impl App {
                 ..font
             },
         };
-        tools.typography.set(role, updated);
+        typography.set(role, updated);
+        tools.typography = Some(typography);
         tools.rebuild_debug = true;
-        self.apply_typography(ui);
-    }
-
-    fn apply_typography(&mut self, ui: &mut Ui) {
-        let typography = self
-            .debug
-            .as_ref()
-            .map_or_else(Typography::default, |tools| tools.typography.clone());
-        ui.set_typography(&typography);
+        self.sync_typography(ui);
     }
 }

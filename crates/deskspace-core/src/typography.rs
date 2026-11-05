@@ -10,7 +10,12 @@
 //! Windows' message font (Segoe UI Variable Text on Windows 11, else Segoe
 //! UI).
 
+use std::collections::BTreeMap;
 use std::fmt;
+
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+use crate::lenient::Lenient;
 
 /// One kind of text, from the smallest to the largest role.
 ///
@@ -70,6 +75,27 @@ impl Role {
         }
     }
 
+    /// The role's name in the configuration file. Never renamed: a saved file
+    /// keys its fonts by it.
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Body => "body",
+            Self::Heading1 => "heading1",
+            Self::Heading2 => "heading2",
+            Self::Heading3 => "heading3",
+            Self::Caption => "caption",
+            Self::SpaceTitle => "space_title",
+            Self::ItemLabel => "item_label",
+            Self::Details => "details",
+            Self::Placeholder => "placeholder",
+            Self::Zoom => "zoom",
+        }
+    }
+
+    fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|role| role.key() == key)
+    }
+
     /// What this role is drawn for, when the settings and debug windows do not
     /// show it directly.
     pub fn note(self) -> Option<&'static str> {
@@ -100,7 +126,7 @@ pub const FONT_SIZE_STEP: f32 = 0.5;
 pub const FONT_WEIGHTS: &[(u16, &str)] = &[(400, "Regular"), (600, "Semibold"), (700, "Bold")];
 
 /// One role's font.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Font {
     /// A family name, or `""` for Windows' message font.
     pub family: String,
@@ -163,9 +189,66 @@ fn nearest_weight(weight: u16) -> u16 {
 }
 
 /// Every role's font. `Default` is the type scale every run starts with.
+///
+/// Saved as a table per role that differs from its default, so a role left
+/// alone follows a later build's default:
+///
+/// ```toml
+/// [typography.space_title]
+/// family = "Bahnschrift"
+/// size = 14.0
+/// weight = 600
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Typography {
     fonts: [Font; Role::ALL.len()],
+}
+
+// Every font in a `Typography` went through `Font::clamped`, so no size is
+// NaN and equality is reflexive.
+impl Eq for Typography {}
+
+impl Serialize for Typography {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let changed: BTreeMap<&str, &Font> = self
+            .iter()
+            .filter(|(role, font)| **font != Font::default_for(*role))
+            .map(|(role, font)| (role.key(), font))
+            .collect();
+        changed.serialize(serializer)
+    }
+}
+
+/// A role's saved font, where a missing part keeps the role's default.
+#[derive(Deserialize)]
+struct SavedFont {
+    family: Option<String>,
+    size: Option<f32>,
+    weight: Option<u16>,
+}
+
+impl<'de> Deserialize<'de> for Typography {
+    /// A role this build does not know, or a font it cannot read, is skipped
+    /// rather than failing the whole file; the role keeps its default.
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let saved = BTreeMap::<String, Lenient<SavedFont>>::deserialize(deserializer)?;
+        let mut typography = Self::new();
+        for (key, font) in saved {
+            let (Some(role), Lenient::Valid(font)) = (Role::from_key(&key), font) else {
+                continue;
+            };
+            let default = Font::default_for(role);
+            typography.set(
+                role,
+                Font {
+                    family: font.family.unwrap_or(default.family),
+                    size: font.size.unwrap_or(default.size),
+                    weight: font.weight.unwrap_or(default.weight),
+                },
+            );
+        }
+        Ok(typography)
+    }
 }
 
 impl Typography {
@@ -248,6 +331,70 @@ mod tests {
         assert_eq!(font.weight, 400, "500 is nearest Regular");
         typography.set(Role::Body, Font::new("", f32::NAN, 600));
         assert_eq!(typography.font(Role::Body).size, 12.0);
+    }
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct File {
+        #[serde(default)]
+        typography: Typography,
+    }
+
+    fn read(text: &str) -> Typography {
+        toml::from_str::<File>(text).unwrap().typography
+    }
+
+    #[test]
+    fn the_default_scale_saves_nothing() {
+        let text = toml::to_string(&File {
+            typography: Typography::new(),
+        })
+        .unwrap();
+        assert!(!text.contains("typography."), "{text}");
+        assert_eq!(read(&text), Typography::new());
+    }
+
+    #[test]
+    fn a_changed_role_saves_and_loads_alone() {
+        let mut typography = Typography::new();
+        typography.set(Role::SpaceTitle, Font::new("Bahnschrift", 14.5, 700));
+        let text = toml::to_string(&File {
+            typography: typography.clone(),
+        })
+        .unwrap();
+        assert!(text.contains("[typography.space_title]"), "{text}");
+        assert!(!text.contains("body"), "{text}");
+        assert_eq!(read(&text), typography);
+    }
+
+    #[test]
+    fn a_missing_part_keeps_the_roles_default() {
+        let typography = read("[typography.heading1]\nfamily = \"Georgia\"\n");
+        let font = typography.font(Role::Heading1);
+        assert_eq!(font.family, "Georgia");
+        assert_eq!(font.size, Font::default_for(Role::Heading1).size);
+        assert_eq!(font.weight, Font::default_for(Role::Heading1).weight);
+    }
+
+    #[test]
+    fn an_unknown_role_or_unreadable_font_is_skipped() {
+        let typography = read(
+            "[typography.sidebar]\nsize = 20.0\n\
+             [typography.body]\nsize = \"huge\"\n\
+             [typography.caption]\nsize = 99.0\n",
+        );
+        assert_eq!(typography.font(Role::Body), &Font::default_for(Role::Body));
+        assert_eq!(
+            typography.font(Role::Caption).size,
+            FONT_SIZE_RANGE.1,
+            "clamped on load"
+        );
+    }
+
+    #[test]
+    fn the_role_keys_are_unique() {
+        for role in Role::ALL {
+            assert_eq!(Role::from_key(role.key()), Some(role));
+        }
     }
 
     #[test]

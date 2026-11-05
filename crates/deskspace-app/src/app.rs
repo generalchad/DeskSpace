@@ -20,6 +20,7 @@ mod debug;
 mod drag;
 mod effect;
 mod files;
+mod fonts;
 mod hit;
 mod hotkeys;
 mod info_tip;
@@ -602,6 +603,8 @@ pub struct App {
     animation_tweak: AnimationTweak,
     /// Session-only undo and redo stacks (ROADMAP D11).
     undo: UndoStack,
+    /// The type scale last handed to the platform (`app/fonts.rs`).
+    fonts: fonts::Fonts,
 }
 
 impl App {
@@ -639,6 +642,7 @@ impl App {
             debug: None,
             animation_tweak: AnimationTweak::default(),
             undo: UndoStack::default(),
+            fonts: fonts::Fonts::default(),
         }
     }
 
@@ -838,6 +842,7 @@ impl App {
         // `ui_mode` setting; the spaces follow their own Color mode.
         ui.set_ui_dark(self.ui_dark());
         ui.set_recent_colors(self.config.recent_colors.clone());
+        self.sync_typography(ui);
         self.hotkeys.register_all(ui, &self.config.window);
         // The spaces appear as their windows are created, below; this
         // only settles whether they start hidden.

@@ -493,6 +493,13 @@ lives in `win32/typography.rs`; `Ui::set_typography` replaces it, drops the
 cached DirectWrite formats, and repaints the spaces. A settings window open at
 the time keeps the fonts it was built with until it is reopened.
 
+The saved scale is `Config::typography`. The Debug window's typography box
+can override it for the session (`DebugTools::typography`), and
+`App::typography` (`app/fonts.rs`) says which is in force.
+`App::sync_typography` hands it to the platform at startup and after every
+change, and skips an unchanged scale, because each hand-off rebuilds every
+DirectWrite format.
+
 `text::Key` is a user-visible message and `text::lookup(language, key)` its
 only reader; `Language` is English or a pseudo-localization that accents and
 frames each string, which the Debug window can switch to. This is the seam
@@ -550,6 +557,12 @@ default in `Default`.
   the config, loads as that field's default through
   `deskspace_core::lenient::known_or_default`, so a file from a newer build
   still opens; a value of the wrong type still fails the file.
+- `typography` is the type scale (section 4), outside `theme` because a
+  space's look copies the whole `Theme` and fonts are global. It saves only
+  the roles that differ from their defaults, as `[typography.<role>]`
+  tables keyed by `Role::key`; a missing part keeps the role's default, and
+  an unknown role or unreadable font is skipped, so a role left alone
+  follows a later build's default.
 - `window.icon_downloads` (D16) is `Ask` by default: the app reads a set
   from the cache first, and only `Allowed` downloads a missing one (the
   signed file). `Ask` shows one question a session and saves the answer;
