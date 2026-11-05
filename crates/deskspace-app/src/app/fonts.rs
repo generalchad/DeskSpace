@@ -7,15 +7,30 @@ use deskspace_platform::Ui;
 
 use super::App;
 
-/// The type scale last handed to the platform. Each hand-off rebuilds every
-/// DirectWrite format and repaints every space, so an unchanged scale is not
-/// sent again.
+/// The type scale last handed to the platform, and the installed families.
 #[derive(Debug, Default)]
 pub(super) struct Fonts {
+    /// Each hand-off rebuilds every DirectWrite format and repaints every
+    /// space, so an unchanged scale is not sent again.
     shown: Option<Typography>,
+    /// Every installed family, sorted, read once when a font choice is first
+    /// shown: listing them asks DirectWrite for every family's name.
+    installed: Option<Vec<String>>,
 }
 
 impl App {
+    /// Reads the installed families the first time a font choice needs them.
+    pub(super) fn load_installed_fonts(&mut self, ui: &Ui) {
+        self.fonts
+            .installed
+            .get_or_insert_with(|| ui.font_families());
+    }
+
+    /// Every installed family, sorted; empty until `load_installed_fonts`.
+    pub(super) fn installed_fonts(&self) -> &[String] {
+        self.fonts.installed.as_deref().unwrap_or_default()
+    }
+
     /// The type scale in force: the Debug window's session override when it
     /// has one, else the saved one.
     pub(super) fn typography(&self) -> &Typography {

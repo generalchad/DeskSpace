@@ -1,269 +1,260 @@
-//! The debug window's typography box (F-68): one group per text role with a
-//! family, size, and weight, a reset, and the language choice with two sample
-//! lines proving the catalog resolves. Session only (ROADMAP D14).
+//! The debug window's typography box (F-68): a family, size, and weight per
+//! text role, then Apply fonts, Reset to saved fonts, and the language choice
+//! with two sample lines proving the catalog resolves.
+//!
+//! Picks are a draft until Apply fonts, which makes them this session's
+//! override of the saved scale (`DebugTools::typography`). Nothing here is
+//! saved (ROADMAP D14); the settings window's font pages save fonts.
 
 use deskspace_core::text::{self, Key, Language};
-use deskspace_core::typography::{FONT_WEIGHTS, Font, Role};
+use deskspace_core::typography::{Role, Typography};
 use deskspace_platform::{DebugControl, DebugControlKind, Ui};
 
 use super::DebugInput;
 use crate::app::App;
+use crate::font_choices::Part;
 
 /// The box's title.
 const GROUP: &str = "Typography";
 /// The ids the box's controls start at, above the shadow box.
 const BASE: u32 = 10_200;
-/// The sizes the Debug window offers, within `FONT_SIZE_RANGE`.
-const SIZE_PRESETS: &[f32] = &[
-    8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 16.0, 18.0, 20.0, 24.0, 28.0, 32.0, 40.0, 48.0,
-];
-
-/// One part of a role's row.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Part {
-    Family,
-    Size,
-    Weight,
-}
-
-impl Part {
-    const ALL: [Self; 3] = [Self::Family, Self::Size, Self::Weight];
-
-    fn label(self) -> &'static str {
-        match self {
-            Self::Family => "Family",
-            Self::Size => "Size",
-            Self::Weight => "Weight",
-        }
-    }
-
-    fn id(self, role: Role) -> u32 {
-        let role = Role::ALL
-            .iter()
-            .position(|each| *each == role)
-            .expect("every role is in ALL");
-        let part = Self::ALL
-            .iter()
-            .position(|each| *each == self)
-            .expect("every part is in ALL");
-        BASE + (role * Self::ALL.len() + part) as u32
-    }
-
-    fn from_id(id: u32) -> Option<(Role, Self)> {
-        for role in Role::ALL {
-            for part in Self::ALL {
-                if part.id(role) == id {
-                    return Some((role, part));
-                }
-            }
-        }
-        None
-    }
-}
-
 const RESET_ID: u32 = BASE + 100;
 const LANGUAGE_ID: u32 = BASE + 101;
 const FONT_SAMPLE_ID: u32 = BASE + 102;
 const LANGUAGE_SAMPLE_ID: u32 = BASE + 103;
+const APPLY_ID: u32 = BASE + 104;
+const STATUS_ID: u32 = BASE + 105;
+/// A role's note is `NOTE_BASE + role`.
+const NOTE_BASE: u32 = BASE + 200;
 
-/// Every family the box offers, Windows' default first.
-fn families(app: &App) -> Vec<String> {
-    let mut names = vec![String::from("Windows default")];
-    if let Some(list) = app.debug.as_ref().and_then(|tools| tools.fonts.as_ref()) {
-        names.extend(list.iter().cloned());
-    }
-    names
+/// A role's choice `part`'s control id.
+fn part_id(role: Role, part: Part) -> u32 {
+    let part = Part::ALL
+        .iter()
+        .position(|each| *each == part)
+        .expect("every part is in ALL");
+    BASE + (role as usize * Part::ALL.len() + part) as u32
 }
 
-/// The sizes the box offers, with `current` in place when it is between them.
-fn sizes(current: f32) -> Vec<f32> {
-    let mut values = SIZE_PRESETS.to_vec();
-    if !values.iter().any(|size| (size - current).abs() < 0.01) {
-        values.push(current);
-        values.sort_by(|a, b| a.total_cmp(b));
+fn from_part_id(id: u32) -> Option<(Role, Part)> {
+    Role::ALL
+        .into_iter()
+        .flat_map(|role| Part::ALL.map(|part| (role, part)))
+        .find(|(role, part)| part_id(*role, *part) == id)
+}
+
+/// Which scale the box shows and what Apply would change, as its status line.
+fn status(saved: &Typography, in_force: &Typography, draft: Option<&Typography>) -> String {
+    let source = if in_force == saved {
+        "In force: the saved fonts."
+    } else {
+        "In force: this session's fonts (not saved)."
+    };
+    match draft {
+        Some(draft) if draft != in_force => {
+            format!("{source}\nUnapplied changes: press Apply fonts.")
+        }
+        _ => source.to_owned(),
     }
-    values
 }
 
 /// The box's controls, in role order: each role's family, size, and weight,
-/// then Reset, the Language choice, and the two sample lines.
-pub(super) fn controls(app: &App, ui: &Ui) -> Vec<DebugControl> {
-    let typography = app.typography();
-    let names = families(app);
-    let language = app
-        .debug
-        .as_ref()
-        .map_or(Language::English, |tools| tools.language);
+/// then Apply, Reset, the status line, the Language choice, and the two sample
+/// lines.
+pub(super) fn controls(app: &App) -> Vec<DebugControl> {
+    let tools = app.debug.as_ref();
+    let in_force = app.typography();
+    let draft = tools.and_then(|tools| tools.typography_draft.as_ref());
+    let shown = draft.unwrap_or(in_force);
+    let installed = app.installed_fonts();
     let mut controls = Vec::new();
-    for role in Role::ALL {
-        let font = typography.font(role);
-        // The family row.
-        let selected = names
-            .iter()
-            .position(|name| {
-                if font.family.is_empty() {
-                    name == "Windows default"
-                } else {
-                    name == &font.family
-                }
-            })
-            .unwrap_or(0);
-        controls.push(control(
-            Part::Family.id(role),
-            &format!("{}: {}", role.label(), Part::Family.label()),
-        ));
-        let family_options: Vec<String> = names.clone();
-        controls.last_mut().expect("just pushed").kind = DebugControlKind::Choice {
-            options: family_options,
-            selected,
-            enabled: true,
-        };
-
-        let values = sizes(font.size);
-        let current = values
-            .iter()
-            .position(|size| (size - font.size).abs() < 0.01)
-            .unwrap_or(0);
-        let mut size_control = control(
-            Part::Size.id(role),
-            &format!("{}: {}", role.label(), Part::Size.label()),
-        );
-        size_control.kind = DebugControlKind::Choice {
-            options: values.iter().map(|size| format!("{size} px")).collect(),
-            selected: current,
-            enabled: true,
-        };
-        controls.push(size_control);
-
-        let weights: Vec<u16> = FONT_WEIGHTS.iter().map(|(value, _)| *value).collect();
-        let weight_names: Vec<String> = FONT_WEIGHTS
-            .iter()
-            .map(|(_, name)| (*name).to_owned())
-            .collect();
-        let current = FONT_WEIGHTS
-            .iter()
-            .position(|(value, _)| *value == font.weight)
-            .unwrap_or(0);
-        let mut weight_control = control(
-            Part::Weight.id(role),
-            &format!("{}: {}", role.label(), Part::Weight.label()),
-        );
-        weight_control.kind = DebugControlKind::Choice {
-            options: weight_names,
-            selected: current,
-            enabled: true,
-        };
-        let _ = weights;
-        controls.push(weight_control);
+    for (role, font) in shown.iter() {
+        for part in Part::ALL {
+            let (options, selected) = part.options(font, installed);
+            controls.push(control(
+                part_id(role, part),
+                &format!("{}: {}", role.label(), part.label()),
+                DebugControlKind::Choice {
+                    options,
+                    selected,
+                    enabled: true,
+                },
+            ));
+        }
         if let Some(note) = role.note() {
-            controls.push(control(BASE + 200 + role as u32, note));
+            controls.push(control(
+                NOTE_BASE + role as u32,
+                &format!("{}: Used for", role.label()),
+                DebugControlKind::Readout {
+                    text: note.to_owned(),
+                },
+            ));
         }
     }
-    controls.push(button(RESET_ID, "Reset fonts"));
-    let language_names: Vec<String> = Language::ALL
-        .iter()
-        .map(|language| language.label().to_owned())
-        .collect();
-    let mut language_control = control(LANGUAGE_ID, "Language");
-    language_control.kind = DebugControlKind::Choice {
-        options: language_names,
-        selected: Language::ALL
-            .iter()
-            .position(|each| *each == language)
-            .unwrap_or(0),
-        enabled: true,
-    };
-    controls.push(language_control);
-    let mut font_sample = control(FONT_SAMPLE_ID, "Font sample");
-    font_sample.kind = DebugControlKind::Readout {
-        text: text::lookup(language, Key::FontSample),
-    };
-    controls.push(font_sample);
-    let mut language_sample = control(LANGUAGE_SAMPLE_ID, "Language sample");
-    language_sample.kind = DebugControlKind::Readout {
-        text: text::lookup(language, Key::LanguageSample),
-    };
-    controls.push(language_sample);
-    let _ = ui;
+    let unapplied = draft.is_some_and(|draft| draft != in_force);
+    controls.push(button(APPLY_ID, "Apply fonts", unapplied));
+    let overridden = in_force != &app.config.typography;
+    controls.push(button(
+        RESET_ID,
+        "Reset to saved fonts",
+        overridden || unapplied,
+    ));
+    controls.push(control(
+        STATUS_ID,
+        "Status",
+        DebugControlKind::Readout {
+            text: status(&app.config.typography, in_force, draft),
+        },
+    ));
+    let language = tools.map_or(Language::English, |tools| tools.language);
+    controls.push(control(
+        LANGUAGE_ID,
+        "Language",
+        DebugControlKind::Choice {
+            options: Language::ALL
+                .iter()
+                .map(|language| language.label().to_owned())
+                .collect(),
+            selected: Language::ALL
+                .iter()
+                .position(|each| *each == language)
+                .unwrap_or(0),
+            enabled: true,
+        },
+    ));
+    controls.push(control(
+        FONT_SAMPLE_ID,
+        "Font sample",
+        DebugControlKind::Readout {
+            text: text::lookup(language, Key::FontSample),
+        },
+    ));
+    controls.push(control(
+        LANGUAGE_SAMPLE_ID,
+        "Language sample",
+        DebugControlKind::Readout {
+            text: text::lookup(language, Key::LanguageSample),
+        },
+    ));
     controls
 }
 
-fn control(id: u32, label: &str) -> DebugControl {
+fn control(id: u32, label: &str, kind: DebugControlKind) -> DebugControl {
     DebugControl {
         id,
         label: label.to_owned(),
-        kind: DebugControlKind::Button { enabled: true },
+        kind,
         group: Some(GROUP.to_owned()),
     }
 }
 
-fn button(id: u32, label: &str) -> DebugControl {
-    let mut control = control(id, label);
-    control.kind = DebugControlKind::Button { enabled: true };
-    control
+fn button(id: u32, label: &str, enabled: bool) -> DebugControl {
+    control(id, label, DebugControlKind::Button { enabled })
 }
 
 impl App {
-    /// Applies a typography-box control and asks for the Debug window to be
-    /// rebuilt on the next refresh tick, so its own text follows the fonts.
+    /// A typography-box control: a pick goes into the draft, Apply makes the
+    /// draft this session's fonts, and Reset goes back to the saved ones.
     pub(super) fn on_typography_setting(&mut self, ui: &mut Ui, id: u32, input: DebugInput) {
-        if id == RESET_ID {
-            if let Some(tools) = self.debug.as_mut() {
-                tools.typography = None;
-                tools.rebuild_debug = true;
+        match (id, input) {
+            (APPLY_ID, _) => self.apply_typography_draft(ui),
+            (RESET_ID, _) => {
+                if let Some(tools) = self.debug.as_mut() {
+                    tools.typography = None;
+                    tools.typography_draft = None;
+                }
+                self.sync_typography(ui);
             }
-            self.sync_typography(ui);
-            return;
-        }
-        if id == LANGUAGE_ID {
-            if let (DebugInput::Choose(index), Some(tools)) = (input, self.debug.as_mut()) {
-                tools.language = *Language::ALL.get(index).unwrap_or(&Language::English);
+            (LANGUAGE_ID, DebugInput::Choose(index)) => {
+                if let Some(tools) = self.debug.as_mut() {
+                    tools.language = *Language::ALL.get(index).unwrap_or(&Language::English);
+                }
             }
-            return;
+            (id, DebugInput::Choose(index)) => {
+                if let Some((role, part)) = from_part_id(id) {
+                    self.pick_typography(role, part, index);
+                }
+            }
+            _ => {}
         }
-        let Some((role, part)) = Part::from_id(id) else {
-            return;
-        };
-        let DebugInput::Choose(index) = input else {
-            return;
-        };
-        let names = families(self);
-        let mut typography = self.typography().clone();
+    }
+
+    /// Records a pick in the draft, starting from what the box shows.
+    fn pick_typography(&mut self, role: Role, part: Part, index: usize) {
+        let mut draft = self
+            .debug
+            .as_ref()
+            .and_then(|tools| tools.typography_draft.clone())
+            .unwrap_or_else(|| self.typography().clone());
+        let font = part.pick(draft.font(role), index, self.installed_fonts());
+        draft.set(role, font);
+        if let Some(tools) = self.debug.as_mut() {
+            tools.typography_draft = Some(draft);
+        }
+    }
+
+    /// Apply fonts: the draft becomes this session's fonts, or none when it
+    /// matches the saved ones, so a later settings edit is followed again.
+    fn apply_typography_draft(&mut self, ui: &mut Ui) {
+        let saved = self.config.typography.clone();
         let Some(tools) = self.debug.as_mut() else {
             return;
         };
-        let font = typography.font(role).clone();
-        let updated = match part {
-            Part::Family => {
-                let family = names
-                    .get(index)
-                    .map(|name| {
-                        if name == "Windows default" {
-                            String::new()
-                        } else {
-                            name.clone()
-                        }
-                    })
-                    .unwrap_or_default();
-                Font { family, ..font }
-            }
-            Part::Size => {
-                let values = sizes(font.size);
-                Font {
-                    size: values.get(index).copied().unwrap_or(font.size),
-                    ..font
-                }
-            }
-            Part::Weight => Font {
-                weight: FONT_WEIGHTS
-                    .get(index)
-                    .map_or(font.weight, |(value, _)| *value),
-                ..font
-            },
+        let Some(draft) = tools.typography_draft.take() else {
+            return;
         };
-        typography.set(role, updated);
-        tools.typography = Some(typography);
-        tools.rebuild_debug = true;
+        tools.typography = (draft != saved).then_some(draft);
         self.sync_typography(ui);
+        tracing::info!("debug: applied the typography box's fonts for this session");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use deskspace_core::typography::Font;
+
+    use super::*;
+
+    #[test]
+    fn every_part_of_every_role_has_its_own_id() {
+        let mut ids: Vec<u32> = Role::ALL
+            .into_iter()
+            .flat_map(|role| Part::ALL.map(|part| part_id(role, part)))
+            .collect();
+        for (role, part) in Role::ALL
+            .into_iter()
+            .flat_map(|role| Part::ALL.map(|part| (role, part)))
+        {
+            assert_eq!(from_part_id(part_id(role, part)), Some((role, part)));
+        }
+        let count = ids.len();
+        ids.extend([
+            RESET_ID,
+            LANGUAGE_ID,
+            FONT_SAMPLE_ID,
+            LANGUAGE_SAMPLE_ID,
+            APPLY_ID,
+            STATUS_ID,
+        ]);
+        ids.extend(Role::ALL.map(|role| NOTE_BASE + role as u32));
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), count + 6 + Role::ALL.len());
+    }
+
+    #[test]
+    fn the_status_says_what_is_in_force_and_what_waits() {
+        let saved = Typography::new();
+        let mut session = Typography::new();
+        session.set(Role::Body, Font::new("Consolas", 12.0, 400));
+        assert_eq!(status(&saved, &saved, None), "In force: the saved fonts.");
+        assert_eq!(
+            status(&saved, &saved, Some(&saved)),
+            "In force: the saved fonts.",
+            "a draft that changes nothing waits for nothing"
+        );
+        let waiting = status(&saved, &saved, Some(&session));
+        assert!(waiting.ends_with("press Apply fonts."), "{waiting}");
+        assert!(status(&saved, &session, None).contains("not saved"));
     }
 }

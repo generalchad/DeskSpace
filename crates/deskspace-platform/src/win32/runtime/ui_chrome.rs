@@ -49,18 +49,21 @@ impl Ui {
         pick_color(owner, initial, dark)
     }
 
-    /// Sets the type scale every new font is built from (the Debug window's
-    /// typography box). The spaces repaint at once with new DirectWrite
-    /// formats; a settings or debug window already open keeps the fonts it
-    /// was built with until it is reopened.
+    /// Sets the type scale every new font is built from. The spaces repaint
+    /// at once with new DirectWrite formats, and an open debug window takes
+    /// the new fonts in place. A settings window already open keeps the fonts
+    /// it was built with until it is reopened, since rebuilding it would drop
+    /// the controls a user is editing.
     pub fn set_typography(&mut self, typography: &deskspace_core::typography::Typography) {
         crate::win32::typography::set(typography.clone());
         crate::render::d2d::release_graphics();
         super::invalidate_spaces();
+        if let Some(hwnd) = debug_hwnd() {
+            debug_window::follow_typography(hwnd);
+        }
     }
 
-    /// Every installed font family, sorted, for the Debug window's family
-    /// choice.
+    /// Every installed font family, sorted, for the font choices.
     pub fn font_families(&self) -> Vec<String> {
         crate::win32::typography::installed_families()
     }

@@ -490,12 +490,16 @@ defaults in `Font::default_for` and clamping in `Font::clamped`. A family of
 for GDI and an `IDWriteTextFormat` for Direct2D, so one table drives the
 settings window, the debug window, dialogs, and space text. The current table
 lives in `win32/typography.rs`; `Ui::set_typography` replaces it, drops the
-cached DirectWrite formats, and repaints the spaces. A settings window open at
-the time keeps the fonts it was built with until it is reopened.
+cached DirectWrite formats, repaints the spaces, and restyles an open debug
+window in place. A settings window open at the time keeps the fonts it was
+built with until it is reopened.
 
 The saved scale is `Config::typography`. The Debug window's typography box
-can override it for the session (`DebugTools::typography`), and
-`App::typography` (`app/fonts.rs`) says which is in force.
+can override it for the session (`DebugTools::typography`): its picks are a
+draft until "Apply fonts", so browsing a list of families rebuilds nothing,
+and "Reset to saved fonts" drops the override. `font_choices.rs` holds the
+option lists a family, size, and weight choice shows. `App::typography`
+(`app/fonts.rs`) says which scale is in force.
 `App::sync_typography` hands it to the platform at startup and after every
 change, and skips an unchanged scale, because each hand-off rebuilds every
 DirectWrite format.
@@ -915,7 +919,9 @@ in `ui.rs`. What spans them:
   ask first (`debug_confirm`) when destructive. A control can sit in a
   titled box (`DebugControl::group`), which the page draws as it erases,
   and a choice can be greyed rather than removed, so the panel keeps its
-  shape (a shape change rebuilds the window). The
+  shape (a shape change rebuilds the window). A closed drop-down passes
+  the mouse wheel to the page, which scrolls, rather than stepping its
+  value (`build::wheel_scrolls_page`). The
   only state it adds outside `DebugTools` is the session-only
   `AnimationTweak` and the takeover override in `LayerState`.
 

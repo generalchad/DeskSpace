@@ -260,6 +260,17 @@ pub(crate) fn append_log(hwnd: HWND, lines: &[LogLine]) {
     unsafe { console::append(hwnd, lines) }
 }
 
+/// Builds the open window's fonts again from the current type scale, in
+/// place: the section, the scroll, and every control stay as they are.
+pub(crate) fn follow_typography(hwnd: HWND) {
+    let dpi = window_dpi(hwnd);
+    // SAFETY: `hwnd` is the live debug window.
+    unsafe {
+        let dark = with_state(hwnd, |state| state.chrome.colors.dark).unwrap_or(false);
+        restyle(hwnd, dpi, dark);
+    }
+}
+
 /// Switches the open window between dark and light.
 pub(crate) fn set_dark(hwnd: HWND, dark: bool) {
     let dpi = window_dpi(hwnd);

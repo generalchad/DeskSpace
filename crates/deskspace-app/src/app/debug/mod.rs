@@ -76,13 +76,12 @@ pub(crate) struct DebugTools {
     /// The type scale the Debug window's typography box applied over the
     /// saved one, for this session only; `None` follows the saved scale.
     pub(crate) typography: Option<deskspace_core::typography::Typography>,
+    /// The typography box's picks not yet applied; `None` when the box shows
+    /// the scale in force. Picks wait for "Apply fonts", so browsing a list
+    /// does not rebuild every font at each step.
+    pub(crate) typography_draft: Option<deskspace_core::typography::Typography>,
     /// The interface language for the samples (G12), session only.
     pub(crate) language: deskspace_core::text::Language,
-    /// The installed families, read once when the window opens.
-    pub(crate) fonts: Option<Vec<String>>,
-    /// The window must be rebuilt (with the fonts its new type scale asks
-    /// for); a timer tick does it, never the window's own message.
-    pub(crate) rebuild_debug: bool,
 }
 
 impl DebugTools {
@@ -102,9 +101,8 @@ impl DebugTools {
             marks: 0,
             hide_shadows: false,
             typography: None,
+            typography_draft: None,
             language: deskspace_core::text::Language::default(),
-            fonts: None,
-            rebuild_debug: false,
         }
     }
 }
@@ -358,9 +356,7 @@ impl App {
     /// log feed and the panel refresh. A reopened window gets the whole ring
     /// again; one already open keeps what it has.
     pub(super) fn open_debug(&mut self, ui: &mut Ui) {
-        if let Some(tools) = self.debug.as_mut() {
-            tools.fonts.get_or_insert_with(|| ui.font_families());
-        }
+        self.load_installed_fonts(ui);
         let panel = self.debug_panel(ui);
         let Some(tools) = self.debug.as_mut() else {
             return;
@@ -406,7 +402,7 @@ impl App {
                     controls.extend(self.animation_setting_controls());
                 }
                 if section == DebugSectionId::Typography {
-                    controls.extend(typography::controls(self, ui));
+                    controls.extend(typography::controls(self));
                 }
                 (!controls.is_empty()).then(|| DebugSection {
                     title: section.title().to_string(),
@@ -452,18 +448,6 @@ impl App {
     pub(super) fn refresh_debug(&mut self, ui: &mut Ui) {
         if self.debug.is_none() || !ui.is_debug_open() {
             Self::clear_timer(ui, Timer::DebugRefresh);
-            return;
-        }
-        // A changed type scale needs the window rebuilt so its own controls
-        // use the new fonts. Do it here, on the timer, never from a control's
-        // own message: destroying the window mid-dispatch crashed DeskSpace
-        // (0xC000041D, seen 2026-11-05).
-        if self.debug.as_ref().is_some_and(|tools| tools.rebuild_debug) {
-            if let Some(tools) = self.debug.as_mut() {
-                tools.rebuild_debug = false;
-            }
-            ui.close_debug();
-            self.open_debug(ui);
             return;
         }
         // Reading the windows for the panel stalls every running animation.
@@ -519,9 +503,6 @@ impl App {
                 self.on_animation_setting(ui, id, index);
             }
             self.on_shadow_setting(ui, id, input);
-            // The typography box only records the change; the next refresh
-            // tick rebuilds the window, so it is never destroyed from its own
-            // message.
             self.on_typography_setting(ui, id, input);
         }
         self.undo.set_suppressed(false);
