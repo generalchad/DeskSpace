@@ -183,12 +183,13 @@ impl Session {
 
     /// Switches to `scope` of `kind`. A page the new scope does not list (a
     /// Global-only page for a space, a lens page for a normal space) moves
-    /// back to the first one.
+    /// to the first one it lists.
     pub fn select_scope(&mut self, scope: Option<SpaceId>, kind: ScopeKind) {
         self.scope = scope;
         self.scope_kind = kind;
-        if !listed_pages(kind).contains(&self.page) {
-            self.page = page::APPEARANCE;
+        let listed = listed_pages(kind);
+        if !listed.contains(&self.page) {
+            self.page = listed.first().copied().unwrap_or(page::APPEARANCE);
         }
     }
 

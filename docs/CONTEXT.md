@@ -877,8 +877,10 @@ in `ui.rs`. What spans them:
   indented, dimmed while it follows Global. Each row shows its kind's glyph in
   the row's text color, so a dimmed row dims its glyph too. The categories
   pane lists each scope's pages in titled groups (`settings/nav_groups.rs`,
-  the one source for the pane and `listed_pages`), the five look pages
-  first under Look. A click on a group's title collapses or expands it,
+  the one source for the pane and `listed_pages`): Global's five look pages
+  first under Look, and a space's own pages under This space before its
+  look, a lens's starting with its Lens page; a scope that does not list
+  the current page opens on its first one. A click on a group's title collapses or expands it,
   shown by its caret; the platform keeps which titles are collapsed for the
   window's life, across scope changes, and a page in a collapsed group shows
   with no rail row selected. The keyboard steps over titles and opens a

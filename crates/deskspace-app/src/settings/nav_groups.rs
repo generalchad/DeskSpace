@@ -22,8 +22,9 @@ impl NavGroup {
     }
 }
 
-/// The groups `scope` lists. A space's look pages come first in every scope,
-/// as Global's do, so switching scopes keeps them in place.
+/// The groups `scope` lists. A space lists its own pages first, then its
+/// look; a lens's own pages start with its Lens page, its folder and title,
+/// which make it that lens.
 pub(super) fn nav_groups(scope: ScopeKind) -> Vec<NavGroup> {
     let look = NavGroup::new("Look", 0..LOOK_PAGE_COUNT);
     match scope {
@@ -38,12 +39,12 @@ pub(super) fn nav_groups(scope: ScopeKind) -> Vec<NavGroup> {
             ),
         ],
         ScopeKind::Space => vec![
-            look,
             NavGroup::new("This space", [page::VIEW, page::SHORTCUTS]),
+            look,
         ],
         ScopeKind::Lens => vec![
+            NavGroup::new("This space", [page::LENS, page::VIEW, page::SHORTCUTS]),
             look,
-            NavGroup::new("This space", [page::VIEW, page::SHORTCUTS, page::LENS]),
         ],
     }
 }

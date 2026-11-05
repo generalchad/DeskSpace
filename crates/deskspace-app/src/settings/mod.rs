@@ -1037,7 +1037,7 @@ mod tests {
         let mut session = Session::new(&config);
         session.page = page::ABOUT;
         session.select_scope(Some(id), ScopeKind::Space);
-        assert_eq!(session.page, page::APPEARANCE, "About is Global only");
+        assert_eq!(session.page, page::VIEW, "About is Global only");
         let form = build_form(
             &config,
             &session,
@@ -1052,13 +1052,13 @@ mod tests {
         assert_eq!(
             labels,
             [
+                "View",
+                "Shortcuts",
                 "Appearance",
                 "Labels",
                 "Layout",
                 "Colors",
-                "Advanced",
-                "View",
-                "Shortcuts"
+                "Advanced"
             ]
         );
         let switch = nav.header.as_ref().unwrap().switch.as_ref().unwrap();
@@ -1112,7 +1112,7 @@ mod tests {
             .iter()
             .map(|group| group.title.as_str())
             .collect();
-        assert_eq!(titles, ["Look", "This space"]);
+        assert_eq!(titles, ["This space", "Look"]);
     }
 
     #[test]
@@ -1202,13 +1202,13 @@ mod tests {
         assert!(listed_pages(ScopeKind::Space).contains(&page::SHORTCUTS));
         assert!(!listed_pages(ScopeKind::Space).contains(&page::LENS));
 
-        // The sixth entry of a space is its View page and the seventh its
+        // A space's first entry is its View page and its second its
         // Shortcuts page, which stays selected while the space is, is always
         // enabled, and is left for Appearance when the scope returns to Global.
         session.select_scope(Some(id), ScopeKind::Space);
-        session.select_entry(5);
+        session.select_entry(0);
         assert_eq!(session.page, page::VIEW);
-        session.select_entry(6);
+        session.select_entry(1);
         assert_eq!(session.page, page::SHORTCUTS);
         let form = build_form(
             &config,
@@ -1218,8 +1218,8 @@ mod tests {
             Path::new("x"),
             SpacePreview::default(),
         );
-        assert_eq!(form.nav.selected, 6);
-        assert_eq!(form.nav.page_of(6), Some(page::SHORTCUTS));
+        assert_eq!(form.nav.selected, 1);
+        assert_eq!(form.nav.page_of(1), Some(page::SHORTCUTS));
         assert!(form.field(field::SPACE_PREVIEW).unwrap().enabled);
         session.select_scope(None, ScopeKind::Global);
         assert_eq!(session.page, page::APPEARANCE);
