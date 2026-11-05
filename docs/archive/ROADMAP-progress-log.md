@@ -586,3 +586,14 @@ available" and the path, centered and faded, with its items gone; restore
 from the Recycle Bin brought every item back within 5 s. Not covered: the
 long-path wrap inside the lens, which needs a deeper path than this
 session's `C:\Temp\lens-test`.
+
+### 2026-11-04: W6, the lens menu
+
+On a hand-made lens: Open folder opened its folder; Change folder… moved
+the lens to another folder and kept it after the storage folder was
+refused with a message; Sort by had Explorer's four keys, both
+directions, and Folders first, checked the current pair, and reordered at
+once; Show hidden files applied at once; a normal space's Sort by looked
+the same and sorted once. After a restart the lens came back sorted by
+Type, descending, folders first, with hidden files shown, and the saved
+config held the same values.
