@@ -528,7 +528,10 @@ default in `Default`.
   `themes_dir()` is a `themes` folder beside the config, so a scratch
   `--config` has its own. The Colors page uses the file dialogs (C10b) to
   save and load one, and lists the folder's files when the window opens
-  (C10c).
+  (C10c). A word this build does not know in an enum field, in a theme file or
+  the config, loads as that field's default through
+  `deskspace_core::lenient::known_or_default`, so a file from a newer build
+  still opens; a value of the wrong type still fails the file.
 - `window.icon_downloads` (D16) is `Ask` by default: the app reads a set
   from the cache first, and only `Allowed` downloads a missing one (the
   signed file). `Ask` shows one question a session and saves the answer;

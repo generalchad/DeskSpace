@@ -1,4 +1,5 @@
 use deskspace_core::animation::Animations;
+use deskspace_core::lenient::known_or_default;
 use deskspace_core::source::LensTitle;
 use deskspace_core::theme::RECENT_COLORS_LIMIT;
 use deskspace_core::{Color, Desktop, SpaceIcon, SpaceView, Theme};
@@ -56,8 +57,10 @@ pub struct WindowSettings {
     pub new_space_locked: bool,
     /// Whether DeskSpace may download an icon set, and whether the question
     /// was asked. Nothing is fetched before the user agrees.
+    #[serde(deserialize_with = "known_or_default")]
     pub icon_downloads: IconDownloads,
     /// The icon a new space starts with.
+    #[serde(deserialize_with = "known_or_default")]
     pub new_space_icon: NewSpaceIcon,
     /// The view settings a new space starts with (W40): its mode, status
     /// bar, and sort rule. The default is today's view, so nothing changes
@@ -92,6 +95,7 @@ pub struct NewLens {
     /// The new lens's view settings. The default turns the status bar on.
     pub view: SpaceView,
     /// How the new lens's title follows its folder.
+    #[serde(deserialize_with = "known_or_default")]
     pub title: LensTitle,
     /// Whether the new lens lists hidden files.
     pub show_hidden: bool,

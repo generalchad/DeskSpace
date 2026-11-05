@@ -10,6 +10,8 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+use crate::lenient::known_or_default;
+
 /// How a space appears or goes away. Every effect has an "in" and an "out",
 /// the out being the in played backwards.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -323,6 +325,7 @@ pub struct AnimationSettings {
     /// Used by effects with `EffectOption::Detail`.
     pub detail: u8,
     /// Used by effects with `EffectOption::Direction`.
+    #[serde(deserialize_with = "known_or_default")]
     pub direction: Edge,
 }
 
@@ -380,6 +383,7 @@ pub struct Animations {
     pub startup_exit: AnimationSettings,
     pub delete: AnimationSettings,
     pub fold: AnimationSettings,
+    #[serde(deserialize_with = "known_or_default")]
     pub startup: StartupOrder,
     pub stagger_ms: u16,
 }

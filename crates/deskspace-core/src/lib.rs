@@ -12,6 +12,7 @@ pub mod id;
 pub mod item;
 pub mod label;
 pub mod layout;
+pub mod lenient;
 pub mod lens_build;
 pub mod placement;
 pub mod source;

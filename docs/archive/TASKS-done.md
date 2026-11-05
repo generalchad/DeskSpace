@@ -5990,3 +5990,39 @@ until I5-I6 all land, so no partial build hides the desktop.
   - It exists only under the hidden `--debug` flag, so no user can press it.
   - Done when: the gates pass, and `debug_ids_are_unique` and
     `debug_ids_round_trip` (`ids.rs`) cover the new id.
+
+- [x] **P34. Let an older build read a newer config or theme file (fix).** **Land
+  before the next release**, so the version people may go back to can read what
+  later versions write. One enum word this build does not know fails the whole file.
+  A config with `backdrop = "mica_alt"`, written by a later DeskSpace or by hand,
+  fails to parse, and `load_or_default` backs it up and starts with no spaces
+  (checked 2026-11-04). A shared theme file from a later version fails the same way.
+  `view.rs` already guards `Column` (`#[serde(other)]`) and `GroupBy` (`Lenient`);
+  the other persisted enums have no guard. Decided (maintainer, 2026-11-04): an
+  unknown word falls back to that field's default, and a wrong type still fails the
+  file, as N1's `wrong-type` reference pins.
+  - Add `deskspace-core/src/lenient.rs` (`pub mod lenient`), and move `Lenient`
+    there from `view.rs`, so lenient reading has one home. Add `pub fn
+    known_or_default`, for `#[serde(deserialize_with = ...)]`. It reads an untagged
+    `enum Word<T> { Known(T), Unknown(String) }`. A known value is kept, any other
+    string becomes `T::default()`, and a value of another type is still an error.
+  - The guard, written first: a test in `deskspace-config` that builds a config
+    through `Command`s (a space with an item, a lens, and a customized look), saves
+    it, and walks the TOML. It replaces each string value, one at a time, with a
+    word no build knows, and the config must still load with all its spaces. A
+    second test does the same to N1's `full` theme file. Free text (titles, paths,
+    hotkeys) passes as it is, so the failures are the enum fields to fix.
+  - Fix each failure by putting `known_or_default` on that field. On 2026-11-04 the
+    unguarded enums were `ThemeMode`, `Backdrop`, `LabelShadow`, `BorderSource`,
+    `Preset`, `Edge`, `StartupOrder`, `SortKey`, `ItemKind`, `LensTitle`,
+    `Extensions`, `ViewMode`, `IconDownloads`, and `NewSpaceIcon`. Let the test
+    decide, not this list. `EffectChoice` and `SpaceIcon` already read any string
+    (`from = "String"`).
+  - `preset` already has its own reader (`preset_or_legacy`, `theme.rs`); give it
+    the same fallback for an unknown word. If a field fails that is not an enum (a
+    string with a format of its own), stop and ask.
+  - N1's reference files stay untouched, and `wrong-type` must still fail.
+  - The next save writes the default over the newer value. That is the price of
+    loading at all, and the "newer" backup still holds the original.
+  - Done when: both guard tests pass, and `CONTEXT.md` section 5 says what an
+    unknown word does, beside `ThemeFile`'s rules.

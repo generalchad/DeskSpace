@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::geometry::Point;
 use crate::id::ItemId;
+use crate::lenient::known_or_default;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum ItemKind {
@@ -69,7 +70,7 @@ pub struct Item {
     pub id: ItemId,
     pub path: PathBuf,
     pub label: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "known_or_default")]
     pub kind: ItemKind,
     /// Top-left of the item's grid cell, relative to its space's content area.
     #[serde(default)]
