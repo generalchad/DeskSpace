@@ -111,7 +111,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | An animation effect | `deskspace-core/src/animation.rs` (the tables), `deskspace-platform/src/render/transition.rs` (frame math), `render/d2d/` (drawing), `win32/space_animation.rs` (playing it on a window), `win32/overlay.rs` (windows beside the space); the recipe is section T |
 | Drawing | `deskspace-platform/src/render/scene.rs`, `render/d2d/` (`mod.rs` the `Painter`, `effects.rs` an animation's resources, `prepared.rs` the `PreparedScene`, `drag_image.rs` the drag image) |
 | The zoom pop-up window and its layout | `deskspace-platform/src/win32/zoom_bar.rs`, `render/zoom_bar.rs`, `render/d2d/zoom_bar.rs` |
-| Settings window controls | `deskspace-platform/src/win32/settings_window/` (`mod.rs`, `build.rs`, `field.rs`, `update.rs`, `nav.rs`, `paint.rs`, `commands.rs`, `preview.rs`, `cards.rs`); the card grouping is `deskspace-platform/src/settings_cards.rs` |
+| Settings window controls | `deskspace-platform/src/win32/settings_window/` (`mod.rs`, `build.rs`, `field.rs`, `update.rs`, `nav.rs`, `paint.rs`, `commands.rs`, `preview.rs`, `cards.rs`, `header.rs` the line above the page, `scroll.rs` a page taller than the window); the card grouping is `deskspace-platform/src/settings_cards.rs` |
 | The debug window (`--debug`) | `deskspace-platform/src/win32/debug_window/` (`mod.rs`, `build.rs`, `layout.rs`, `pages.rs`, `console.rs`); the console's pure model in `deskspace-platform/src/debug_console.rs`; the log capture in `deskspace-app/src/debug_log.rs`; the panel and actions in `deskspace-app/src/app/debug/` |
 | The color picker popup | `deskspace-platform/src/win32/color_picker/` (`mod.rs` the window, `state.rs` its input, `format.rs` the value box's text, `draw.rs` the settings swatch), `render/color_picker.rs` (layout), `render/d2d/color_picker/` (`mod.rs` the painter, whose ignored `render_preview` test writes PNGs; `pen.rs` its drawing kit) |
 | Shell: open, item menu, drag out | `deskspace-platform/src/win32/shell_items.rs` |
@@ -745,40 +745,6 @@ Rules for every S task:
 7. **One undo entry.** Changing an icon (S10, S11) records one entry
    through `App::record_effects`, labelled "Change icon", so Ctrl+Z puts
    the old icon back; `SetSpaceIcon` is already in `touched_by`.
-
-- [ ] **S11. Icons in the settings window (platform, app).** **[needs
-  human]** Amended 2026-11-04 by D26: the header always shows an icon slot
-  on a space's page, with the placeholder for a space without an icon.
-  - `ui.rs`: `SettingsScope.icon: Option<Glyph>` and `SettingsHeader.icon:
-    Option<HeaderIcon>`, with `enum HeaderIcon { Glyph(Glyph), Placeholder }`.
-    `None` means no slot (Global); `Placeholder` is a space without an icon.
-    Both are owned, so the form stays plain data. The settings window
-    rasterizes them through a `GlyphCache` in its state, in its own text
-    color and DPI. `settings/mod.rs` `build_form` takes the glyphs by space
-    (a `&BTreeMap<SpaceId, Glyph>` that `settings_session.rs` builds from
-    `App::space_glyph`, the S7 lookup before rasterizing), so `settings/`
-    stays pure.
-  - Scopes pane (`settings_window/paint.rs` `on_draw_scope`): the icon at
-    s(16), left of the label, after the indent, dimmed with dimmed rows.
-  - Header: put the new code in a new `settings_window/header.rs`. An
-    owner-drawn static (`SS_OWNERDRAW | SS_NOTIFY`, so S12 can take its
-    double-click) of s(20) square at `title_x`, centred on the title's line,
-    draws the icon. `Placeholder` draws S10's placeholder in GDI: a rounded
-    outline in the text color blended halfway to the body (`paint.rs`
-    `blend`), with Segoe Fluent's "Add" glyph (`E710`) from the glyph font.
-    The static takes no click until S12. On a space's page the title starts
-    s(20) + s(8) right of `title_x`, and `apply_header` shows, hides, and
-    moves both. Global has no slot, and its title stays where it is.
-  - Tests: `build_form` gives each space scope the glyph it was handed and
-    the header `HeaderIcon::Glyph` of it; a space with no glyph gets
-    `Placeholder` in the header and `None` in its scope row; Global gets
-    `None` in both.
-  - **[needs human]** check: in light and dark, at 100 % and 150 %, spaces
-    with icons show them in the scopes pane and the header, aligned with
-    the text; a space without one shows the placeholder in the header and
-    nothing in its scopes row, which is laid out as before; a dimmed
-    scope's icon is dimmed; the header icon takes no click; Global's header
-    has no icon and its title has not moved.
 
 - [ ] **S12. Renaming in the settings header (platform, app).** **[needs
   human]** After S10 and S11. Amended 2026-11-04 by D26: the icon opens the
@@ -2510,6 +2476,7 @@ for a machine that has it.
 | G4, G5 (D26) | In light and dark at 100 % and 150 %, on every page of Global, a space, and a lens: each heading's fields sit on one rounded card with hairlines between rows. Labels, check boxes, sliders and their marks, swatches, text boxes, and drop-downs show the card's color behind them, with no body-colored boxes. Notes under a field are grey and sit close under it. Disabled rows still grey out. Switching dark mode while the window is open repaints the cards. Tab order is as before. |
 | G6 (D26) | Appearance shows Material, Border, Shadow, and Items in that order; Colors shows Colors, Border, Selection, and Themes; General shows Startup, Desktop, Look, Space icons, and Updates; New spaces opens with "Everything not set here follows the Global appearance and layout." and its locked-space note sits under "Start new spaces locked". The materials note sits under "Background material". Every setting still previews, applies, and cancels as before. |
 | Page switching | In dark and light, at 100 % and 150 %: click through every page of Global and of a space, by mouse and with the arrow keys. Each page appears in one step, with no blank frame or flash of the window body and no card drawn before its controls; a page taller than the window still starts at its top. With `--debug`, the console shows a "settings: switched page" line per switch; note its elapsed_us before and after this change if you can. Open a space's Shortcuts page, switch away before its icons load, then back: the icons are there. Edit a field, switch pages, then Cancel and OK: both still work, and Settings reopens on the last page. |
+| S11 (D16, D26) | In light and dark, at 100 % and 150 %: a space with an icon shows it in the scopes pane in place of its kind's symbol (decided 2026-11-05: the icon replaces the symbol), and on its page's top line left of its name, aligned with the text. A space without an icon keeps its kind's symbol in the scopes pane, laid out as before, and shows an outlined + on the top line. A dimmed scope's icon is dimmed. The top-line icon takes no click yet (S12). Global's top line has no icon and its title has not moved. Change a space's icon from the desktop while Settings is open: both places follow; an icon set that finishes downloading while Settings is open fills in. Switch dark mode: the icons redraw in the new text color. |
 | Rail groups | At 100 % and 150 %, in light and dark: Global's pane shows Look, Fonts, New items, DeskSpace, and Animations, each title with a caret pointing down, and a space shows This space (View, Shortcuts) then Look, a lens This space (Lens, View, Shortcuts) then Look. Switching from Global's General to a space opens its first page. Click a title: its pages hide and the caret points right; click again: they return. The click never selects the title or changes the page. Collapse the group of the page shown: the page stays, and no row is selected until you pick one. Switch scopes: Look stays collapsed if it was. With the arrow keys, Up and Down step over titles in both directions (Up from Startup reaches About), and moving into a collapsed group opens it at its first entry going down and its last going up. Reopen Settings: every group is open again. |
 | Dark scroll bars | In dark mode, at 100 % and 150 %: every scroll bar is dark, with no white track. Settings: a page taller than the window (G10), the scopes pane with enough spaces to scroll, and the open list of a font family drop-down. Debug window: the section pane, the section list, a long readout (Model or Diagnostics), the console, and an open family list. The installed-apps picker's list and the icon picker's set drop-down. Switch to light mode with each window open: every bar turns light again. The debug readouts' borders still look right in both modes. |
 | G10 (D26) | At 100 % and 150 %, in light and dark, on Appearance, Colors, and New spaces (at 150 % on a 1080p screen they are taller than the window): a scrollbar shows while the page does not fit; dragging it, its arrows, the wheel, and PageUp/PageDown/Home/End (with a check box or button focused) reach every group; the cards and hairlines scroll with the controls, with no card or seam left behind; switching pages starts the next page at the top; a short page has no scrollbar; the OK/Cancel/Apply bar is always on screen. Scroll with the pointer passing over drop-downs and sliders: none of them changes, and an open drop-down's list still scrolls itself. With a drop-down, a text box, or a slider focused, PageUp/PageDown/Home/End still work that control as before. |

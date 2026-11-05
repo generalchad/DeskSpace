@@ -957,6 +957,8 @@ impl EventHandler for App {
                 }
                 if changed {
                     self.repaint_spaces(ui);
+                    // The settings window shows the icons too.
+                    self.refresh_settings(ui);
                 }
                 // A picker that waited for a set to load opens now, unless
                 // the rename it belonged to has ended.

@@ -14,9 +14,9 @@
 use deskspace_core::geometry::{Point, Rect, Size};
 use windows::Win32::Foundation::{POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
-    AC_SRC_ALPHA, AC_SRC_OVER, AlphaBlend, BLENDFUNCTION, BitBlt, ClientToScreen,
-    CreateCompatibleBitmap, CreateCompatibleDC, DT_EDITCONTROL, DT_LEFT, DeleteDC, GetStockObject,
-    IntersectClipRect, NULL_BRUSH, NULL_PEN, PS_DASH, RestoreDC, SRCCOPY, SaveDC,
+    BitBlt, ClientToScreen, CreateCompatibleBitmap, CreateCompatibleDC, DT_EDITCONTROL, DT_LEFT,
+    DeleteDC, GetStockObject, IntersectClipRect, NULL_BRUSH, NULL_PEN, PS_DASH, RestoreDC, SRCCOPY,
+    SaveDC,
 };
 use windows::Win32::UI::Controls::WM_MOUSELEAVE;
 use windows::Win32::UI::Input::KeyboardAndMouse::{TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent};
@@ -27,10 +27,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use super::build::scaled;
 use super::commands::colorref;
-use super::paint::blend;
+use super::paint::{blend, blit_icon};
 use super::*;
 use crate::ui::SpacePreview;
-use crate::win32::drag_image::dib;
 
 /// Height of the preview field, at 96 DPI.
 pub(super) const PREVIEW_HEIGHT: i32 = 330;
@@ -585,10 +584,9 @@ unsafe fn draw_icon(
     preview: &SpacePreview,
     data: &FieldData,
 ) {
-    // SAFETY: the DIB and the source DC are created and deleted here.
+    // SAFETY: drawing into the back buffer.
     unsafe {
-        let Some(bitmap) = icon.and_then(|icon| dib(icon, true).map(|bitmap| (icon, bitmap)))
-        else {
+        let Some(icon) = icon else {
             let placeholder = blend(preview.fill, preview.text, 0.2);
             round_rect(
                 dc,
@@ -599,33 +597,7 @@ unsafe fn draw_icon(
             );
             return;
         };
-        let (icon, bitmap) = bitmap;
-        let source = CreateCompatibleDC(Some(dc));
-        let previous = SelectObject(source, HGDIOBJ(bitmap.0));
-        // Icons are premultiplied BGRA, which AlphaBlend's AC_SRC_ALPHA expects.
-        // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-alphablend
-        let blend_function = BLENDFUNCTION {
-            BlendOp: AC_SRC_OVER as u8,
-            BlendFlags: 0,
-            SourceConstantAlpha: if data.enabled { 255 } else { 128 },
-            AlphaFormat: AC_SRC_ALPHA as u8,
-        };
-        let _ = AlphaBlend(
-            dc,
-            at.x,
-            at.y,
-            at.width,
-            at.height,
-            source,
-            0,
-            0,
-            icon.width() as i32,
-            icon.height() as i32,
-            blend_function,
-        );
-        SelectObject(source, previous);
-        let _ = DeleteObject(HGDIOBJ(bitmap.0));
-        let _ = DeleteDC(source);
+        blit_icon(dc, icon, rect_of(at), if data.enabled { 255 } else { 128 });
     }
 }
 

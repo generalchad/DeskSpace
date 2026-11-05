@@ -1,6 +1,7 @@
 //! Refreshes an open settings window in place from a new SettingsForm.
 
 use super::commands::{show_page, window_text};
+use super::header::{HeaderControls, HeaderLayout, apply_header};
 use super::nav::{NavRow, entry_row, fill_list, nav_rows};
 use super::*;
 use windows::Win32::UI::WindowsAndMessaging::CB_RESETCONTENT;
@@ -17,56 +18,6 @@ unsafe fn sync_selection(list: HWND, rebuilt: bool, row: Option<usize>) {
         if rebuilt || current != row as isize {
             SendMessageW(list, LB_SETCURSEL, Some(WPARAM(row)), None);
             let _ = InvalidateRect(Some(list), None, false);
-        }
-    }
-}
-
-/// Shows `header` in the header controls: the title, the button, and the
-/// switch, each only when the header supplies one.
-pub(super) unsafe fn apply_header(
-    title: Option<HWND>,
-    switch: Option<HWND>,
-    button: Option<HWND>,
-    header: Option<&SettingsHeader>,
-) {
-    // SAFETY: the handles are live controls of the settings window. Neither
-    // SetWindowText on a static/checkbox/button nor BM_SETCHECK reports an edit.
-    unsafe {
-        if let Some(title) = title {
-            let text = header.map_or("", |header| header.title.as_str());
-            if window_text(title) != text {
-                let text = wide(text);
-                let _ = SetWindowTextW(title, PCWSTR(text.as_ptr()));
-            }
-        }
-        if let Some(control) = button {
-            match header.and_then(|header| header.button.as_ref()) {
-                Some(state) => {
-                    if window_text(control) != state.label {
-                        let text = wide(&state.label);
-                        let _ = SetWindowTextW(control, PCWSTR(text.as_ptr()));
-                    }
-                    let _ = ShowWindow(control, SW_SHOW);
-                }
-                None => {
-                    let _ = ShowWindow(control, SW_HIDE);
-                }
-            }
-        }
-        if let Some(control) = switch {
-            match header.and_then(|header| header.switch.as_ref()) {
-                Some(state) => {
-                    if window_text(control) != state.label {
-                        let text = wide(&state.label);
-                        let _ = SetWindowTextW(control, PCWSTR(text.as_ptr()));
-                    }
-                    SendMessageW(control, BM_SETCHECK, Some(WPARAM(state.on as usize)), None);
-                    let _ = ShowWindow(control, SW_SHOW);
-                }
-                None => {
-                    let _ = ShowWindow(control, SW_HIDE);
-                }
-            }
         }
     }
 }
@@ -104,11 +55,10 @@ pub(super) enum Update {
     Repaint(HWND),
 }
 
-/// The header controls and the header they should show.
+/// The header controls, their layout, and the header they should show.
 struct HeaderUpdate {
-    title: Option<HWND>,
-    switch: Option<HWND>,
-    button: Option<HWND>,
+    controls: HeaderControls,
+    layout: HeaderLayout,
     header: Option<SettingsHeader>,
 }
 
@@ -179,9 +129,8 @@ unsafe fn plan_update(hwnd: HWND, form: &SettingsForm) -> Option<UpdatePlan> {
             let new_header = form.nav.header.clone();
             let old_header = state.form.nav.header.as_ref();
             let header = (old_header != new_header.as_ref()).then_some(HeaderUpdate {
-                title: state.header_title,
-                switch: state.header_switch,
-                button: state.header_button,
+                controls: state.header,
+                layout: state.header_layout,
                 header: new_header,
             });
             state.nav_rows = new_rows.clone();
@@ -299,12 +248,7 @@ unsafe fn update_header(header: Option<HeaderUpdate>) {
     if let Some(header) = header {
         // SAFETY: every handle is a live control of this window.
         unsafe {
-            apply_header(
-                header.title,
-                header.switch,
-                header.button,
-                header.header.as_ref(),
-            );
+            apply_header(header.controls, header.layout, header.header.as_ref());
         }
     }
 }

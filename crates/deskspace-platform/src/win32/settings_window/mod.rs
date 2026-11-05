@@ -13,6 +13,7 @@ mod build;
 mod cards;
 mod commands;
 mod field;
+mod header;
 mod nav;
 mod paint;
 mod preview;
@@ -89,6 +90,7 @@ const ID_LIST: usize = 5;
 const ID_SCOPES: usize = 6;
 const ID_HEADER_SWITCH: usize = 7;
 const ID_HEADER_BUTTON: usize = 8;
+const ID_HEADER_ICON: usize = 9;
 /// A muted Windows critical red: the wash and edge of the destructive header
 /// button (a space's "Delete space").
 const DELETE_RED: Color = Color::rgb(0xC4, 0x2B, 0x1C);
@@ -173,9 +175,10 @@ pub(super) struct SettingsState {
     /// The scopes pane's rows, rebuilt when they change.
     scope_rows: Vec<SettingsScope>,
     /// The header's title, switch, and action button, when the form has a rail.
-    header_title: Option<HWND>,
-    header_switch: Option<HWND>,
-    header_button: Option<HWND>,
+    header: header::HeaderControls,
+    header_layout: header::HeaderLayout,
+    /// Space icons drawn for the scopes pane and the header.
+    glyphs: crate::win32::glyphs::GlyphCache,
     /// Vertical lines between the panes: x, top, bottom.
     dividers: Vec<(i32, i32, i32)>,
     apply: Option<HWND>,
@@ -317,9 +320,9 @@ pub(crate) fn create(form: &SettingsForm, dark: bool) -> Result<HWND, PlatformEr
             collapsed: Vec::new(),
             scopes_list: None,
             scope_rows: Vec::new(),
-            header_title: None,
-            header_switch: None,
-            header_button: None,
+            header: header::HeaderControls::default(),
+            header_layout: header::HeaderLayout::default(),
+            glyphs: crate::win32::glyphs::GlyphCache::new(),
             dividers: Vec::new(),
             apply: None,
             font: HFONT::default(),
@@ -559,6 +562,7 @@ unsafe fn on_owner_draw(window: HWND, lparam: LPARAM) -> bool {
             ID_LIST => on_draw_item(window, item),
             ID_SCOPES => on_draw_scope(window, item),
             ID_HEADER_BUTTON => on_draw_header_button(window, item),
+            ID_HEADER_ICON => header::on_draw_header_icon(window, item),
             id if id >= CONTROL_BASE => on_draw_swatch(window, item),
             _ => return false,
         }

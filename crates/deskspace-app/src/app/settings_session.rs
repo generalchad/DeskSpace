@@ -85,6 +85,14 @@ impl App {
     }
 
     fn settings_form(&mut self) -> Option<deskspace_platform::SettingsForm> {
+        let glyphs = self
+            .config
+            .desktop
+            .spaces()
+            .iter()
+            .filter_map(|space| Some((space.id, self.space_icons.space_glyph(space)?)))
+            .collect();
+        self.settings_ui.session.as_mut()?.glyphs = glyphs;
         let scope = self.settings_ui.session.as_ref()?.scope;
         let preview = self.space_preview(scope);
         self.settings_ui.session.as_ref().map(|session| {

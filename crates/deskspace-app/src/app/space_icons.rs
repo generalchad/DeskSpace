@@ -19,7 +19,6 @@ use deskspace_config::{
     ConfigStore, ICON_SETS, IconDownloads, IconSetSpec, IconStore, default_set, icon_set,
 };
 use deskspace_core::icon_match::best_icon;
-#[cfg(test)]
 use deskspace_core::icon_set::Glyph;
 use deskspace_core::icon_set::IconSet;
 use deskspace_core::theme::Color;
@@ -251,9 +250,8 @@ impl SpaceIcons {
     }
 
     /// The glyph `space` shows, or `None` for no icon, an unknown one, or a
-    /// set that is not loaded. The icon picker and the tests use it; the
-    /// scenes go through `space_icon`, which caches the pixels.
-    #[cfg(test)]
+    /// set that is not loaded. The settings window draws it; the scenes go
+    /// through `space_icon`, which caches the pixels.
     pub(super) fn space_glyph(&mut self, space: &Space) -> Option<Glyph> {
         let (prefix, name) = self.icon_name(space)?;
         let SetState::Ready(set) = self.sets.get(&prefix)? else {
@@ -361,6 +359,7 @@ impl App {
             None => return,
         };
         self.commit(ui, Command::SetSpaceIcon { id, icon }, at);
+        self.refresh_settings(ui);
     }
 
     /// What the picker says about `spec`'s set, or `None` while it is ready.

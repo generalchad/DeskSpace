@@ -51,9 +51,9 @@ use deskspace_core::{
     ViewMode,
 };
 use deskspace_platform::{
-    ColumnAlign, Field, FieldValue, SettingsButton, SettingsForm, SettingsHeader, SettingsNav,
-    SettingsNavEntry, SettingsNavGroup, SettingsPage, SettingsScope, SettingsSwitch, SliderMark,
-    SpacePreview,
+    ColumnAlign, Field, FieldValue, HeaderIcon, SettingsButton, SettingsForm, SettingsHeader,
+    SettingsNav, SettingsNavEntry, SettingsNavGroup, SettingsPage, SettingsScope, SettingsSwitch,
+    SliderMark, SpacePreview,
 };
 
 use pages::{
@@ -246,12 +246,14 @@ pub fn build_form(
     let mut scopes = vec![SettingsScope {
         label: "Global".into(),
         glyph: Some(ScopeKind::Global.glyph()),
+        icon: None,
         indent: false,
         dimmed: false,
     }];
     scopes.extend(config.desktop.spaces().iter().map(|space| SettingsScope {
         label: space.title().to_owned(),
         glyph: Some(ScopeKind::of(Some(space)).glyph()),
+        icon: session.glyphs.get(&space.id).cloned(),
         indent: true,
         dimmed: !space.custom(),
     }));
@@ -260,8 +262,16 @@ pub fn build_form(
             title: "Global settings".into(),
             switch: None,
             button: None,
+            icon: None,
         },
         Some(space) => SettingsHeader {
+            icon: Some(
+                session
+                    .glyphs
+                    .get(&space.id)
+                    .cloned()
+                    .map_or(HeaderIcon::Placeholder, HeaderIcon::Glyph),
+            ),
             title: space.title().to_owned(),
             switch: Some(SettingsSwitch {
                 label: "Customize this space".into(),
@@ -1099,6 +1109,44 @@ mod tests {
             .collect();
         assert_eq!(titles, ["Startup", "Delete", "Fold"]);
         assert_eq!(animations.entries[0].page, page::ANIMATIONS);
+    }
+
+    #[test]
+    fn the_form_shows_each_space_icon_and_a_placeholder_without_one() {
+        let (mut config, work) = config_with_space("Work");
+        let games = create_space(&mut config.desktop, "Games", Rect::new(300, 0, 200, 200));
+        let glyph = deskspace_core::Glyph {
+            key: "fluent:briefcase".into(),
+            body: "<path/>".into(),
+            width: 24,
+            height: 24,
+        };
+        let mut session = Session::new(&config);
+        session.glyphs.insert(work, glyph.clone());
+
+        let global = form(&config, &session);
+        let shown = nav(&global);
+        assert_eq!(
+            shown.header.as_ref().unwrap().icon,
+            None,
+            "Global has no slot"
+        );
+        assert_eq!(shown.scopes[0].icon, None);
+        assert_eq!(shown.scopes[1].icon, Some(glyph.clone()), "Work");
+        assert_eq!(shown.scopes[2].icon, None, "Games has no icon");
+
+        session.select_scope(Some(work), ScopeKind::Space);
+        let form_work = form(&config, &session);
+        assert_eq!(
+            nav(&form_work).header.as_ref().unwrap().icon,
+            Some(HeaderIcon::Glyph(glyph))
+        );
+        session.select_scope(Some(games), ScopeKind::Space);
+        let form_games = form(&config, &session);
+        assert_eq!(
+            nav(&form_games).header.as_ref().unwrap().icon,
+            Some(HeaderIcon::Placeholder)
+        );
     }
 
     #[test]

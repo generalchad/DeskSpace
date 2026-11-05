@@ -7,6 +7,12 @@ use super::nav::NavRow;
 use super::*;
 use crate::win32::system::draw_text;
 use deskspace_core::geometry::Rect;
+use windows::Win32::Graphics::Gdi::{
+    AC_SRC_ALPHA, AC_SRC_OVER, AlphaBlend, BLENDFUNCTION, CreateCompatibleDC, DeleteDC,
+};
+
+/// A space's own icon in the scopes pane, at 96 DPI.
+const SCOPE_ICON_SIDE: i32 = 16;
 
 /// Paints one row of the scopes pane like a rail entry: an accent bar when
 /// selected, indented rows moved right, and dimmed rows (scopes that only
@@ -60,11 +66,31 @@ pub(super) unsafe fn on_draw_scope(window: HWND, item: &DRAWITEMSTRUCT) {
             } else {
                 0
             };
+        // A space's own icon takes the place of its kind's symbol.
+        let side = scaled(SCOPE_ICON_SIDE, dpi);
+        let icon = row.icon.as_ref().and_then(|glyph| {
+            with_state(window, |state| {
+                state
+                    .glyphs
+                    .icon(&glyph.key, side, text, || Some(glyph.clone()))
+            })
+            .flatten()
+        });
         let glyph = row
             .glyph
-            .filter(|_| !glyph_font.is_invalid())
+            .filter(|_| icon.is_none() && !glyph_font.is_invalid())
             .and_then(|glyph| u16::try_from(u32::from(glyph)).ok());
-        if let Some(glyph) = glyph {
+        if let Some(icon) = &icon {
+            let top = item.rcItem.top + (item.rcItem.bottom - item.rcItem.top - side) / 2;
+            let square = RECT {
+                left,
+                top,
+                right: left + side,
+                bottom: top + side,
+            };
+            blit_icon(item.hDC, icon, square, 255);
+            left = square.right + scaled(SCOPE_GLYPH_GAP, dpi);
+        } else if let Some(glyph) = glyph {
             let mut metrics = TEXTMETRICW::default();
             let _ = GetTextMetricsW(item.hDC, &mut metrics);
             let side = metrics.tmHeight.max(0);
@@ -381,6 +407,43 @@ pub(super) unsafe fn on_draw_swatch(window: HWND, item: &DRAWITEMSTRUCT) {
             };
             let _ = DrawFocusRect(item.hDC, &focus);
         }
+    }
+}
+
+/// Draws `icon`, premultiplied BGRA, scaled into `at`, at `opacity` (255 is
+/// opaque).
+/// https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-alphablend
+pub(super) unsafe fn blit_icon(dc: HDC, icon: &crate::render::Icon, at: RECT, opacity: u8) {
+    let Some(bitmap) = crate::win32::drag_image::dib(icon, true) else {
+        return;
+    };
+    // SAFETY: the source DC and the DIB are made and deleted here, with the
+    // DC's old bitmap put back first.
+    unsafe {
+        let source = CreateCompatibleDC(Some(dc));
+        let previous = SelectObject(source, HGDIOBJ(bitmap.0));
+        let blend_function = BLENDFUNCTION {
+            BlendOp: AC_SRC_OVER as u8,
+            BlendFlags: 0,
+            SourceConstantAlpha: opacity,
+            AlphaFormat: AC_SRC_ALPHA as u8,
+        };
+        let _ = AlphaBlend(
+            dc,
+            at.left,
+            at.top,
+            at.right - at.left,
+            at.bottom - at.top,
+            source,
+            0,
+            0,
+            icon.width() as i32,
+            icon.height() as i32,
+            blend_function,
+        );
+        SelectObject(source, previous);
+        let _ = DeleteObject(HGDIOBJ(bitmap.0));
+        let _ = DeleteDC(source);
     }
 }
 

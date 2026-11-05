@@ -1,11 +1,11 @@
 //! The settings session: Cancel snapshots, staged hotkey text, and what
 //! a revert needs to reflow or restyle.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
-use deskspace_core::Rect;
 use deskspace_core::source::FolderView;
 use deskspace_core::typography::Typography;
+use deskspace_core::{Glyph, Rect};
 
 use super::ids::page;
 use super::tables::HOTKEY_BINDINGS;
@@ -93,6 +93,9 @@ pub struct Session {
     /// Every installed font family, sorted, read when the window opened, for
     /// the font pages' family lists.
     pub fonts: Vec<String>,
+    /// Each space's icon, as its title bar shows it, filled in before every
+    /// form is built; a space whose icon or set is not ready has none.
+    pub glyphs: BTreeMap<SpaceId, Glyph>,
     pub dirty: bool,
     /// The scope being edited: `None` for Global, or a space.
     pub scope: Option<SpaceId>,
@@ -135,6 +138,7 @@ impl Session {
             filter_texts: HashMap::new(),
             themes: Vec::new(),
             fonts: Vec::new(),
+            glyphs: BTreeMap::new(),
             dirty: false,
             scope: None,
             scope_kind: ScopeKind::Global,

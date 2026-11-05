@@ -3,9 +3,10 @@
 
 use super::cards::PageCards;
 use super::commands::show_page;
+use super::header::build_header;
 use super::nav::{NavRow, entry_row, fill_list, nav_rows, rail_list, watch_title_clicks};
 use super::scroll::set_bar;
-use super::update::{apply_enabled, apply_header};
+use super::update::apply_enabled;
 use super::*;
 use crate::page_scroll::{PageScroll, view_height};
 use crate::settings_cards::{
@@ -364,7 +365,7 @@ pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) -> Result<(), Platfo
         };
         let mut panes = build_panes(&builder, hwnd, &form.nav, view, margin, page_width);
         panes.client_width += bar;
-        let (header_title, header_switch, header_button) =
+        let (header, header_layout) =
             build_header(&builder, hwnd, &form.nav, panes.pages_x, page_width, margin);
 
         for (page, scroll) in pages.iter().zip(&scrolls) {
@@ -408,9 +409,8 @@ pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) -> Result<(), Platfo
             state.scrolls = scrolls;
             state.list = panes.list;
             state.scopes_list = panes.scopes_list;
-            state.header_title = header_title;
-            state.header_switch = header_switch;
-            state.header_button = header_button;
+            state.header = header;
+            state.header_layout = header_layout;
             state.dividers = panes.dividers;
             state.apply = apply;
             state.font = fonts.body;
@@ -548,70 +548,6 @@ unsafe fn build_panes(
             dividers,
             nav_rows,
         }
-    }
-}
-
-/// Creates the title, button, and switch above the page.
-unsafe fn build_header(
-    builder: &Builder,
-    hwnd: HWND,
-    nav: &SettingsNav,
-    pages_x: i32,
-    page_width: i32,
-    margin: i32,
-) -> (Option<HWND>, Option<HWND>, Option<HWND>) {
-    // SAFETY: every control is a child of our live window.
-    unsafe {
-        let header_height = builder.s(HEADER_HEIGHT);
-        let switch_width = builder.s(HEADER_SWITCH_WIDTH);
-        let button_width = builder.s(HEADER_BUTTON_WIDTH);
-        let gap = builder.s(8);
-        let switch_x = pages_x + page_width - builder.s(16) - switch_width;
-        let button_x = switch_x - gap - button_width;
-        let title_x = pages_x + builder.s(16);
-        let header = nav.header.as_ref();
-        let header_title = builder.label(
-            hwnd,
-            header.map_or("", |header| header.title.as_str()),
-            (
-                title_x,
-                margin,
-                (button_x - gap - title_x).max(builder.s(40)),
-                header_height,
-            ),
-        );
-        if let Some(title) = header_title {
-            SendMessageW(
-                title,
-                WM_SETFONT,
-                Some(WPARAM(builder.heading_font.0 as usize)),
-                Some(LPARAM(1)),
-            );
-        }
-        let header_button = builder.control(
-            hwnd,
-            ControlSpec {
-                class: WC_BUTTONW,
-                text: "",
-                style: BS_OWNERDRAW as u32 | WS_TABSTOP.0,
-                ex_style: WINDOW_EX_STYLE(0),
-                bounds: (button_x, margin, button_width, header_height),
-                id: ID_HEADER_BUTTON,
-            },
-        );
-        let header_switch = builder.control(
-            hwnd,
-            ControlSpec {
-                class: WC_BUTTONW,
-                text: "",
-                style: BS_AUTOCHECKBOX as u32 | WS_TABSTOP.0,
-                ex_style: WINDOW_EX_STYLE(0),
-                bounds: (switch_x, margin, switch_width, header_height),
-                id: ID_HEADER_SWITCH,
-            },
-        );
-        apply_header(header_title, header_switch, header_button, header);
-        (header_title, header_switch, header_button)
     }
 }
 

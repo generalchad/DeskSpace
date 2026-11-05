@@ -875,7 +875,12 @@ in `ui.rs`. What spans them:
   the window clear it.
 - **The app's form** (`settings/`): the scopes are Global, then every space
   indented, dimmed while it follows Global. Each row shows its kind's glyph in
-  the row's text color, so a dimmed row dims its glyph too. The categories
+  the row's text color, so a dimmed row dims its glyph too, or the space's
+  own icon in its place. A space's page header shows its icon left of its
+  name, or an outlined + for a space without one (`settings_window/header.rs`);
+  Global's has none. The app hands the icons over as `Session::glyphs`,
+  filled before every form is built, and the window draws them through its
+  own `GlyphCache` in its text color. The categories
   pane lists each scope's pages in titled groups (`settings/nav_groups.rs`,
   the one source for the pane and `listed_pages`): Global's five look pages
   first under Look, and a space's own pages under This space before its

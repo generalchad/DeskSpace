@@ -2,6 +2,7 @@
 //! app builds these; `win32` turns them into controls. Nothing here touches
 //! the OS.
 
+use deskspace_core::Glyph;
 use deskspace_core::theme::Color;
 
 /// The mouse pointer shown over a space window.
@@ -237,6 +238,8 @@ pub struct SettingsScope {
     /// A symbol drawn before the label, from the icon font. `None` draws
     /// nothing and leaves the label where it is.
     pub glyph: Option<char>,
+    /// The space's own icon, drawn in `glyph`'s place when it has one.
+    pub icon: Option<Glyph>,
     /// Indents the row under the one above it.
     pub indent: bool,
     /// Draws the row in disabled text, for a scope that only inherits.
@@ -254,6 +257,19 @@ pub struct SettingsHeader {
     /// hides it, so the same header space can hold a button for one scope and
     /// not another (the page shape is unaffected).
     pub button: Option<SettingsButton>,
+    /// The slot left of the title; `None` has no slot (Global), and the
+    /// title stays at the left edge.
+    pub icon: Option<HeaderIcon>,
+}
+
+/// What the header's icon slot shows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HeaderIcon {
+    /// The space's icon.
+    Glyph(Glyph),
+    /// A space without an icon: an outlined "+" that S12's double-click
+    /// will open the picker from.
+    Placeholder,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

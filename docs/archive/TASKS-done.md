@@ -6375,3 +6375,37 @@ until I5-I6 all land, so no partial build hides the desktop.
     the cards and hairlines scroll with the controls, with no card left
     behind; switching pages starts the next page at the top; a short page has
     no scrollbar; the OK/Cancel/Apply bar is always visible.
+
+- [x] **S11. Icons in the settings window (platform, app).** **[needs
+  human]** Amended 2026-11-04 by D26: the header always shows an icon slot
+  on a space's page, with the placeholder for a space without an icon.
+  - `ui.rs`: `SettingsScope.icon: Option<Glyph>` and `SettingsHeader.icon:
+    Option<HeaderIcon>`, with `enum HeaderIcon { Glyph(Glyph), Placeholder }`.
+    `None` means no slot (Global); `Placeholder` is a space without an icon.
+    Both are owned, so the form stays plain data. The settings window
+    rasterizes them through a `GlyphCache` in its state, in its own text
+    color and DPI. `settings/mod.rs` `build_form` takes the glyphs by space
+    (a `&BTreeMap<SpaceId, Glyph>` that `settings_session.rs` builds from
+    `App::space_glyph`, the S7 lookup before rasterizing), so `settings/`
+    stays pure.
+  - Scopes pane (`settings_window/paint.rs` `on_draw_scope`): the icon at
+    s(16), left of the label, after the indent, dimmed with dimmed rows.
+  - Header: put the new code in a new `settings_window/header.rs`. An
+    owner-drawn static (`SS_OWNERDRAW | SS_NOTIFY`, so S12 can take its
+    double-click) of s(20) square at `title_x`, centred on the title's line,
+    draws the icon. `Placeholder` draws S10's placeholder in GDI: a rounded
+    outline in the text color blended halfway to the body (`paint.rs`
+    `blend`), with Segoe Fluent's "Add" glyph (`E710`) from the glyph font.
+    The static takes no click until S12. On a space's page the title starts
+    s(20) + s(8) right of `title_x`, and `apply_header` shows, hides, and
+    moves both. Global has no slot, and its title stays where it is.
+  - Tests: `build_form` gives each space scope the glyph it was handed and
+    the header `HeaderIcon::Glyph` of it; a space with no glyph gets
+    `Placeholder` in the header and `None` in its scope row; Global gets
+    `None` in both.
+  - **[needs human]** check: in light and dark, at 100 % and 150 %, spaces
+    with icons show them in the scopes pane and the header, aligned with
+    the text; a space without one shows the placeholder in the header and
+    nothing in its scopes row, which is laid out as before; a dimmed
+    scope's icon is dimmed; the header icon takes no click; Global's header
+    has no icon and its title has not moved.
