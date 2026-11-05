@@ -2011,6 +2011,47 @@ These are in the order we would take them. Each lands alone.
     changes nothing. The existing tests pass.
   - Ask a second senior to review: every dropped file takes this path.
 
+- [ ] **P46. Bring the shell's file-operation windows to the front (fix; Win32).**
+  A shell file operation that needs an answer can put its window behind the
+  foreground app, and DeskSpace then looks frozen: nothing answers, the user
+  force-quits, and the operation is lost. `Ui::transfer_files`
+  (`win32/runtime/ui_shell.rs`) gives `file_op::transfer` `runtime.controller` as
+  the owner, and that window is hidden. DeskSpace never holds the foreground
+  (spaces are never activated, and the drag source, Explorer, keeps it), so the
+  shell creates its `OperationStatusWindow` without bringing it forward.
+  - Seen 2026-11-04 on 0.3.0-alpha.1: a right drag of a clashing file onto a lens
+    with "Copy here" showed no dialog. The process was `Responding`; a visible,
+    ownerless `OperationStatusWindow` ("Replace or Skip Files", 463x292 at
+    345,267) sat behind the foreground editor. Forcing it topmost let the check
+    finish and the copy completed. The same applies to a conflict or progress
+    window from any drop, paste, delete, or rename that DeskSpace starts.
+  - Fix, chosen 2026-11-04: while our own shell UI may be open, find it and raise
+    it.
+    - `transfer`, `delete`, `rename`, and `invoke_undelete` in `win32/file_op.rs`
+      are the callers; each already takes an owner.
+    - Arm a Win32 timer on the controller before `PerformOperations` and kill it
+      after. `PerformOperations` pumps messages, so the timer fires while the
+      shell works.
+    - Its handler enumerates this process's top-level windows
+      (`EnumThreadWindows` on the UI thread), matches class
+      `OperationStatusWindow` and the process id, and calls
+      `SetWindowPos(HWND_TOPMOST, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE |
+      SWP_SHOWWINDOW)` once for each. The process id keeps another app's dialog
+      out of it, and `SWP_NOACTIVATE` keeps a space from taking the focus.
+    - The class name is undocumented; keep it in one named constant with the
+      reason and a link beside it, next to the shell calls in `file_op.rs`, not in
+      the app.
+  - Tests: the class match and the timer's place among the controller's ids.
+  - `CONTEXT.md` section 6, file operations: a line saying the shell's own window
+    is raised while the operation runs, and why. `ENGINEERING.md` section 6 gets
+    the gotcha: DeskSpace never holds the foreground, so shell UI it starts has to
+    be raised.
+  - **[needs human]** check: with a lens on a throwaway folder and Explorer
+    maximized over the spaces, drop a clashing file: Replace and Skip both show in
+    front and work. The same for a long copy's progress window, a move's error
+    window, and a rename collision. With `--on-top` and the spaces above
+    everything, the window still shows.
+
 - [ ] **P32. Keep the keyboard hook alive through a stall (fix; key hook).** Windows
   removes a low-level hook, and does not tell it, when the hook's thread does not
   answer within `LowLevelHooksTimeout` (about a second). The hook runs on the UI
