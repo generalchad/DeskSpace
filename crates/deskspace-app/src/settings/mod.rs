@@ -10,6 +10,7 @@
 mod apply;
 mod fonts;
 mod ids;
+mod nav_groups;
 mod pages;
 mod session;
 mod tables;
@@ -21,6 +22,7 @@ pub use apply::{
 };
 pub use fonts::reset_fonts;
 pub use ids::{field, page};
+pub use nav_groups::listed_pages;
 pub use session::{Session, SpaceSnapshot, needs_relayout, needs_restyle};
 pub use tables::{
     AnimationPage, DETAILS_COLUMNS, EDGES, GROUP_NONE, HOTKEY_BINDINGS, HotkeyAction,
@@ -140,27 +142,6 @@ impl ScopeKind {
     }
 }
 
-/// The pages the categories pane lists for `scope`, in order: every Global
-/// page for Global, the animation pages last, or a space's look pages, its
-/// View page, and its Shortcuts page; a lens also lists its Lens page.
-pub fn listed_pages(scope: ScopeKind) -> Vec<usize> {
-    match scope {
-        ScopeKind::Global => (0..LOOK_PAGE_COUNT)
-            .chain([page::SPACE_FONTS, page::WINDOW_FONTS])
-            .chain(LOOK_PAGE_COUNT..=6)
-            .chain([page::LENSES])
-            .chain(7..=page::ABOUT)
-            .chain(page::ANIMATIONS..page::ANIMATIONS + tables::ANIMATION_PAGES.len())
-            .collect(),
-        ScopeKind::Space => (0..LOOK_PAGE_COUNT)
-            .chain([page::VIEW, page::SHORTCUTS])
-            .collect(),
-        ScopeKind::Lens => (0..LOOK_PAGE_COUNT)
-            .chain([page::VIEW, page::SHORTCUTS, page::LENS])
-            .collect(),
-    }
-}
-
 /// The opaque colors a settings preview draws a space with: the tint over a
 /// stand-in for the backdrop (Windows 11's dark or light base), and the title
 /// shading over that. The blur cannot be shown, so this is an approximation.
@@ -253,22 +234,14 @@ pub fn build_form(
         page: index,
         marked: false,
     };
-    // The animation pages get a group of their own, after the rest, so the
-    // flattened entries keep `listed`'s order and `selected` stays valid.
-    let animations = page::ANIMATIONS..page::ANIMATIONS + tables::ANIMATION_PAGES.len();
-    let (settings_pages, animation_pages): (Vec<usize>, Vec<usize>) = listed
-        .iter()
-        .partition(|&&index| !animations.contains(&index));
-    let mut groups = vec![SettingsNavGroup {
-        title: String::new(),
-        entries: settings_pages.iter().map(entry).collect(),
-    }];
-    if !animation_pages.is_empty() {
-        groups.push(SettingsNavGroup {
-            title: "Animations".into(),
-            entries: animation_pages.iter().map(entry).collect(),
-        });
-    }
+    // `listed` is the groups flattened, so `selected` indexes their entries.
+    let groups = nav_groups::nav_groups(kind)
+        .into_iter()
+        .map(|group| SettingsNavGroup {
+            title: group.title.into(),
+            entries: group.pages.iter().map(entry).collect(),
+        })
+        .collect();
 
     let mut scopes = vec![SettingsScope {
         label: "Global".into(),
@@ -889,20 +862,26 @@ mod tests {
             page::ABOUT + 4 + tables::ANIMATION_PAGES.len(),
             "every Global page, the Lenses and font pages included"
         );
-        let labels: Vec<&str> = nav.entries().map(|entry| entry.label.as_str()).collect();
+        let groups: Vec<(&str, Vec<&str>)> = nav
+            .groups
+            .iter()
+            .map(|group| {
+                let labels = group.entries.iter().map(|entry| entry.label.as_str());
+                (group.title.as_str(), labels.collect())
+            })
+            .collect();
         assert_eq!(
-            labels[..8],
+            groups,
             [
-                "Appearance",
-                "Labels",
-                "Layout",
-                "Colors",
-                "Advanced",
-                "Space fonts",
-                "Window fonts",
-                "General"
-            ],
-            "the font pages follow the look pages"
+                (
+                    "Look",
+                    vec!["Appearance", "Labels", "Layout", "Colors", "Advanced"]
+                ),
+                ("Fonts", vec!["Spaces", "Windows"]),
+                ("New items", vec!["New spaces", "New lenses"]),
+                ("DeskSpace", vec!["General", "Hotkeys", "About"]),
+                ("Animations", vec!["Startup", "Delete", "Fold"]),
+            ]
         );
         let header = nav.header.as_ref().unwrap();
         assert_eq!(header.title, "Global settings");
@@ -1111,15 +1090,29 @@ mod tests {
         let (config, session) = setup();
         let form = form(&config, &session);
         let groups = &nav(&form).groups;
-        assert_eq!(groups.len(), 2);
-        assert_eq!(groups[1].title, "Animations");
-        let titles: Vec<&str> = groups[1]
+        let animations = groups.last().expect("groups");
+        assert_eq!(animations.title, "Animations");
+        let titles: Vec<&str> = animations
             .entries
             .iter()
             .map(|entry| entry.label.as_str())
             .collect();
         assert_eq!(titles, ["Startup", "Delete", "Fold"]);
-        assert_eq!(groups[1].entries[0].page, page::ANIMATIONS);
+        assert_eq!(animations.entries[0].page, page::ANIMATIONS);
+    }
+
+    #[test]
+    fn a_space_groups_its_look_pages_apart_from_its_own() {
+        let (config, id) = config_with_space("A");
+        let mut session = Session::new(&config);
+        session.select_scope(Some(id), ScopeKind::Space);
+        let form = form(&config, &session);
+        let titles: Vec<&str> = nav(&form)
+            .groups
+            .iter()
+            .map(|group| group.title.as_str())
+            .collect();
+        assert_eq!(titles, ["Look", "This space"]);
     }
 
     #[test]

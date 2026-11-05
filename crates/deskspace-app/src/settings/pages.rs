@@ -518,7 +518,7 @@ pub(super) fn lenses_page(config: &Config) -> SettingsPage {
         ),
     ]);
     SettingsPage {
-        title: "Lenses".into(),
+        title: "New lenses".into(),
         fields,
     }
 }

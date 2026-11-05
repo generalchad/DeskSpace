@@ -211,7 +211,7 @@ selected files' size on the left, and the Details and Large icons buttons on
 the right. It is chrome, so `Space::content_rect` leaves its height out and
 layout, scrolling, and hit tests shrink with it. It is off for new spaces and
 on for new lenses. A new lens takes its view, its title mode, and its
-hidden-files choice from Global's Lenses page (`WindowSettings.new_lens`);
+hidden-files choice from Global's New lenses page (`WindowSettings.new_lens`);
 a new space its view from the New spaces page
 (`WindowSettings.new_space_view`, W40). `SpaceView.extensions` (W28)
 decides whether a space's labels show filename extensions: `Show` and
@@ -870,14 +870,15 @@ in `ui.rs`. What spans them:
   the window clear it.
 - **The app's form** (`settings/`): the scopes are Global, then every space
   indented, dimmed while it follows Global. Each row shows its kind's glyph in
-  the row's text color, so a dimmed row dims its glyph too. Global lists every
-  page but View, Shortcuts and Lens, lists the Space fonts and Window fonts
-  pages after Advanced (`settings/fonts.rs`: a card per text role, edits
-  writing `Config::typography` and previewed through
-  `App::sync_typography`; a reset per page), and adds a Lenses page after
-  New spaces
-  for a new lens's defaults; a space lists the five look pages, which
-  show
+  the row's text color, so a dimmed row dims its glyph too. The categories
+  pane lists each scope's pages in titled groups (`settings/nav_groups.rs`,
+  the one source for the pane and `listed_pages`), the five look pages
+  first under Look. Global lists every page but View, Shortcuts and Lens:
+  Fonts holds Spaces and Windows (`settings/fonts.rs`: a card per text
+  role, edits writing `Config::typography` and previewed through
+  `App::sync_typography`; a reset per page), and New items holds New spaces
+  and New lenses, a new lens's defaults. A space lists the five look pages,
+  which show
   its values (from Global until customized) greyed unless the header's
   "Customize this space" switch is on, its always-enabled View page (the view
   mode, the status bar, the extension choice, and the sort rule, which
@@ -1057,7 +1058,7 @@ exact steps, ranges, edge cases, and the code behind them.
   on Escape. While it is open, the title icon is a button: a click opens the
   icon picker (D16), the picked icon applies at once, and the rename stays open
   behind the picker. A typed title on a lens is a nickname that stops the title
-  following the folder. An empty one follows again, as the Lenses page's
+  following the folder. An empty one follows again, as the New lenses page's
   "Show as" says (Folder name when that is Custom), as one undo entry; on a
   normal space, or on a lens that already follows its folder, it is ignored.
 

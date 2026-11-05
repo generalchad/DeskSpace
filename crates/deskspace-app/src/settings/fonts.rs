@@ -1,4 +1,4 @@
-//! The Space fonts and Window fonts pages, Global only: a card per text role
+//! The font pages, Spaces and Windows under Fonts, Global only: a card per text role
 //! with its family, size, and weight, and a reset per page. An edit writes
 //! `Config::typography`, which the spaces preview at once and Apply saves.
 
@@ -22,7 +22,7 @@ struct FontPage {
 /// The font pages in build order; every role is on exactly one.
 const FONT_PAGES: [FontPage; 2] = [
     FontPage {
-        title: "Space fonts",
+        title: "Spaces",
         note_id: field::SPACE_FONTS_NOTE,
         note: "The text inside every space. The spaces show a change at once.",
         roles: &[
@@ -35,7 +35,7 @@ const FONT_PAGES: [FontPage; 2] = [
         reset: field::RESET_SPACE_FONTS,
     },
     FontPage {
-        title: "Window fonts",
+        title: "Windows",
         note_id: field::WINDOW_FONTS_NOTE,
         note: "The text of DeskSpace's own windows and dialogs. The settings \
                window shows a change the next time it opens.",
