@@ -6,6 +6,7 @@ mod input;
 mod page_scroll;
 mod render;
 mod settings_cards;
+mod title_scroll;
 mod ui;
 mod win32;
 

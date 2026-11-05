@@ -3,6 +3,7 @@
 use super::commands::{show_page, window_text};
 use super::header::{HeaderControls, HeaderLayout, apply_header};
 use super::nav::{NavRow, entry_row, fill_list, nav_rows};
+use super::title::sync_title;
 use super::*;
 use windows::Win32::UI::WindowsAndMessaging::CB_RESETCONTENT;
 
@@ -87,7 +88,7 @@ pub(crate) fn update(hwnd: HWND, form: &SettingsForm) -> bool {
     unsafe {
         update_pages(plan.updates, plan.apply, form);
         update_panes(hwnd, plan.rail, plan.page, plan.pages, plan.scopes);
-        update_header(plan.header);
+        update_header(hwnd, plan.header);
         with_state(hwnd, |state| state.updating = false);
     }
     true
@@ -244,11 +245,15 @@ unsafe fn update_panes(
 }
 
 /// Shows the header's title, button, and switch.
-unsafe fn update_header(header: Option<HeaderUpdate>) {
+unsafe fn update_header(settings: HWND, header: Option<HeaderUpdate>) {
     if let Some(header) = header {
         // SAFETY: every handle is a live control of this window.
         unsafe {
             apply_header(header.controls, header.layout, header.header.as_ref());
+        }
+        // SAFETY: the header is built and the state is live.
+        unsafe {
+            sync_title(settings);
         }
     }
 }

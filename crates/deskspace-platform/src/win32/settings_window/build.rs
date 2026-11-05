@@ -6,6 +6,7 @@ use super::commands::show_page;
 use super::header::build_header;
 use super::nav::{NavRow, entry_row, fill_list, nav_rows, rail_list, watch_title_clicks};
 use super::scroll::set_bar;
+use super::title::sync_title;
 use super::update::apply_enabled;
 use super::*;
 use crate::page_scroll::{PageScroll, view_height};
@@ -421,6 +422,7 @@ pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) -> Result<(), Platfo
             state.command_bar_top = panes.command_bar_top;
             state.updating = false;
         });
+        sync_title(hwnd);
         Ok(())
     }
 }

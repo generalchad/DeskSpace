@@ -18,6 +18,7 @@ mod nav;
 mod paint;
 mod preview;
 mod scroll;
+mod title;
 mod update;
 
 pub(crate) use commands::colorref;
@@ -48,14 +49,15 @@ use windows::Win32::UI::WindowsAndMessaging::{
     BS_PUSHBUTTON, CB_ADDSTRING, CB_GETCURSEL, CB_SETCURSEL, CBN_SELCHANGE, CBS_DROPDOWNLIST,
     CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DestroyWindow, EN_CHANGE, EN_KILLFOCUS,
     ES_AUTOHSCROLL, ES_NUMBER, ES_READONLY, ES_RIGHT, GetClientRect, GetCursorPos, GetParent,
-    GetWindowTextLengthW, GetWindowTextW, HWND_TOP, IsIconic, LB_ADDSTRING, LB_GETCURSEL,
-    LB_RESETCONTENT, LB_SETCURSEL, LB_SETITEMHEIGHT, LBN_SELCHANGE, LBS_HASSTRINGS, LBS_NOTIFY,
-    LBS_OWNERDRAWFIXED, SW_HIDE, SW_RESTORE, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW,
-    SetForegroundWindow, SetWindowPos, SetWindowTextW, ShowWindow, WINDOW_EX_STYLE, WINDOW_STYLE,
-    WM_CLOSE, WM_COMMAND, WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC,
-    WM_DRAWITEM, WM_ERASEBKGND, WM_HSCROLL, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT,
-    WM_SETFONT, WM_VSCROLL, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN, WS_EX_CLIENTEDGE,
-    WS_EX_CONTROLPARENT, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP, WS_VSCROLL,
+    GetWindowTextLengthW, GetWindowTextW, HWND_TOP, IsIconic, KillTimer, LB_ADDSTRING,
+    LB_GETCURSEL, LB_RESETCONTENT, LB_SETCURSEL, LB_SETITEMHEIGHT, LBN_SELCHANGE, LBS_HASSTRINGS,
+    LBS_NOTIFY, LBS_OWNERDRAWFIXED, SW_HIDE, SW_RESTORE, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER,
+    SendMessageW, SetForegroundWindow, SetWindowPos, SetWindowTextW, ShowWindow, WINDOW_EX_STYLE,
+    WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX,
+    WM_CTLCOLORSTATIC, WM_DPICHANGED, WM_DRAWITEM, WM_ERASEBKGND, WM_HSCROLL, WM_MOUSEWHEEL,
+    WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SETFONT, WM_SIZE, WM_TIMER, WM_VSCROLL, WS_CAPTION,
+    WS_CHILD, WS_CLIPCHILDREN, WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT, WS_MINIMIZEBOX,
+    WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP, WS_VSCROLL,
 };
 use windows::core::{PCWSTR, w};
 
@@ -70,7 +72,7 @@ use crate::win32::app_icon::{Badge, WindowIcons};
 use crate::win32::dark_mode::{self, UiColors};
 use crate::win32::system::{loword, wide, work_area_at};
 use crate::win32::window_class::{self, WindowClass};
-use crate::win32::{runtime, window_state};
+use crate::win32::{frame_clock, messages, runtime, window_state};
 use windows::Win32::UI::WindowsAndMessaging::{WA_INACTIVE, WM_ACTIVATE, WM_SETCURSOR};
 
 use build::build;
@@ -94,6 +96,9 @@ const ID_HEADER_BUTTON: usize = 8;
 const ID_HEADER_ICON: usize = 9;
 const ID_HEADER_TITLE: usize = 10;
 const ID_HEADER_EDIT: usize = 11;
+/// The header title's pause timer (G8); the frames themselves use the frame
+/// clock's `messages::FRAME`.
+const TITLE_TIMER: usize = 1;
 /// A muted Windows critical red: the wash and edge of the destructive header
 /// button (a space's "Delete space").
 const DELETE_RED: Color = Color::rgb(0xC4, 0x2B, 0x1C);
@@ -180,6 +185,8 @@ pub(super) struct SettingsState {
     /// The header's title, switch, and action button, when the form has a rail.
     header: header::HeaderControls,
     header_layout: header::HeaderLayout,
+    /// The header title's scroll, when it overflows (G8).
+    title_motion: Option<header::TitleMotion>,
     /// Space icons drawn for the scopes pane and the header.
     glyphs: crate::win32::glyphs::GlyphCache,
     /// Vertical lines between the panes: x, top, bottom.
@@ -327,6 +334,7 @@ pub(crate) fn create(form: &SettingsForm, dark: bool) -> Result<HWND, PlatformEr
             scope_rows: Vec::new(),
             header: header::HeaderControls::default(),
             header_layout: header::HeaderLayout::default(),
+            title_motion: None,
             glyphs: crate::win32::glyphs::GlyphCache::new(),
             dividers: Vec::new(),
             apply: None,
@@ -577,6 +585,7 @@ unsafe fn on_owner_draw(window: HWND, lparam: LPARAM) -> bool {
             ID_SCOPES => on_draw_scope(window, item),
             ID_HEADER_BUTTON => on_draw_header_button(window, item),
             ID_HEADER_ICON => header::on_draw_header_icon(window, item),
+            ID_HEADER_TITLE => title::on_draw_title(window, item),
             id if id >= CONTROL_BASE => on_draw_swatch(window, item),
             _ => return false,
         }
@@ -645,6 +654,24 @@ unsafe extern "system" fn wndproc(
                 } else {
                     DefWindowProcW(window, message, wparam, lparam)
                 }
+            }
+            WM_SIZE => {
+                title::on_window_size(window);
+                DefWindowProcW(window, message, wparam, lparam)
+            }
+            WM_DPICHANGED => {
+                title::sync_title(window);
+                DefWindowProcW(window, message, wparam, lparam)
+            }
+            WM_TIMER if wparam.0 == TITLE_TIMER => {
+                let _ = KillTimer(Some(window), TITLE_TIMER);
+                title::on_title_timer(window);
+                LRESULT(0)
+            }
+            messages::FRAME => {
+                frame_clock::delivered(window);
+                title::on_title_frame(window);
+                LRESULT(0)
             }
             WM_CLOSE => {
                 settings_event(SettingsEvent::Cancel);

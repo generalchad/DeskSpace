@@ -1,11 +1,13 @@
 //! The line above the page: the space's icon slot, the title, the "Delete
 //! space" button, and the "Customize this space" switch.
 
+use std::time::{Duration, Instant};
+
 use deskspace_core::geometry::Rect;
 use windows::Win32::Graphics::Gdi::{GetStockObject, NULL_BRUSH};
 use windows::Win32::UI::Controls::{
-    EM_SETSEL, TOOLTIPS_CLASSW, TTF_IDISHWND, TTF_SUBCLASS, TTM_ADDTOOLW, TTS_ALWAYSTIP,
-    TTS_NOPREFIX, TTTOOLINFOW,
+    EM_SETSEL, TOOLTIPS_CLASSW, TTF_IDISHWND, TTF_SUBCLASS, TTM_ADDTOOLW, TTM_UPDATETIPTEXTW,
+    TTS_ALWAYSTIP, TTS_NOPREFIX, TTTOOLINFOW,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetFocus, SetFocus, VK_ESCAPE, VK_RETURN};
 use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
@@ -19,8 +21,10 @@ use super::build::{Builder, scaled};
 use super::commands::window_text;
 use super::paint::{blend, blit_icon};
 use super::*;
+use crate::title_scroll::TitleScroll;
 use crate::ui::HeaderIcon;
 use crate::win32::dialog::ControlSpec;
+use crate::win32::frame_clock;
 
 /// The icon slot's side and the gap after it, at 96 DPI.
 const ICON_SIDE: i32 = 20;
@@ -31,8 +35,9 @@ const GLYPH_ADD: u16 = 0xE710;
 /// reports its double-click.
 /// https://learn.microsoft.com/en-us/windows/win32/controls/static-control-styles
 const SLOT_STYLE: u32 = 0x000D | SS_NOTIFY;
-/// The title: a label that reports its double-click.
-const TITLE_STYLE: u32 = SS_NOPREFIX | SS_CENTERIMAGE | SS_NOTIFY;
+/// The title: an owner-drawn label that reports its double-click. G8 draws it
+/// so a long name can scroll.
+const TITLE_STYLE: u32 = 0x000B | SS_NOPREFIX | SS_NOTIFY;
 const SS_NOTIFY: u32 = 0x0100;
 /// STN_DBLCLK (WinUser.h): a static with SS_NOTIFY was double-clicked.
 /// https://learn.microsoft.com/en-us/windows/win32/controls/stn-dblclk
@@ -42,6 +47,9 @@ const EDIT_HEIGHT: i32 = 28;
 /// The subclass's id on the name's edit (`SetWindowSubclass`).
 const EDIT_SUBCLASS: usize = 1;
 const ICON_TIP: &str = "Double-click to change the icon";
+/// The longest title copied onto the paint path's stack; a longer one is
+/// clipped, as it already is on screen.
+pub(super) const TITLE_TEXT_MAX: usize = 512;
 
 /// The header's controls.
 #[derive(Debug, Clone, Copy, Default)]
@@ -72,7 +80,7 @@ pub(super) struct HeaderLayout {
 impl HeaderLayout {
     /// The slot's square, centred on the title's line, and the title's rect,
     /// which starts after the slot when there is one.
-    fn place(self, has_icon: bool) -> (Rect, Rect) {
+    pub(super) fn place(self, has_icon: bool) -> (Rect, Rect) {
         let slot = Rect::new(
             self.left,
             self.top + (self.height - self.icon) / 2,
@@ -200,7 +208,7 @@ pub(super) unsafe fn build_header(
             );
             let _ = SetWindowSubclass(edit, Some(edit_subclass), EDIT_SUBCLASS, 0);
         }
-        let tooltip = icon.and_then(|icon| icon_tooltip(hwnd, icon));
+        let tooltip = header_tooltip(hwnd, icon, title);
         let controls = HeaderControls {
             title,
             switch,
@@ -276,12 +284,17 @@ pub(super) unsafe fn apply_header(
     }
 }
 
-/// The icon slot's tooltip, owned by the settings window, so it closes with
-/// it. The tool subclasses the slot, so it shows and hides by itself.
-unsafe fn icon_tooltip(settings: HWND, icon: HWND) -> Option<HWND> {
+/// The header's tooltips, owned by the settings window, so they close with it.
+/// The tools subclass their controls, so they show and hide by themselves. The
+/// icon slot describes its double-click; the title shows the full name while
+/// the name is cut off (G8).
+unsafe fn header_tooltip(settings: HWND, icon: Option<HWND>, title: Option<HWND>) -> Option<HWND> {
     // SAFETY: creating a tooltip owned by our live window; TTM_ADDTOOLW
-    // copies the tool and its text, which outlives the call.
+    // copies each tool and its text, which outlive the call.
     unsafe {
+        if icon.is_none() && title.is_none() {
+            return None;
+        }
         let tooltip = CreateWindowExW(
             WS_EX_TOOLWINDOW,
             TOOLTIPS_CLASSW,
@@ -297,12 +310,27 @@ unsafe fn icon_tooltip(settings: HWND, icon: HWND) -> Option<HWND> {
             None,
         )
         .ok()?;
-        let mut text = wide(ICON_TIP);
+        if let Some(icon) = icon {
+            add_tool(tooltip, settings, icon, ICON_TIP);
+        }
+        if let Some(title) = title {
+            add_tool(tooltip, settings, title, "");
+        }
+        Some(tooltip)
+    }
+}
+
+/// Adds one subclassing tool to `tooltip`.
+unsafe fn add_tool(tooltip: HWND, settings: HWND, control: HWND, text: &str) {
+    // SAFETY: `tooltip` and `control` are live windows of ours; TTM_ADDTOOLW
+    // copies the text.
+    unsafe {
+        let mut text = wide(text);
         let tool = TTTOOLINFOW {
             cbSize: std::mem::size_of::<TTTOOLINFOW>() as u32,
             uFlags: TTF_IDISHWND | TTF_SUBCLASS,
             hwnd: settings,
-            uId: icon.0 as usize,
+            uId: control.0 as usize,
             lpszText: PWSTR(text.as_mut_ptr()),
             ..Default::default()
         };
@@ -312,7 +340,32 @@ unsafe fn icon_tooltip(settings: HWND, icon: HWND) -> Option<HWND> {
             None,
             Some(LPARAM(&tool as *const TTTOOLINFOW as isize)),
         );
-        Some(tooltip)
+    }
+}
+
+/// Sets the title tool's text. An empty string shows no tip.
+pub(super) unsafe fn set_title_tip(window: HWND, controls: HeaderControls, text: &str) {
+    // SAFETY: the tooltip and the title are live controls of `window`;
+    // TTM_UPDATETIPTEXTW copies the text.
+    unsafe {
+        let (Some(tooltip), Some(title)) = (controls.tooltip, controls.title) else {
+            return;
+        };
+        let mut text = wide(text);
+        let tool = TTTOOLINFOW {
+            cbSize: std::mem::size_of::<TTTOOLINFOW>() as u32,
+            uFlags: TTF_IDISHWND,
+            hwnd: window,
+            uId: title.0 as usize,
+            lpszText: PWSTR(text.as_mut_ptr()),
+            ..Default::default()
+        };
+        SendMessageW(
+            tooltip,
+            TTM_UPDATETIPTEXTW,
+            None,
+            Some(LPARAM(&tool as *const TTTOOLINFOW as isize)),
+        );
     }
 }
 
@@ -325,6 +378,123 @@ pub(super) fn theme_tooltip(controls: HeaderControls, dark: bool) {
             crate::win32::dark_mode::ControlTheme::Explorer,
             dark,
         );
+    }
+}
+
+/// The text, box width, and DPI a title was measured at. A change to any of
+/// them makes a fresh `TitleScroll`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct TitleKey {
+    text: String,
+    width: i32,
+    dpi: u32,
+}
+
+impl TitleKey {
+    fn new(text: &str, width: i32, dpi: u32) -> Self {
+        Self {
+            text: text.to_owned(),
+            width,
+            dpi,
+        }
+    }
+
+    pub(super) fn needs_restart(&self, text: &str, width: i32, dpi: u32) -> bool {
+        self.text != text || self.width != width || self.dpi != dpi
+    }
+}
+
+/// One header title's scroll: the measurement it was built from, its text,
+/// and the frames that move it while a traverse runs.
+pub(super) struct TitleMotion {
+    key: TitleKey,
+    scroll: TitleScroll,
+    /// UTF-16, so a frame paints without allocating.
+    text: Vec<u16>,
+    started: Instant,
+    /// Whether Windows' "Animation effects" was on when this was measured.
+    animate: bool,
+    frames: Option<frame_clock::Subscription>,
+}
+
+impl TitleMotion {
+    pub(super) fn new(
+        text: &str,
+        width: i32,
+        dpi: u32,
+        scale: f32,
+        text_width: f32,
+        animate: bool,
+    ) -> Self {
+        Self {
+            key: TitleKey::new(text, width, dpi),
+            scroll: TitleScroll::new(text_width, width as f32, scale),
+            text: text.encode_utf16().collect(),
+            started: Instant::now(),
+            animate,
+            frames: None,
+        }
+    }
+
+    /// The measurement this motion was built from; a change restarts it.
+    pub(super) fn key(&self) -> TitleKey {
+        self.key.clone()
+    }
+
+    /// The title's UTF-16 text, for the frame that draws it.
+    pub(super) fn text(&self) -> &[u16] {
+        &self.text
+    }
+
+    /// The part of the name that does not fit, in pixels.
+    pub(super) fn overflow(&self) -> f32 {
+        self.scroll.overflow
+    }
+
+    /// Whether the title moves: it overflows and animations are on.
+    fn scrolls(&self) -> bool {
+        self.animate && self.overflow() > 0.0
+    }
+
+    /// Whether it shows an ellipsis instead of moving: it overflows but
+    /// animations are off.
+    pub(super) fn ellipsizes(&self) -> bool {
+        !self.scrolls() && self.overflow() > 0.0
+    }
+
+    pub(super) fn offset(&self) -> f32 {
+        if self.animate {
+            self.scroll.offset(self.started.elapsed())
+        } else {
+            0.0
+        }
+    }
+
+    pub(super) fn is_moving(&self) -> bool {
+        self.animate && self.scroll.is_moving(self.started.elapsed())
+    }
+
+    pub(super) fn next_move(&self) -> Option<Duration> {
+        if self.animate {
+            self.scroll.next_move(self.started.elapsed())
+        } else {
+            None
+        }
+    }
+
+    pub(super) fn ensure_frames(&mut self, window: HWND) {
+        if self.frames.is_none() {
+            self.frames = Some(frame_clock::Subscription::new(window));
+        }
+    }
+
+    pub(super) fn stop_frames(&mut self) {
+        self.frames = None;
+    }
+
+    pub(super) fn restart(&mut self) {
+        self.started = Instant::now();
+        self.frames = None;
     }
 }
 
@@ -361,6 +531,7 @@ pub(super) unsafe fn on_title_command(window: HWND, code: u32) {
             height,
         );
         with_state(window, |state| state.renaming = true);
+        super::title::stop_title(window);
         let text = wide(&header.title);
         let _ = SetWindowTextW(edit, PCWSTR(text.as_ptr()));
         place(edit, rect);
@@ -402,6 +573,7 @@ unsafe fn close_rename(window: HWND, commit: bool) {
         }
         let _ = ShowWindow(edit, SW_HIDE);
         let _ = ShowWindow(title, SW_SHOW);
+        super::title::restart_title(window);
         if commit {
             settings_event(SettingsEvent::HeaderRenamed { title: typed });
         }
@@ -592,5 +764,27 @@ mod tests {
     fn global_keeps_its_title_at_the_edge() {
         let (_, title) = layout().place(false);
         assert_eq!(title, Rect::new(100, 12, 300, 44));
+    }
+
+    #[test]
+    fn a_title_restarts_when_its_text_box_or_dpi_changes() {
+        let key = TitleKey::new("A long title", 100, 96);
+        assert!(!key.needs_restart("A long title", 100, 96));
+        assert!(key.needs_restart("Another title", 100, 96));
+        assert!(key.needs_restart("A long title", 120, 96));
+        assert!(key.needs_restart("A long title", 100, 144));
+    }
+
+    #[test]
+    fn only_an_overflowing_title_scrolls_and_only_with_animations_on() {
+        let overflows = |animate| TitleMotion::new("Long", 100, 96, 1.0, 200.0, animate);
+        assert!(overflows(true).scrolls());
+        assert!(!overflows(true).ellipsizes());
+        assert!(!overflows(false).scrolls());
+        assert!(overflows(false).ellipsizes());
+
+        let fits = TitleMotion::new("Short", 100, 96, 1.0, 80.0, true);
+        assert!(!fits.scrolls());
+        assert!(!fits.ellipsizes());
     }
 }

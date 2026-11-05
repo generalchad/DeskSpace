@@ -1425,7 +1425,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-65 | Group by, as Explorer (every space) | M4 | Done; check pending (`TASKS.md` V: W37, W38); decided in D18 |
 | F-66 | Measuring guides while moving or resizing a space: alignment lines, gaps in pixels, and equal-gap and equal-size marks (optional) | M6 | Open; decided in D21 (M6 item 4) |
 | F-67 | A lens follows its folder when it is renamed or moved | M4 | Done; check pending (`TASKS.md` V: W45); decided in D19 |
-| F-68 | Settings window polish: a fading highlight, a one-line icon and name header, scrolling long names, and cards | M3 | Open; decided in D26; S11, S12, G1-G6, and G10-G12 are built; G7-G9 are `TASKS.md` section G |
+| F-68 | Settings window polish: a fading highlight, a one-line icon and name header, scrolling long names, and cards | M3 | Open; decided in D26; S11, S12, G1-G6, G7, G8, and G10-G12 are built; G9 is `TASKS.md` section G |
 
 
 ## 8. Open questions

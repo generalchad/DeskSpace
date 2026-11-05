@@ -6541,3 +6541,76 @@ until I5-I6 all land, so no partial build hides the desktop.
   - `mod.rs` keeps the gestures: `begin_interaction`, the drag, resize, and
     marquee handlers.
   - Done when: `mod.rs` is under about 600 lines and the K rules above hold.
+
+- [x] **G7. The scrolling title's motion (platform, pure).** Lands in the
+  same commit as G8, its first caller, as G1 does with G3. "Marquee" in
+  this codebase means the selection box (`MARQUEE_COLOR`), so call this the
+  scrolling title.
+  - A new `deskspace-platform/src/title_scroll.rs`: `pub struct TitleScroll
+    { overflow: f32, travel: Duration }`, built by `new(text_width,
+    box_width, scale)`. `overflow` is the part of the text that does not
+    fit, in pixels, and is never below 0. One traverse lasts `overflow` at
+    `TITLE_SCROLL_SPEED`, 30 px per second at 96 DPI times `scale`, and
+    never less than 400 ms.
+  - The motion repeats every `2 × (TITLE_SCROLL_PAUSE + travel)`, with the
+    pause at 1500 ms. It pauses at the start, eases to `overflow` with
+    `smoothstep`, pauses at the end, and eases back.
+  - Methods: `offset(elapsed) -> f32`; `is_moving(elapsed) -> bool`; and
+    `next_move(elapsed) -> Option<Duration>`, which during a pause gives
+    the time left until the next traverse, so G8 can set a timer instead of
+    taking frames.
+  - Tests: no overflow means no motion (offset 0, `next_move` is `None`).
+    The offset is 0 through the first pause, reaches `overflow` at the end
+    of the first traverse, holds through the second pause, and is back at 0
+    after one period. It never leaves 0..overflow. The travel scales with
+    DPI and has its floor. `next_move` counts down during each pause.
+
+- [x] **G8. Scroll a long name in the header, with a tooltip (platform).**
+  **[needs human]** Includes G7; one commit, `(G7, G8)`. It does not wait
+  for S11 or S12; see the section's introduction for `header.rs`.
+  - The header title becomes an owner-drawn static (`SS_OWNERDRAW |
+    SS_NOTIFY`), drawn in `header.rs`. It is drawn with the heading font and
+    the text color on the body color, clipped to the control, at x =
+    −offset.
+  - Measure the title (`DT_CALCRECT | DT_SINGLELINE`, heading font) whenever
+    its text, its width, or the DPI changes. Then make a fresh `TitleScroll`
+    and restart from offset 0.
+  - It scrolls only while the system's "Animation effects" is on: read
+    `system_animations()` (`win32/system.rs`) when measuring. While it is off, a name that does not fit ends in
+    `DT_END_ELLIPSIS` and does not move.
+  - Frames come from `frame_clock` only while a traverse runs.
+    - The settings window holds a `Subscription` and handles
+      `messages::FRAME` in its procedure: `delivered`, then invalidate the
+      title (no erase).
+    - When a traverse ends, drop the subscription and set a timer for
+      `next_move`. The timer's id goes beside the window's other ids in
+      `settings_window/mod.rs`.
+    - Minimizing stops both, and restoring restarts the scroll. Closing the
+      window drops them with its state. Idle CPU between traverses stays at
+      0.
+  - Tooltip: a `TOOLTIPS_CLASSW` window owned by the settings window, with
+    one tool on the title (`TTF_IDISHWND | TTF_SUBCLASS`). Its text is the
+    full name while it does not fit and empty otherwise, since an empty text
+    shows no tip. Update it with `TTM_UPDATETIPTEXTW`. Follow
+    `win32/info_tip.rs` for creating it, without its tracking. Theme it for
+    dark mode in `set_dark`: `theme_controls` visits child windows only, and
+    the tooltip is not one.
+  - S12's name edit (`header::on_title_command`) hides the title while it
+    is open: stop the scroll then, and restart it when the edit closes
+    (`header::close_rename`).
+  - Tests, pure, in `header.rs` or `title_scroll.rs`: when to restart (text,
+    width, or DPI changed) and when to scroll (overflow, and the system
+    switch).
+  - `CONTEXT.md` section 6, the settings window: a long name scrolls and has
+    a tooltip.
+  - Senior review: the owner draw, the frame-clock subscription, and the
+    tooltip are `unsafe` Win32.
+  - **[needs human]** check, at 100 % and 150 %, in light and dark: give a
+    space a name about three times the header's width. On its page the name
+    pauses, scrolls smoothly to its end, pauses, and scrolls back,
+    repeating. Hovering it shows the full name. A short name neither moves
+    nor shows a tip. Rename the space from the desktop while its page is
+    open: the scroll restarts. Move the window to a monitor with another
+    DPI: the scroll restarts. Minimize and restore: it stops, then starts.
+    With "Animation effects" off, the name ends in "…" and still shows its
+    tip. Task Manager shows no busy "frame clock" thread during the pauses.

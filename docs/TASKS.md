@@ -110,7 +110,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | An animation effect | `deskspace-core/src/animation.rs` (the tables), `deskspace-platform/src/render/transition.rs` (frame math), `render/d2d/` (drawing), `win32/space_animation.rs` (playing it on a window), `win32/overlay.rs` (windows beside the space); the recipe is section T |
 | Drawing | `deskspace-platform/src/render/scene.rs`, `render/d2d/` (`mod.rs` the `Painter`, `effects.rs` an animation's resources, `prepared.rs` the `PreparedScene`, `drag_image.rs` the drag image) |
 | The zoom pop-up window and its layout | `deskspace-platform/src/win32/zoom_bar.rs`, `render/zoom_bar.rs`, `render/d2d/zoom_bar.rs` |
-| Settings window controls | `deskspace-platform/src/win32/settings_window/` (`mod.rs`, `build.rs`, `field.rs`, `update.rs`, `nav.rs`, `paint.rs`, `commands.rs`, `preview.rs`, `cards.rs`, `header.rs` the line above the page, `scroll.rs` a page taller than the window); the card grouping is `deskspace-platform/src/settings_cards.rs` |
+| Settings window controls | `deskspace-platform/src/win32/settings_window/` (`mod.rs`, `build.rs`, `field.rs`, `update.rs`, `nav.rs`, `paint.rs`, `commands.rs`, `preview.rs`, `cards.rs`, `header.rs` the line above the page, `title.rs` the title's scroll, `scroll.rs` a page taller than the window); the title's pure motion is `deskspace-platform/src/title_scroll.rs`; the card grouping is `deskspace-platform/src/settings_cards.rs` |
 | The debug window (`--debug`) | `deskspace-platform/src/win32/debug_window/` (`mod.rs`, `build.rs`, `layout.rs`, `pages.rs`, `console.rs`); the console's pure model in `deskspace-platform/src/debug_console.rs`; the log capture in `deskspace-app/src/debug_log.rs`; the panel and actions in `deskspace-app/src/app/debug/` |
 | The color picker popup | `deskspace-platform/src/win32/color_picker/` (`mod.rs` the window, `state.rs` its input, `format.rs` the value box's text, `draw.rs` the settings swatch), `render/color_picker.rs` (layout), `render/d2d/color_picker/` (`mod.rs` the painter, whose ignored `render_preview` test writes PNGs; `pen.rs` its drawing kit) |
 | Shell: open, item menu, drag out | `deskspace-platform/src/win32/shell_items.rs` |
@@ -769,79 +769,6 @@ These tasks are written for juniors and interns. G1, G4, G6, and G7 touch no
 `unsafe` code. The others cross the junior line in section P, so each one
 says why and names what a senior reviews. Unless a task says
 otherwise, a name in `code` that does not exist yet is one the task creates.
-
-- [ ] **G7. The scrolling title's motion (platform, pure).** Lands in the
-  same commit as G8, its first caller, as G1 does with G3. "Marquee" in
-  this codebase means the selection box (`MARQUEE_COLOR`), so call this the
-  scrolling title.
-  - A new `deskspace-platform/src/title_scroll.rs`: `pub struct TitleScroll
-    { overflow: f32, travel: Duration }`, built by `new(text_width,
-    box_width, scale)`. `overflow` is the part of the text that does not
-    fit, in pixels, and is never below 0. One traverse lasts `overflow` at
-    `TITLE_SCROLL_SPEED`, 30 px per second at 96 DPI times `scale`, and
-    never less than 400 ms.
-  - The motion repeats every `2 × (TITLE_SCROLL_PAUSE + travel)`, with the
-    pause at 1500 ms. It pauses at the start, eases to `overflow` with
-    `smoothstep`, pauses at the end, and eases back.
-  - Methods: `offset(elapsed) -> f32`; `is_moving(elapsed) -> bool`; and
-    `next_move(elapsed) -> Option<Duration>`, which during a pause gives
-    the time left until the next traverse, so G8 can set a timer instead of
-    taking frames.
-  - Tests: no overflow means no motion (offset 0, `next_move` is `None`).
-    The offset is 0 through the first pause, reaches `overflow` at the end
-    of the first traverse, holds through the second pause, and is back at 0
-    after one period. It never leaves 0..overflow. The travel scales with
-    DPI and has its floor. `next_move` counts down during each pause.
-
-- [ ] **G8. Scroll a long name in the header, with a tooltip (platform).**
-  **[needs human]** Includes G7; one commit, `(G7, G8)`. It does not wait
-  for S11 or S12; see the section's introduction for `header.rs`.
-  - The header title becomes an owner-drawn static (`SS_OWNERDRAW |
-    SS_NOTIFY`), drawn in `header.rs`. It is drawn with the heading font and
-    the text color on the body color, clipped to the control, at x =
-    −offset.
-  - Measure the title (`DT_CALCRECT | DT_SINGLELINE`, heading font) whenever
-    its text, its width, or the DPI changes. Then make a fresh `TitleScroll`
-    and restart from offset 0.
-  - It scrolls only while the system's "Animation effects" is on: read
-    `system_animations()` (`win32/system.rs`) when measuring. While it is off, a name that does not fit ends in
-    `DT_END_ELLIPSIS` and does not move.
-  - Frames come from `frame_clock` only while a traverse runs.
-    - The settings window holds a `Subscription` and handles
-      `messages::FRAME` in its procedure: `delivered`, then invalidate the
-      title (no erase).
-    - When a traverse ends, drop the subscription and set a timer for
-      `next_move`. The timer's id goes beside the window's other ids in
-      `settings_window/mod.rs`.
-    - Minimizing stops both, and restoring restarts the scroll. Closing the
-      window drops them with its state. Idle CPU between traverses stays at
-      0.
-  - Tooltip: a `TOOLTIPS_CLASSW` window owned by the settings window, with
-    one tool on the title (`TTF_IDISHWND | TTF_SUBCLASS`). Its text is the
-    full name while it does not fit and empty otherwise, since an empty text
-    shows no tip. Update it with `TTM_UPDATETIPTEXTW`. Follow
-    `win32/info_tip.rs` for creating it, without its tracking. Theme it for
-    dark mode in `set_dark`: `theme_controls` visits child windows only, and
-    the tooltip is not one.
-  - S12's name edit (`header::on_title_command`) hides the title while it
-    is open: stop the scroll then, and restart it when the edit closes
-    (`header::close_rename`).
-  - Tests, pure, in `header.rs` or `title_scroll.rs`: when to restart (text,
-    width, or DPI changed) and when to scroll (overflow, and the system
-    switch).
-  - `CONTEXT.md` section 6, the settings window: a long name scrolls and has
-    a tooltip.
-  - Senior review: the owner draw, the frame-clock subscription, and the
-    tooltip are `unsafe` Win32.
-  - **[needs human]** check, at 100 % and 150 %, in light and dark: give a
-    space a name about three times the header's width. On its page the name
-    pauses, scrolls smoothly to its end, pauses, and scrolls back,
-    repeating. Hovering it shows the full name. A short name neither moves
-    nor shows a tip. Rename the space from the desktop while its page is
-    open: the scroll restarts. Move the window to a monitor with another
-    DPI: the scroll restarts. Minimize and restore: it stops, then starts.
-    With "Animation effects" off, the name ends in "…" and still shows its
-    tip. Task Manager shows no busy "frame clock" thread during the pauses.
 
 - [ ] **G9. Tooltips for long names in the scopes pane (platform).**
   **[needs human]** After G8. D26: scope rows do not scroll; a row that ends
@@ -2343,6 +2270,7 @@ for a machine that has it.
 | G1-G3 (D26) | With `--on-top` at 100 % and 150 %: open Settings on a space, then click other spaces in the scopes pane. Each outline fades in quickly, holds about a second, and fades out, with no flash and no outline left behind. Click a second space mid-fade: the first fades out while the second fades in. Fold and unfold a space while it is highlighted, and hide all spaces mid-fade; nothing sticks. With Windows' "Animation effects" off, it switches as before. With no highlight showing, idle CPU is as before. |
 | G4, G5 (D26) | In light and dark at 100 % and 150 %, on every page of Global, a space, and a lens: each heading's fields sit on one rounded card with hairlines between rows. Labels, check boxes, sliders and their marks, swatches, text boxes, and drop-downs show the card's color behind them, with no body-colored boxes. Notes under a field are grey and sit close under it. Disabled rows still grey out. Switching dark mode while the window is open repaints the cards. Tab order is as before. |
 | G6 (D26) | Appearance shows Material, Border, Shadow, and Items in that order; Colors shows Colors, Border, Selection, and Themes; General shows Startup, Desktop, Look, Space icons, and Updates; New spaces opens with "Everything not set here follows the Global appearance and layout." and its locked-space note sits under "Start new spaces locked". The materials note sits under "Background material". Every setting still previews, applies, and cancels as before. |
+| G7, G8 (D26) | At 100 % and 150 %, in light and dark: give a space a name about three times the header's width. On its page the name pauses, scrolls smoothly to its end, pauses, and scrolls back, repeating. Hovering it shows the full name. A short name neither moves nor shows a tip. Rename the space from the desktop while its page is open: the scroll restarts. Move the window to a monitor with another DPI: the scroll restarts. Minimize and restore: it stops, then starts. With "Animation effects" off, the name ends in "…" and still shows its tip. Task Manager shows no busy "frame clock" thread during the pauses. |
 | Page switching | In dark and light, at 100 % and 150 %: click through every page of Global and of a space, by mouse and with the arrow keys. Each page appears in one step, with no blank frame or flash of the window body and no card drawn before its controls; a page taller than the window still starts at its top. With `--debug`, the console shows a "settings: switched page" line per switch; note its elapsed_us before and after this change if you can. Open a space's Shortcuts page, switch away before its icons load, then back: the icons are there. Edit a field, switch pages, then Cancel and OK: both still work, and Settings reopens on the last page. |
 | S12 (D16, D26) | On a space's page, at 100 % and 150 %, in light and dark: double-click the name: an edit opens over it with the name selected. Type, then Enter: the top line, the scopes pane, and the space on the desktop show the new name, and the window stays open. Esc in the edit keeps the old name and the window open, and neither key presses OK or Cancel. Click elsewhere in the window, or press OK, while editing: the typed name is kept. Clearing a lens's name puts its default title back. Double-click the icon, once with the edit closed and once with it open: the picker opens over the settings window each time, an open edit stays open behind it and has the focus again afterwards, and a choice shows at once on the top line, in the scopes pane, and on the desktop. While the picker is open, typing goes only to the picker, and after it closes other apps get their keys (nothing stays captured). A single click on the icon does nothing; the cursor over it is a hand and its tooltip says "Double-click to change the icon", dark in dark mode. A space with no icon: double-click the +, pick one, and it replaces the +. With an icon set still downloading, the picker opens once it arrives, while the page shows. Cancel afterwards keeps both changes, and Ctrl+Z undoes the rename. Global's top line does not edit and has no icon. |
 | S11 (D16, D26) | In light and dark, at 100 % and 150 %: a space with an icon shows it in the scopes pane in place of its kind's symbol (decided 2026-11-05: the icon replaces the symbol), and on its page's top line left of its name, aligned with the text. A space without an icon keeps its kind's symbol in the scopes pane, laid out as before, and shows an outlined + on the top line. A dimmed scope's icon is dimmed. The top-line icon takes no click yet (S12). Global's top line has no icon and its title has not moved. Change a space's icon from the desktop while Settings is open: both places follow; an icon set that finishes downloading while Settings is open fills in. Switch dark mode: the icons redraw in the new text color. |
