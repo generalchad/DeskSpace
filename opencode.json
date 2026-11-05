@@ -1,0 +1,10 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "rust": {
+      "type": "local",
+      "command": ["rust-mcp-server"],
+      "enabled": true
+    }
+  }
+}

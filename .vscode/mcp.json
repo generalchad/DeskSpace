@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "rust": {
+      "type": "stdio",
+      "command": "rust-mcp-server",
+      "args": ["--workspace", "${workspaceFolder}"]
+    }
+  }
+}

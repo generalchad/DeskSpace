@@ -11,8 +11,20 @@ Anything below that deletes or overwrites state falls under Directive 1 in
 
 ## 1. Agent tooling
 
-A bundled `rust` MCP server exposes the cargo workflow as tools. Prefer them
-over a raw shell, so the same flags (including `--locked`) apply everywhere.
+The `rust` MCP server,
+[rust-mcp-server](https://github.com/Vaiz/rust-mcp-server), exposes the cargo
+workflow as tools. Install it once with
+`cargo install rust-mcp-server --locked`. The repository starts it as `rust`
+for each agent client: `.mcp.json` for Claude Code, `opencode.json` for
+OpenCode, and `.vscode/mcp.json` for Copilot in VS Code. Each client asks once
+before it trusts a project's server. Prefer its tools over a raw shell while
+it runs; without it, run the same cargo commands in a shell.
+
+Either way, `Cargo.lock` changes only in a task that adds or updates a
+dependency. In a shell, pass `--locked` to `cargo build`, `test`, and
+`clippy`. A server tool with a `locking_mode` input takes the value that
+means `--locked`; whether it locks when the input is left out is not yet
+checked (`TASKS.md`, Found while working).
 
 | Tool | Covers |
 |------|--------|
@@ -28,10 +40,11 @@ over a raw shell, so the same flags (including `--locked`) apply everywhere.
 | `rustc-explain`, `rustup-show`, `rustup-update` | error codes and toolchains |
 
 Other cargo subcommands (`clean`, `update`, `package`, `expand`, `hack`,
-`insta`, ...) appear as their own tools when a task needs them; install a
-missing one with its helper (`cargo-deny-install`, `cargo-hack-install`,
-`cargo-machete-install`). Because these tools pass `--locked`, keep
-`Cargo.lock` current when adding or updating dependencies. Release work
+`insta`, ...) are tools too; install a missing one with its helper
+(`cargo-deny-install`, `cargo-hack-install`, `cargo-machete-install`).
+`cargo-update` rewrites `Cargo.lock` and `cargo-clean` deletes `target/`, so
+use them only when a task asks for that. Keep `Cargo.lock` current when
+adding or updating dependencies. Release work
 (`RELEASING.md`; `TASKS.md` R10-R13) also uses `gh`, `actionlint`, and
 `cargo-packager` (the NSIS installer, installed with `cargo install`).
 

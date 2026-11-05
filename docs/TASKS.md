@@ -2583,5 +2583,10 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
 - `settings_window/header.rs` (S11, S12, D26): the header's icon and name
   open only on a double-click, with no keyboard path to the picker or the
   rename; give both one in M7's accessibility work.
+- `docs/TOOLS.md` section 1: whether rust-mcp-server's cargo tools lock
+  `Cargo.lock` when `locking_mode` is left out is unchecked (its README does
+  not say, 2026-11-05). With the server installed, read a tool's input
+  schema or run `cargo-check` and watch for a lock change, then state the
+  answer there.
 - `TASKS.md` "Pick a task": it still offers G1, G2, G4, G6, and G7, which
   section G says are done; refresh the list against the open tasks.

@@ -50,7 +50,9 @@ remove. When unsure, it is destructive.
 
 ## Tooling
 
-`docs/TOOLS.md` lists the agent tools (the bundled `rust` MCP server, which
-passes `--locked`), the scripts, the app's own diagnostics, and the recipes
-for finding a hang or a missed shutdown. Prefer the MCP tools over a raw
-shell. Keep `Cargo.lock` current when adding or updating dependencies.
+`docs/TOOLS.md` lists the agent tools (the `rust` MCP server, which the
+repository's MCP configs start once `rust-mcp-server` is installed), the
+scripts, the app's own diagnostics, and the recipes for finding a hang or a
+missed shutdown. Prefer the MCP tools over a raw shell; without them, pass
+`--locked` to cargo yourself. Keep `Cargo.lock` current when adding or
+updating dependencies.
