@@ -754,21 +754,20 @@ Read D26 first; it is the spec. There are three strands, and each can run
 alongside the others:
 
 - the highlight fades: done (G1-G3);
-- cards: G4 with G5, then G6;
-- long names in a space's header: G7 with G8, then G9.
+- cards: done (G4-G6);
+- long names: done (G7, G8); G9 remains.
 
-G1, G4, and G7 are pure code that only their partner task calls, so each
-lands in its partner's commit. A junior can write and test the pure half
-first, and a second person can take the Win32 half on the same branch.
+G1, G4, and G7 were pure code that only their partner task called, so each
+landed in its partner's commit. A junior could write and test the pure half
+first, and a second person could take the Win32 half on the same branch.
 
 The header's icon and inline rename landed as S11 and S12 (archived), in
-`settings_window/header.rs`, where G8 finds `build_header`, `apply_header`,
-the title static, and the icon slot's tooltip to add its own tool to.
+`settings_window/header.rs`; G8's scrolling title is in
+`settings_window/title.rs`.
 
-These tasks are written for juniors and interns. G1, G4, G6, and G7 touch no
-`unsafe` code. The others cross the junior line in section P, so each one
-says why and names what a senior reviews. Unless a task says
-otherwise, a name in `code` that does not exist yet is one the task creates.
+G9 crosses the junior line in section P, so it says why and names what a
+senior reviews. Unless a task says otherwise, a name in `code` that does not
+exist yet is one the task creates.
 
 - [ ] **G9. Tooltips for long names in the scopes pane (platform).**
   **[needs human]** After G8. D26: scope rows do not scroll; a row that ends
@@ -2270,7 +2269,6 @@ for a machine that has it.
 | G1-G3 (D26) | With `--on-top` at 100 % and 150 %: open Settings on a space, then click other spaces in the scopes pane. Each outline fades in quickly, holds about a second, and fades out, with no flash and no outline left behind. Click a second space mid-fade: the first fades out while the second fades in. Fold and unfold a space while it is highlighted, and hide all spaces mid-fade; nothing sticks. With Windows' "Animation effects" off, it switches as before. With no highlight showing, idle CPU is as before. |
 | G4, G5 (D26) | In light and dark at 100 % and 150 %, on every page of Global, a space, and a lens: each heading's fields sit on one rounded card with hairlines between rows. Labels, check boxes, sliders and their marks, swatches, text boxes, and drop-downs show the card's color behind them, with no body-colored boxes. Notes under a field are grey and sit close under it. Disabled rows still grey out. Switching dark mode while the window is open repaints the cards. Tab order is as before. |
 | G6 (D26) | Appearance shows Material, Border, Shadow, and Items in that order; Colors shows Colors, Border, Selection, and Themes; General shows Startup, Desktop, Look, Space icons, and Updates; New spaces opens with "Everything not set here follows the Global appearance and layout." and its locked-space note sits under "Start new spaces locked". The materials note sits under "Background material". Every setting still previews, applies, and cancels as before. |
-| G7, G8 (D26) | At 100 % and 150 %, in light and dark: give a space a name about three times the header's width. On its page the name pauses, scrolls smoothly to its end, pauses, and scrolls back, repeating. Hovering it shows the full name. A short name neither moves nor shows a tip. Rename the space from the desktop while its page is open: the scroll restarts. Move the window to a monitor with another DPI: the scroll restarts. Minimize and restore: it stops, then starts. With "Animation effects" off, the name ends in "…" and still shows its tip. Task Manager shows no busy "frame clock" thread during the pauses. |
 | Page switching | In dark and light, at 100 % and 150 %: click through every page of Global and of a space, by mouse and with the arrow keys. Each page appears in one step, with no blank frame or flash of the window body and no card drawn before its controls; a page taller than the window still starts at its top. With `--debug`, the console shows a "settings: switched page" line per switch; note its elapsed_us before and after this change if you can. Open a space's Shortcuts page, switch away before its icons load, then back: the icons are there. Edit a field, switch pages, then Cancel and OK: both still work, and Settings reopens on the last page. |
 | S12 (D16, D26) | On a space's page, at 100 % and 150 %, in light and dark: double-click the name: an edit opens over it with the name selected. Type, then Enter: the top line, the scopes pane, and the space on the desktop show the new name, and the window stays open. Esc in the edit keeps the old name and the window open, and neither key presses OK or Cancel. Click elsewhere in the window, or press OK, while editing: the typed name is kept. Clearing a lens's name puts its default title back. Double-click the icon, once with the edit closed and once with it open: the picker opens over the settings window each time, an open edit stays open behind it and has the focus again afterwards, and a choice shows at once on the top line, in the scopes pane, and on the desktop. While the picker is open, typing goes only to the picker, and after it closes other apps get their keys (nothing stays captured). A single click on the icon does nothing; the cursor over it is a hand and its tooltip says "Double-click to change the icon", dark in dark mode. A space with no icon: double-click the +, pick one, and it replaces the +. With an icon set still downloading, the picker opens once it arrives, while the page shows. Cancel afterwards keeps both changes, and Ctrl+Z undoes the rename. Global's top line does not edit and has no icon. |
 | S11 (D16, D26) | In light and dark, at 100 % and 150 %: a space with an icon shows it in the scopes pane in place of its kind's symbol (decided 2026-11-05: the icon replaces the symbol), and on its page's top line left of its name, aligned with the text. A space without an icon keeps its kind's symbol in the scopes pane, laid out as before, and shows an outlined + on the top line. A dimmed scope's icon is dimmed. The top-line icon takes no click yet (S12). Global's top line has no icon and its title has not moved. Change a space's icon from the desktop while Settings is open: both places follow; an icon set that finishes downloading while Settings is open fills in. Switch dark mode: the icons redraw in the new text color. |

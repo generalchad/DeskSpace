@@ -597,3 +597,12 @@ once; Show hidden files applied at once; a normal space's Sort by looked
 the same and sorted once. After a restart the lens came back sorted by
 Type, descending, folders first, with hidden files shown, and the saved
 config held the same values.
+
+### 2026-11-05: G7, G8, the scrolling settings header
+
+The maintainer reported the section V row passing in full, so the row is
+gone: a long name pauses, scrolls to its end, pauses, and returns;
+hovering shows the full name; a short name neither moves nor tips;
+renaming, a DPI move, and minimize/restore stop or restart it as asked;
+with "Animation effects" off it ellipsizes and still tips; and the frame
+clock is idle during the pauses.
