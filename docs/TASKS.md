@@ -15,6 +15,8 @@ its section.
 are collected in section V instead of blocking:
 - section P's "Juniors and interns" list, the best place for a first task,
   ranked most severe first, so take one from the top;
+- section B's icon picker tasks, in order: B45 (log lines) and B46 (pure
+  core) first;
 - section G (settings window polish): G2, G6, or the pure half of G1, G4,
   or G7 to start;
 - section K (K10-K16), each a pure move with rules that leave nothing to
@@ -239,10 +241,10 @@ matching on `Surface` at the call site.
 
 ## B. Code health (any contributor)
 
-All B tasks are archived (`archive/TASKS-done.md`). A new one is a
-behavior-preserving refactor: the test count only grows, and no user-visible
-change is expected. The recent exceptions were B32-B36 (performance and
-correctness) and B39-B43 (the lens-performance costs left by B33/B37).
+A B task is a behavior-preserving refactor: the test count only grows, and no
+user-visible change is expected. The exceptions are performance work: B32-B36,
+B39-B43 (the lens-performance costs left by B33/B37), and B44-B50 below.
+Finished ones are in `archive/TASKS-done.md`.
 
 Not listed here on purpose: `settings/pages.rs` `look_pages` (278 lines),
 `settings/apply.rs` `apply_field` (197) and `apply_look_field` (136), and
@@ -251,6 +253,141 @@ because a field is wired in three places, and R14 (table-driven settings
 fields) removes that cause; splitting them first would be undone by R14. They
 grow with every new option (`look_pages` was about 205 lines in October), so
 R14a's decision is what stops the growth.
+
+### The icon picker and other long lists (B44-B50)
+
+The icon picker froze for seconds on opening and on every search keystroke
+(found 2026-11-05). Measured in a release build, a glyph cost about 55 ms to
+draw, because each one made a new Direct3D device. B44 (archived) keeps one
+device context, and a glyph now costs about 0.33 ms. A picker page of about
+100 cells is still about 35 ms, over the 8 ms the UI thread may spend
+(section W, "Performance"). These tasks take the rest, in order.
+
+Rules for every task here:
+
+1. **Measure before and after**, in a release build
+   (`cargo test --release` or `./scripts/dev.ps1 -Release`), and put both
+   numbers with the date in the commit body. To time pure code, write a
+   throwaway `#[ignore]` test, run it with `-- --ignored --nocapture`, and
+   delete it before you commit. The real Fluent set is
+   `%TEMP%\deskspace-dev\icons\fluent-r1.json` once a `dev.ps1` run has
+   downloaded it; parse it with `serde_json::from_slice::<IconSet>`. Never
+   commit a test that asserts a time: CI machines vary.
+2. **Same results.** A faster path returns what the slow one did, in the same
+   order; the existing tests are the spec, and none is deleted or loosened.
+3. **The picker's Win32 code is `unsafe`.** B45, B47, and B48 change
+   `win32/icon_picker.rs` but no `unsafe` block's reasoning. Keep every
+   `with_state` borrow as short as it is now (no Win32 call inside one), and
+   keep each `// SAFETY:` comment true. A senior reviews B47 and B48.
+
+- [ ] **B45. Log how long the pickers take (platform).** Any contributor;
+  it adds log lines only.
+  - Why: the tasks after it need numbers from a real screen, and the next
+    slowdown should show in a `-v` log without a debugger.
+  - Copy `settings: switched page` in `win32/settings_window/nav.rs`: an
+    `Instant` before, and `tracing::debug!` with `elapsed_us` after. Add:
+    - `icon picker: opened`, timed from the top of `pick_icon` to just
+      before `dialog::run_modal`, with the number of cells;
+    - `icon picker: searched`, timed around the work in `fill_list`, with
+      the number of cells found;
+    - `icon picker: drew icons`, logged once when the picker closes (in
+      `pick_icon`, after the modal loop), with how many icons
+      `on_display_info` drew and their total time. Keep the two running
+      totals in `PickerState`.
+    - `app picker: filled`, timed around `fill_list` in
+      `win32/app_picker.rs`, with the row count.
+  - `debug`, never `info` (`ENGINEERING.md` section 3: noisy paths).
+  - Done when: the gates pass and a `./scripts/dev.ps1 -Release -Verbosity 1`
+    run shows each line. Say in the commit body that you saw them, or that a
+    person must.
+
+- [ ] **B46. Build the picker's search index once (core).** Pure; any
+  contributor.
+  - Why: `icon_match::search` rebuilds every icon's name parts on each call,
+    sorting and resolving names through two `BTreeMap`s, and looks up the
+    curated words once per icon and per query word, though their answer
+    depends only on the word. It costs about 3 ms per keystroke on the
+    2,887-icon Fluent set in a release build (2026-11-05), and much more in
+    the debug builds `dev.ps1` makes.
+  - In `deskspace-core/src/icon_match.rs`, add `pub struct SearchIndex<'a>`:
+    the set's icons in alphabetical order, each with the hyphen-separated
+    parts of its own name and its aliases' names (what the loop at the top of
+    `search` builds today), and the set and the `words` table it was built
+    from. `SearchIndex::new(set, words)` builds it;
+    `SearchIndex::search(&self, query) -> Vec<&'a str>` answers a query.
+  - In `SearchIndex::search`, call `curated(word, ..)` once per query word,
+    before the loop over icons, and compare each icon with those answers.
+  - Delete the free function `search`, and point its tests at
+    `SearchIndex::new(&set, &words).search(..)`; every assertion stays as it
+    is. The compiler then shows `win32/icon_picker.rs` as the one caller:
+    make it build the index on each call for now (B47 keeps it).
+  - Tests: the existing `search_*` tests, unchanged in what they assert, and
+    one that searches one index twice with different queries.
+  - Done when: the gates pass, and the commit body has the release time of
+    `""`, `"a"`, and `"arrow l"` on the real set, before and after.
+
+- [ ] **B47. Keep the search index while the picker is open (platform).**
+  After: B46. Senior review (rule 3).
+  - Why: after B46, the picker still builds the index on every keystroke.
+  - `PickerSpec` (`win32/icon_picker.rs`) gets `index: Option<SearchIndex<'a>>`,
+    built in `PickerSpec::of` when the set is loaded. `PickerSpec::cells`
+    queries it. Switching sets in the dropdown then costs nothing to build.
+  - Tests: `PickerSpec::cells` with a small set from
+    `deskspace_core::icon_set` (build one by hand, as the `icon_match` tests
+    do) gives the same names `SearchIndex::search` gives.
+  - **[needs human]** check: type "arrow", one letter at a time, then delete
+    it: the grid follows each key; switch sets if there are two.
+
+- [ ] **B48. Draw each icon once while the picker is open (platform).**
+  After: B45. Senior review (rule 3).
+  - Why: a `Cell` holds its own image index (`Cell.image`), and a search
+    makes new cells, so every search draws its icons again and adds each one
+    to the image list again. The list only grows while the window is open.
+  - Replace `Cell.image` with `images: HashMap<String, i32>` on
+    `PickerState`, keyed by `<prefix>:<name>` (the key `on_display_info`
+    already makes), so an icon drawn once is never drawn or added again,
+    in any search or set. Remove `image` from `Cell` and its tests.
+  - `on_display_info` looks the key up first and draws only on a miss,
+    keeping its three short borrows. A failed draw stores `-1`, as now, so it
+    is not retried on every repaint.
+  - Tests: a pure helper that takes the map and a key and says whether to
+    draw, if you find one that reads well; otherwise say in the commit body
+    that the change is covered by the human check.
+  - Measure with B45's "drew icons" line: search "a", clear it, and search
+    "a" again, then close. Before this task the count grows with each
+    search; after it, the second "a" adds nothing.
+  - **[needs human]** check: search "arrow", clear it, and search "arrow"
+    again: the second time the icons are there at once. Every cell shows its
+    own icon, never another's, after switching sets and searching.
+
+- [ ] **B49. Measure the pickers on screen and decide (no code).**
+  **[needs human]** After: B45-B48.
+  - With `./scripts/dev.ps1 -Release -Verbosity 1`: open the icon picker,
+    scroll to the end, search "a", "ar", "arrow", and clear. Then open New
+    shortcut ▸ installed apps, search "mi" and clear. Record the times from
+    each of B45's lines here, with the date and the machine (CPU, display
+    scale).
+  - If the icon picker's first page of draws, or any search, is over 8 ms,
+    B50 is ready; if neither is, delete B50 with the numbers as the reason.
+    Separately, if the app picker's fill is over 8 ms, add a seniors-only
+    task for a virtual (`LVS_OWNERDATA`) app list, which must keep its check
+    boxes working.
+
+- [ ] **B50. Draw the picker's icons off the UI thread (platform; thread).**
+  **Seniors only.** After: B49, and only if it says so.
+  - Design, then bring it to the maintainer. The outline: cells show no image
+    until theirs is drawn; `LVN_ODCACHEHINT` names the rows coming into view;
+    a worker thread, which gets its own `Rasterizer` because B44's is
+    per thread, draws them and posts each finished `Icon` to the picker
+    window; the window adds it to the image list and redraws that row. A
+    search or a set switch bumps a generation, and the worker drops work for
+    an older one, as `icon_queue.rs` drops paths scrolled out of view. The
+    window may close with work in flight: the worker must never post to a
+    destroyed window's state (`ENGINEERING.md` section 6, "Window state",
+    and "Never wait on something only you can complete").
+  - Tests for the pure parts: the request queue and the generation rule.
+  - **[needs human]** check: B48's, and a fast scroll from the top to the end
+    of the grid never stalls.
 
 ## L. Adding items to spaces (ROADMAP F-50, F-53..F-55)
 
@@ -2277,7 +2414,7 @@ for a machine that has it.
 | G10 (D26) | At 100 % and 150 %, in light and dark, on Appearance, Colors, and New spaces (at 150 % on a 1080p screen they are taller than the window): a scrollbar shows while the page does not fit; dragging it, its arrows, the wheel, and PageUp/PageDown/Home/End (with a check box or button focused) reach every group; the cards and hairlines scroll with the controls, with no card or seam left behind; switching pages starts the next page at the top; a short page has no scrollbar; the OK/Cancel/Apply bar is always on screen. Scroll with the pointer passing over drop-downs and sliders: none of them changes, and an open drop-down's list still scrolls itself. With a drop-down, a text box, or a slider focused, PageUp/PageDown/Home/End still work that control as before. |
 | Font pages (F-68) | At 100 % and 150 %, in light and dark: Global lists Spaces and Windows under Fonts; a space's scopes do not. The pane shows Look, Fonts, New items, DeskSpace, and Animations for Global, and Look and This space for a space or lens. Each page has a card per role with Family, Size, and Weight, and both scroll (G10) where the screen is short. Space fonts: give Space title another family, size, and weight; every space's title bar follows at once, and so do Item label, Details (Details, Tiles, Content), Placeholder, and Zoom. Cancel puts every change back; OK or Apply keeps it, and a restart still shows it (the config gains a `[typography.<role>]` table only for changed roles). Window fonts: change Body and Heading 1, press OK, reopen Settings: it uses them, as do the Debug window, the pickers, and the shortcut dialog. Each page's "Reset to defaults" resets only its own roles. Hand-edit a config to a size of 12.5 and a family that is not installed: both drop-downs show those values, and picking another entry shows the right one. With `--debug`, apply a session font in the Debug box, then change the same role in Settings: the Debug override stays in force until "Reset to saved fonts". |
 | G11, G12 (F-68) | With `--debug`, the Typography section lists every role. Scroll the section with the wheel, with the pointer passing over the drop-downs: the page scrolls and no value changes; an open drop-down's list still scrolls itself. Change Body to another family and size: nothing changes until "Apply fonts", which lights up and the status line says there are unapplied changes. Press it: the Debug window takes the new font in place, still on Typography at the same scroll, with no flicker of a closed window; reopen Settings and a picker, and each follows. Arrow through an open family list: nothing applies until Apply fonts. Give Space title another family and apply: every space's title bar follows at once, and so do item labels, Details cells, and placeholders when their roles change; the label-size setting still scales item labels. Choose a size at either end of the list; text stays inside its row and window. "Reset to saved fonts" returns every role to the saved fonts, and the status line says so. Switch Language to the pseudo one: both sample lines gain accents and brackets, and Settings and the Debug window still lay out. |
-| B44 | Release build, scratch config, with the icon set downloaded: F2 on a space and click its icon. The picker opens within about half a second with its first page of icons drawn; scrolling to the end of the grid and back stays smooth; a search draws its results within a moment of each key (the remaining per-key cost is B45-B47). With five or more spaces that have icons, Settings opens with their icons in the scopes pane and header at once. At 150 % the icons are sharp, and after Windows switches between dark and light they redraw in the new color. |
+| B44 | Release build, scratch config, with the icon set downloaded: F2 on a space and click its icon. The picker opens within about half a second with its first page of icons drawn; scrolling to the end of the grid and back stays smooth; a search draws its results within a moment of each key (the remaining per-key cost is B46-B48). With five or more spaces that have icons, Settings opens with their icons in the scopes pane and header at once. At 150 % the icons are sharp, and after Windows switches between dark and light they redraw in the new color. |
 | S9, S10 (D16) | On the desktop at 100 % and 150 %: outside a rename, the icon shows no hand and a click does what the title bar does. F2 on a space, then hover the icon: hand and hover fill. A click opens the picker in front, with the rename still showing behind it. Search "pho", pick an icon, then OK: the icon changes at once, and you can type more of the name and press Enter. Esc in the picker changes nothing. "Automatic" and "No icon" work; a space without an icon shows the placeholder. Clicking in the picker never ends the rename. With downloads declined, the picker opens with the note and its two buttons. |
 | Flames follow | With Startup and Delete set to Burn at 1000 ms (or `--debug` at ¼×), change a space's rect while it burns: move or resize it in Settings and Apply mid-hide, and change the display layout mid-show. The flames stay on the space's burning edge at its new place, never left where it was; a resized space's flames stand on its new edge. No flame window is left after the burn ends. |
 | Frame clock | On a 60 Hz and a 144 Hz display, and on a space moved to a second monitor with another refresh: Roll, Fade, Fly, Bounce, CRT, and Burn on hide and show at 1000 ms are smooth, with no hitch or jump; `--debug` at ⅒× speed is smooth too; hiding during the startup stagger, and the hotkey twice mid-animation, behave as before. With no animation running, Task Manager shows no "frame clock" thread busy and idle CPU is as before. Lock the session mid-animation: it finishes, and the app stays responsive after unlocking. |
@@ -2446,3 +2583,5 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
 - `settings_window/header.rs` (S11, S12, D26): the header's icon and name
   open only on a double-click, with no keyboard path to the picker or the
   rename; give both one in M7's accessibility work.
+- `TASKS.md` "Pick a task": it still offers G1, G2, G4, G6, and G7, which
+  section G says are done; refresh the list against the open tasks.
