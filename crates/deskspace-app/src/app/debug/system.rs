@@ -55,10 +55,11 @@ impl App {
     pub(super) fn hooks_text(&self, ui: &Ui) -> String {
         let hooks = ui.hook_state();
         format!(
-            "Editing: {}\nWatch selection: {}\nWatch space keys: {}\nOutside clicks: {}",
+            "Editing: {}\nWatch selection: {}\nWatch space keys: {}\nWatch back keys: {}\nOutside clicks: {}",
             on_off(hooks.editing),
             on_off(hooks.watch_selection),
             on_off(hooks.watch_paste),
+            on_off(hooks.watch_back),
             on_off(hooks.outside_clicks),
         )
     }

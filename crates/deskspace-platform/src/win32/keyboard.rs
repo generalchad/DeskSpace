@@ -121,10 +121,16 @@ thread_local! {
     static MENU_OPEN: Cell<bool> = const { Cell::new(false) };
 }
 
-/// The hook's flags now: editing, watching a selection, and watching a
-/// current space (`WATCH_PASTE`), for the debug window.
-pub(crate) fn flags() -> (bool, bool, bool) {
-    (EDITING.get(), WATCH_SELECTION.get(), WATCH_PASTE.get())
+/// The hook's flags now: editing, watching a selection, watching a current
+/// space (`WATCH_PASTE`), and watching the Back keys (`WATCH_BACK`), for the
+/// debug window.
+pub(crate) fn flags() -> (bool, bool, bool, bool) {
+    (
+        EDITING.get(),
+        WATCH_SELECTION.get(),
+        WATCH_PASTE.get(),
+        WATCH_BACK.get(),
+    )
 }
 
 /// Marks a popup menu as open, so the hook stops consuming keys (Esc, Enter,
@@ -195,6 +201,7 @@ pub(crate) fn stop() {
     EDITING.set(false);
     WATCH_SELECTION.set(false);
     WATCH_PASTE.set(false);
+    WATCH_BACK.set(false);
 }
 
 /// Whether the desktop shell (Progman or the wallpaper WorkerW), or the
@@ -1092,5 +1099,18 @@ mod tests {
         );
         assert_eq!(classify(VK_RETURN.0 as u32, false), Some((KIND_COMMIT, 0)));
         assert_eq!(classify(VK_ESCAPE.0 as u32, false), Some((KIND_CANCEL, 0)));
+    }
+
+    #[test]
+    fn stopping_clears_every_watch_flag() {
+        EDITING.set(true);
+        WATCH_SELECTION.set(true);
+        WATCH_PASTE.set(true);
+        WATCH_BACK.set(true);
+        stop();
+        assert!(!EDITING.get());
+        assert!(!WATCH_SELECTION.get());
+        assert!(!WATCH_PASTE.get());
+        assert!(!WATCH_BACK.get());
     }
 }

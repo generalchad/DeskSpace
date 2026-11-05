@@ -63,16 +63,19 @@ pub struct HookState {
     pub watch_selection: bool,
     /// Watching the space keys while a space is current.
     pub watch_paste: bool,
+    /// Watching the Back keys while a lens is shown below its own folder.
+    pub watch_back: bool,
     /// Watching for clicks outside every space.
     pub outside_clicks: bool,
 }
 
 pub(crate) fn hook_state() -> HookState {
-    let (editing, watch_selection, watch_paste) = crate::win32::keyboard::flags();
+    let (editing, watch_selection, watch_paste, watch_back) = crate::win32::keyboard::flags();
     HookState {
         editing,
         watch_selection,
         watch_paste,
+        watch_back,
         outside_clicks: crate::win32::outside_click::is_watching(),
     }
 }

@@ -1771,19 +1771,6 @@ A rare loss of a user's file, memory that only grows, a broken install's shell e
 
 Logs, tooling, readability, docs, and checks that may close a task.
 
-- [ ] **P29. Let the hook's `stop` clear `WATCH_BACK` too (fix).** In
-  `win32/keyboard.rs`, the comment on `WATCH_BACK` says `stop` clears it, but `stop`
-  clears only the other three flags. `flags()`, which the debug window reads, leaves
-  it out too. No key reads it without another flag set, so nothing misbehaves today,
-  but the next reader will trust the comment.
-  - `stop` clears it. `flags()` returns it as a fourth value, `HookState`
-    (`win32/debug_info.rs`) gains `watch_back`, and the debug window shows it beside
-    `watch_paste` (`app/debug/system.rs`).
-  - Test in `keyboard.rs`: set every flag directly, call `stop`, and check all are
-    clear. The test installs no hook, so `stop` makes no Win32 call.
-  - This is in the hook's module, which juniors otherwise leave alone. It changes no
-    hook call, so any senior can review it.
-
 - [ ] **P41. Rename script variables that shadow PowerShell's own (scripts).**
   PowerShell sets `$switch` inside a `switch` statement and keeps its error list in
   `$Error`; names are not case sensitive. `scripts/dev.ps1` assigns `$switch` in its
