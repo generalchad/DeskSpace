@@ -6,7 +6,7 @@ use super::nav::{NavRow, entry_row, nav_rows};
 use super::update::{apply_enabled, apply_header};
 use super::*;
 use crate::win32::dialog::{self, ControlSpec};
-use crate::win32::system::message_logfont;
+use crate::win32::system::{draw_text, message_logfont};
 use windows::Win32::Graphics::Gdi::CreateFontIndirectW;
 
 /// Converts 96-DPI layout units to pixels at `dpi`.
@@ -214,7 +214,6 @@ impl Builder {
         labels
     }
     pub(super) unsafe fn text_height(&self, parent: HWND, text: &str, width: i32) -> i32 {
-        let mut buffer: Vec<u16> = text.encode_utf16().collect();
         let mut bounds = RECT {
             left: 0,
             top: 0,
@@ -225,9 +224,9 @@ impl Builder {
         unsafe {
             let dc: HDC = GetDC(Some(parent));
             let previous = SelectObject(dc, HGDIOBJ(self.font.0));
-            DrawTextW(
+            draw_text(
                 dc,
-                &mut buffer,
+                text,
                 &mut bounds,
                 DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX,
             );

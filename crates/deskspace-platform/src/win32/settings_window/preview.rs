@@ -757,12 +757,11 @@ unsafe fn draw_text(
     color: Color,
     format: windows::Win32::Graphics::Gdi::DRAW_TEXT_FORMAT,
 ) {
-    let mut wide: Vec<u16> = text.encode_utf16().collect();
     // SAFETY: the font is selected back out after drawing.
     unsafe {
         SetTextColor(dc, colorref(color));
         let previous = SelectObject(dc, HGDIOBJ(font.0));
-        DrawTextW(dc, &mut wide, &mut rect, format | DT_NOPREFIX);
+        crate::win32::system::draw_text(dc, text, &mut rect, format | DT_NOPREFIX);
         SelectObject(dc, previous);
     }
 }

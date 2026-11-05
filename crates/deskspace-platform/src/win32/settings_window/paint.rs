@@ -5,6 +5,7 @@ use super::build::scaled;
 use super::commands::{colorref, window_text};
 use super::nav::NavRow;
 use super::*;
+use crate::win32::system::draw_text;
 use deskspace_core::geometry::Rect;
 
 /// Paints one row of the scopes pane like a rail entry: an accent bar when
@@ -80,13 +81,12 @@ pub(super) unsafe fn on_draw_scope(window: HWND, item: &DRAWITEMSTRUCT) {
             }
         }
         SetTextColor(item.hDC, colorref(text));
-        let mut label: Vec<u16> = row.label.encode_utf16().collect();
         let mut rect = item.rcItem;
         rect.left = left;
         rect.right -= scaled(12, dpi);
-        DrawTextW(
+        draw_text(
             item.hDC,
-            &mut label,
+            &row.label,
             &mut rect,
             DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX,
         );
@@ -147,13 +147,12 @@ pub(super) unsafe fn on_draw_item(window: HWND, item: &DRAWITEMSTRUCT) {
         SetBkMode(item.hDC, TRANSPARENT);
         SetTextColor(item.hDC, colorref(text));
         let previous = SelectObject(item.hDC, HGDIOBJ(row_font.0));
-        let mut label: Vec<u16> = row.label().encode_utf16().collect();
         let mut rect = item.rcItem;
         rect.left += inset + indent;
         rect.right -= inset;
-        DrawTextW(
+        draw_text(
             item.hDC,
-            &mut label,
+            row.label(),
             &mut rect,
             DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX,
         );
@@ -268,11 +267,10 @@ pub(super) unsafe fn on_draw_header_button(window: HWND, item: &DRAWITEMSTRUCT) 
         };
         SetTextColor(item.hDC, colorref(text));
         let previous = SelectObject(item.hDC, HGDIOBJ(font.0));
-        let mut wide: Vec<u16> = label.encode_utf16().collect();
         let mut rect = item.rcItem;
-        DrawTextW(
+        draw_text(
             item.hDC,
-            &mut wide,
+            &label,
             &mut rect,
             DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
         );

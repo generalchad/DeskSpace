@@ -2546,6 +2546,7 @@ for a machine that has it.
 | P21 | In a debug build with `--debug` open, preview Bounce repeatedly on a space: the animation stays smooth (no hitch once a second), and the debug panel updates again once it stops. |
 | P10 | U5's and U7's rows still pass: undo and redo of deletes, pastes, moves, and renames behave as before. The rollback itself is test-carried, because the gap between the check and the failing step is too short to hit by hand. |
 | C10c (F-58) | With a scratch config, customize a space's look, then Colors > "Save theme…" and name the file (with or without the suffix). Load it on Global and on another space, once through "Load theme…" and once from the Themes list after closing and reopening Settings: the look, icon spacing, and padding change, and the Dark/Light setting does not. A load on a space that follows Global turns its "Customize this space" switch on. Cancel puts the old look back; Apply keeps it over a restart. With no theme files the Themes list is disabled and says so; a broken or oversized file is reported and changes nothing; saving over an existing theme asks before replacing it. |
+| Settings text | On Windows 11 build 26300 or later, at 100 % and 150 % in light and dark mode: the settings window opens on Global, on a plain space, and on a lens; the rail, scopes, and header labels, the Shortcuts preview's labels, and every button's text draw as before; the lens's Folder note shows its path. |
 
 ## Found while working
 
