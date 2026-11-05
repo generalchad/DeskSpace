@@ -20,6 +20,7 @@ are collected in section V instead of blocking:
 - section G (settings window polish): the pure half of G13;
 - section K (K10-K13, K15, K16, K18), each a pure move with rules that
   leave nothing to design; K18 first, since `undo.rs` is at the limit;
+- section T: T24 (needs nothing now), T41a, and then T42;
 - O4, which needs no code, and O5;
 - anything else not marked **[needs decision]**, "still to design", or in
   section D.
@@ -426,7 +427,7 @@ work per event (section W, "Performance").
   - Collides with T29, which rewrites `paint_tongue`: take B53 first.
 
 - [ ] **B54. Upload only the rows the flames changed (platform; Win32).**
-  After: B53 and T41c. Senior review: `unsafe` Win32.
+  After: B53 and T41b. Senior review: `unsafe` Win32.
   - Why: `UpdateLayeredWindow` copies the whole overlay every frame.
   - Call `UpdateLayeredWindowIndirect` with `prcDirty` set to the union of this
     frame's and the last frame's rows from B53, linked beside the call
@@ -1199,7 +1200,9 @@ same way:
   - Window: an `Overlay::Lamp` variant (`win32/overlay.rs`, and
     `kind_for` gives it to `Effect::MagicLamp`), on `win32/lamp_overlay.rs`:
     a click-through, layered, never-activated window over the space's
-    monitor work area, built as `win32/flame_overlay.rs` is. While Magic
+    monitor work area, on T41b's `LayeredOverlay` (amended 2026-11-05, so
+    the lamp does not copy `win32/flame_overlay.rs`; take T21 after T41b, or
+    stop and ask). While Magic
     lamp plays, the space's own
     window is hidden and the overlay draws each slice from the start
     snapshot, then `UpdateLayeredWindow`. At the end of an in the window
@@ -1252,19 +1255,189 @@ same way:
     either keeps Windows' blur (delete the example) or plans the move
     (new tasks, then delete this one).
 
+### Groundwork, a contact sheet, and smoke (T41-T48)
+
+Planned 2026-11-05. Burn's upgrade (T25-T33 below) waits on groundwork that
+was built on `feat/color-picker-redesign`, 330 commits behind `main`, and
+never ported. The same branch built two kinds of smoke, Burn's plume and a
+Smoke effect of its own, and left both tuned only for the debug window;
+`main` has neither, and D12 does not list them. T41 ports the groundwork,
+T42 lets anyone, an agent included, judge a frame without a screen, and
+T43 asks how smoke comes back.
+
+Rules for these, on top of section T's:
+
+1. **Port, do not copy.** The branch predates the z-order fixes in
+   `main`'s `flame_overlay.rs` (`place_above_owner`, `insert_after`, both
+   2026-10-22) and the overlay extension point in `win32/overlay.rs`. Read
+   the branch's code with `git show
+   origin/feat/color-picker-redesign:<path>`, keep `main`'s design wherever
+   the two differ, and bring over only what the task names. Never merge or
+   cherry-pick the branch.
+2. **Look before the human check.** From T42 on, each task that changes a
+   look writes T42's sheets before and after, and the commit body says what
+   changed in them. The **[needs human]** check still decides.
+
+- [ ] **T41. Port the effect groundwork (platform).** Two parts, one commit
+  each, in order. No visible change, so no section V row; say so in each
+  commit body. The branch's third piece, `Play::seed`, has no reader until
+  T25, so it lands there, with its first caller.
+  - [ ] **T41a (junior). One noise module.** Move `fractal`, `value_noise`,
+    and `lattice_value` from `render/burn.rs` into a new `render/noise.rs`,
+    unchanged, and port the branch's `RisingField` (the bottom-biased field
+    `BurnField::new` builds today) with its tests. `BurnField` then holds a
+    `RisingField`. Before moving anything, pin three of today's field values
+    in a test, so the move provably changes no burn. The branch's
+    `random(seed, index)` waits for its first caller (T28 or T29).
+  - [ ] **T41b (senior review; Win32). One layered window for every overlay.**
+    Pull the window, its DIB section, `present` (today's `UpdateLayeredWindow`
+    call), `follow`, and the z-order helpers out of `FlameOverlay` into a new
+    `win32/layered_overlay.rs` (`LayeredOverlay`), keeping every `// SAFETY:`
+    comment and both z-order fixes with their dated notes. `FlameOverlay` keeps
+    the burn's field and flames and owns a `LayeredOverlay`. T21's lamp, T14's
+    disk, and T44's smoke then use it too, instead of copying
+    `flame_overlay.rs`. Move the `flame_overlay.rs` tests that test the window
+    with it.
+    `the_overlay_starts_directly_above_its_owner` must still pass.
+
+- [ ] **T42. A contact sheet for Burn (platform; test tool).** **(junior)**
+  After: T41a.
+  - Why: no one can judge Burn without a person at the screen, and every
+    look task below asks for that judgement. A picture of frames lets a
+    contributor, or an agent that can read an image, compare before and after
+    in seconds.
+  - Move the WIC PNG writing out of the ignored `render_preview` test
+    (`render/d2d/color_picker/mod.rs`) into a `#[cfg(test)]` helper both use.
+  - A new `#[cfg(test)]` module, `render/effect_sheet.rs`, composes a frame on
+    the CPU as the screen would: a sample space (its tint plus a few item-sized
+    squares and a title band), masked by the burn's paper pixels and covered by
+    its marks (bilinear between cells, as the painter draws them), with the
+    flame overlay's pixels on top at its margins, over a mid-gray backdrop.
+  - An ignored test, `burn_sheet`, writes one PNG per case to `%TEMP%`
+    (`deskspace-burn-<case>.png`): a grid of nine frames, gone 0.1 to 0.9,
+    with the clock at 0.05 s per frame. Cases: 320 × 240 and 1200 × 900 at
+    96 DPI, and 320 × 240 at 144 DPI once T26 has landed. Run it with
+    `cargo test -p deskspace-platform burn_sheet -- --ignored`.
+  - Tests: the composer's pure parts (a fully gone cell shows the backdrop, a
+    whole one shows the space).
+  - Done when: the sheets are written, and the commit body describes them.
+    Commit no PNG.
+
+- [ ] **T43. Bring smoke back to D12 (design).** **[needs decision]**
+  - The branch's two smokes: Burn's plume (`render/burn_smoke.rs`, a toggle
+    left off by default and reachable only from the debug window, `22f5a64`),
+    and a Smoke effect (`render/smoke.rs`, `render/contents.rs`, and
+    `render/snapshot.rs`: the space sublimates into tinted plumes that carry
+    its title and icons as sprites), offered only in the debug window until
+    tuned (`c1ad0f3`). Its section V rows were T22 and T23 on that branch;
+    those ids now name other tasks here.
+  - Recommended:
+    - Burn's smoke is part of Burn, always on, with no toggle: a setting
+      that only one effect has, and that no page shows, is a special case.
+      It lands after T29-T31, so it is tuned against the finished fire.
+    - Smoke becomes its own effect later (T45), offered only in the debug
+      window until the maintainer approves its look on screen. That needs a
+      way for an `EFFECTS` row to stay out of the Effect lists; settle it
+      here (the branch's mechanism, or a field on the row).
+    - Amend D12's effect list and its overlay paragraph to say both.
+  - The alternatives: Burn's smoke as a visible setting, or no smoke.
+  - Done when: D12 is amended, and T44 and T45 are rewritten to match.
+
+- [ ] **T44. Burn's smoke (platform).** **[needs human]** After: T41, T42,
+  T43 (as recommended), and T31.
+  - Pure, in `render/burn_smoke.rs`; read the branch's version first and
+    keep what worked (its emission ramp, so no smoke is left when a burn
+    ends; its columns rather than a fog).
+  - **Where.** Smoke rises from the fresh char just behind the burning edge,
+    so it follows the fire, holes included. Its density lives on a coarse
+    grid (`SMOKE_CELL_PX` 6 px times the scale), sampled bilinearly when
+    shading.
+  - **Motion.** It drifts up at `SMOKE_RISE_PX_PER_S` (40) times the scale,
+    slower than the flames' 120, so it lags them. Low-frequency seeded noise
+    scrolling with it sways each column, and a column widens as it rises.
+  - **Colour.** Warm and lit from below near the edge (toward the fire's
+    colour over its lowest 15 px), cooling to a neutral gray as it rises and
+    thins; at most 55 % opaque, and gone by the top of the overlay.
+    `flames::margins` grows its top to make room (`SMOKE_ROOM_PX` 120).
+  - **Order.** Smoke, then flames, then ash, into the same buffer.
+  - **Reversible.** Density is a function of the front, the seed, and the
+    clock, and the clock only sways it.
+  - In a release build, the smoke for a 1200 × 900 space shades in under
+    2 ms a frame. Measure and put the timing in the commit body.
+  - Tests: none at gone 0 or 1; the same inputs give the same pixels; two
+    seeds differ; denser near the edge than near the top; every pixel stays
+    premultiplied, and nothing is written outside the buffer.
+  - **[needs human]** check, appended to the Burn row: a soft plume rises
+    from behind the flames and leans as it climbs, warm at the bottom and gray
+    at the top; it reads on a light and a dark wallpaper; there is no box, no
+    tint over the space, and nothing left after the burn ends or reverses.
+
+- [ ] **T45. Smoke, the effect (core, app, platform).** **Seniors only.**
+  **[needs human]** After: T44 and T43's decision on hidden rows. Port the
+  branch's Smoke as `effect(Effect::Smoke, "smoke", &[Detail])`, by section
+  T's recipe, with an `Overlay` variant on T41b's `LayeredOverlay`. Port the
+  branch's later fixes too (`b86c153`, `1e80a85`, `7729dc1`, `11bcc83`): the
+  plumes as tinted columns, smoke that outruns its front, the contents riding
+  the current, and the hand-back without a frame's gap. Its check is the
+  branch's T22 row, rewritten for `main`.
+
+- [ ] **T46. A glow around the flames, on the CPU (platform).** **[needs
+  human]** After: T29 and B53.
+  - Why: T32 plans bloom on the GPU, and Windows 10 and the accent path will
+    never have it. A cheap glow makes the CPU flames read as light, not paint.
+  - In `flames::paint`, after the tongues: a quarter-size copy of the flame
+    pixels, two separable box-blur passes (radius 3 cells), added back under
+    the flames at `GLOW_GAIN` (0.5) with the additive `add` T29 brings. The
+    scratch buffers are kept between frames, so a frame allocates nothing.
+  - When T32 lands, the composition path draws its own bloom and skips this;
+    both paths share `tongues`.
+  - Budget: under 1.5 ms more for a 1200 × 900 overlay in release; measure.
+  - Tests: an empty buffer stays empty; one bright pixel spreads evenly; every
+    pixel stays premultiplied.
+  - **[needs human]** check: the flames have a soft halo that warms the paper
+    beside them; no hard edge where the glow stops.
+
+- [ ] **T47. Sparks that cool (platform).** **(junior)** **[needs human]**
+  After: T29.
+  - Why: today's embers (`paint_ember`) are 2 × 2 squares of one colour.
+  - Each spark is a short streak along its motion, as long as it moves in a
+    sixtieth of a second, times the scale. Its colour runs down `FIRE_RAMP`
+    as it rises, white-yellow to deep red, and its alpha follows. Each tongue
+    throws 0 to 2 sparks, chosen by `noise::random(seed, col)`, and a few
+    flare once on the way up.
+  - Tests: the same inputs give the same pixels; a spark is cooler the higher
+    it is; pixels stay premultiplied and inside the buffer.
+  - **[needs human]** check, appended to the Burn row: sparks streak up,
+    cooling from yellow to red as they fade; no squares.
+
+- [ ] **T48. The char edge lifts (platform).** **(junior)** **[needs human]**
+  After: T30.
+  - Why: real paper curls where it burns. A light rim on one side of the char
+    and a shadow on the other make the flat band read as an edge lifting.
+  - `render/burn.rs`: for a `Charred` cell, the direction the front came from
+    is the field's gradient at that cell (a difference of its neighbours,
+    worked out once in `for_space`). Lay a thin highlight (255, 230, 200) at
+    `LIFT_ALPHA` 40 on the side away from the fire and a shadow (0, 0, 0) at
+    `LIFT_ALPHA` on the side toward it, only within `LIFT_PX` (2 px) of the
+    char's edge.
+  - Tests: whole and gone cells are unchanged; the highlight sits on the
+    unburned side for a field that burns straight upward; every pixel stays
+    premultiplied.
+  - **[needs human]** check, appended to the Burn row: the char's edge has a
+    faint light rim on the paper side, as if it curls; at rest nothing is left.
+
 ### Burn, upgraded (D12, amended 2026-10-22)
 
 T24-T33 make Burn read as fire rather than an orange wipe: it takes its
 time and kindles, spreads unevenly, smoulders, throws turbulent flames and
 ash, and looks the same at every DPI. One commit each, in order.
 
-- **When to start.** Blocked: T24-T33 build on three things that are on
-  `feat/color-picker-redesign` (as of `c1ad0f3`) but not in `main`, because
-  only that branch's color picker was ported: `render/noise.rs`
-  (`RisingField`, `fractal`, `random`), `win32/effect_overlay.rs`
-  (`EffectOverlay`, `Art::Burn`, `Margins`), and `Play::seed`. Port that
-  groundwork as its own task first, or stop and ask; do not copy it across
-  by hand. Then T24 starts.
+- **When to start.** T24 needs nothing and can start now. T25-T33 build on
+  groundwork that is on `feat/color-picker-redesign` (as of `c1ad0f3`) but
+  not in `main`; T41 below brings it over, so start T25 after T41. Where a
+  task below names the branch's types, read `main`'s after T41:
+  `EffectOverlay` and `Art::Burn` are `FlameOverlay` (the burn's state, in
+  `win32/flame_overlay.rs`), and `Margins` is what `flames::margins` returns.
 - **Units.** "px" means pixels at 96 DPI. From T26 on, multiply every px
   constant by the window's scale (`dpi as f32 / 96.0`).
 - **Reversible.** Every frame stays a pure function of the progress, the
@@ -1342,8 +1515,12 @@ ash, and looks the same at every DPI. One commit each, in order.
     private). It is the one place the cell grid is worked out from a size
     in pixels. The painter passes its `size`, and the overlay passes
     `(rect.width as f32, rect.height as f32)`.
+  - `Play` (`render/transition.rs`) gains `seed: u32`, its first reader being
+    this task. The app leaves it 0, and the platform sets it when a play
+    starts, from a counter and the clock, as the branch's `next_seed` in
+    `win32/space_animation.rs` does, so spaces starting together differ.
   - `Mask::Burn` gains `seed: u32`, filled from `play.seed` in the Burn
-    arm of `frame` (as `Mask::Smoke` does). The painter's rebuild check
+    arm of `frame`. The painter's rebuild check
     (`fits` in `Effects::burn`) compares the seed too. `Art::Burn` takes
     the seed from the `Play` it is made for.
   - Tests:
