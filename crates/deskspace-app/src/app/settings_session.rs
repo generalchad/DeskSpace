@@ -44,6 +44,9 @@ pub(super) struct SettingsUi {
     pending_preview: Preview,
     /// The space highlighted for the settings window, until `Timer::Highlight`.
     highlighted: Option<SpaceId>,
+    /// A form refresh was skipped because the page it would fill was hidden
+    /// (`refresh_preview`); the next page switch makes it.
+    refresh_owed: bool,
 }
 
 impl SettingsUi {
@@ -208,6 +211,7 @@ impl App {
     }
 
     pub(super) fn refresh_settings(&mut self, ui: &mut Ui) {
+        self.settings_ui.refresh_owed = false;
         if let Some(form) = self.settings_form() {
             ui.update_settings(&form);
         }
@@ -215,13 +219,19 @@ impl App {
 
     /// A Shortcuts preview's icons arrived: rebuild the form if the window
     /// still shows that space's Shortcuts page, so the picture fills in only
-    /// while it is on screen.
+    /// while it is on screen. On another of that space's pages, the next page
+    /// switch rebuilds it.
     pub(super) fn refresh_preview(&mut self, ui: &mut Ui, id: SpaceId) {
-        let showing = self.settings_ui.session.as_ref().is_some_and(|session| {
-            session.scope == Some(id) && session.page == settings::page::SHORTCUTS
-        });
-        if showing {
+        let Some(session) = self.settings_ui.session.as_ref() else {
+            return;
+        };
+        if session.scope != Some(id) {
+            return;
+        }
+        if session.page == settings::page::SHORTCUTS {
             self.refresh_settings(ui);
+        } else {
+            self.settings_ui.refresh_owed = true;
         }
     }
 
@@ -283,9 +293,13 @@ impl App {
                     None => self.clear_highlight(ui),
                 }
             }
+            // The window has already switched pages and no field changed, so
+            // a page switch needs no new form unless one is owed.
             SettingsEvent::NavChanged { entry } => {
                 session.select_entry(entry);
-                self.refresh_settings(ui);
+                if self.settings_ui.refresh_owed {
+                    self.refresh_settings(ui);
+                }
             }
             SettingsEvent::PreviewRemove { index, .. } => {
                 if let Some(id) = session.scope {

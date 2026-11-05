@@ -285,8 +285,17 @@ pub(super) unsafe fn on_nav_changed(window: HWND) {
             selected = target;
         }
         let entry = row_entry(&rows, selected).expect("moved to an entry row");
+        // The window switches pages itself; the app only records the choice,
+        // so its next form already agrees and shows no page again.
+        with_state(window, |state| state.form.nav.selected = entry);
         if let Some(page) = nav.page_of(entry) {
+            let started = std::time::Instant::now();
             show_page(window, &pages, page);
+            tracing::debug!(
+                page,
+                elapsed_us = started.elapsed().as_micros(),
+                "settings: switched page"
+            );
         }
         settings_event(SettingsEvent::NavChanged { entry });
     }

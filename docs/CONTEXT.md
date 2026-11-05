@@ -831,7 +831,12 @@ in `ui.rs`. What spans them:
 - **Panes.** The platform knows nothing about spaces: the app fills the
   scopes and categories panes, maps an index back to its meaning, and answers
   each event with a new form. The page shape never changes: every page is
-  always built, and the app picks which ones the categories pane lists.
+  always built, and the app picks which ones the categories pane lists. A
+  page switch is the exception: the window shows the page itself, painting
+  the swap once with drawing paused (`commands::show_page`), and the app only
+  records it, rebuilding the form only to make up a Shortcuts preview refresh
+  it skipped while that page was hidden (`refresh_owed`). Each switch logs
+  its time at debug level ("settings: switched page").
 - **Cards.** Each page groups its fields on cards, one per heading
   (`settings_cards::card_plan`, D26). A note right after a field is that
   field's grey description; the platform draws each card's rounded fill and
