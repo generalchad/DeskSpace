@@ -4,8 +4,10 @@
 use super::cards::PageCards;
 use super::commands::show_page;
 use super::nav::{NavRow, entry_row, nav_rows};
+use super::scroll::set_bar;
 use super::update::{apply_enabled, apply_header};
 use super::*;
+use crate::page_scroll::{PageScroll, view_height};
 use crate::settings_cards::{
     CARD_GAP, CARD_PADDING_X, CARD_PADDING_Y, DESCRIPTION_GAP, ROW_SEPARATOR_GAP, Role, card_plan,
 };
@@ -13,6 +15,8 @@ use crate::win32::dialog::{self, ControlSpec};
 use crate::win32::system::draw_text;
 use deskspace_core::geometry::Rect;
 use deskspace_core::typography::Role as FontRole;
+use windows::Win32::UI::HiDpi::GetSystemMetricsForDpi;
+use windows::Win32::UI::WindowsAndMessaging::SM_CXVSCROLL;
 
 /// Converts 96-DPI layout units to pixels at `dpi`.
 pub(super) fn scaled(value: i32, dpi: u32) -> i32 {
@@ -285,7 +289,7 @@ impl Builder {
     }
 }
 
-/// The pages and fields built for a form, and the tallest page's height.
+/// The pages and fields built for a form, and each page's height.
 struct PageBuild {
     pages: Vec<HWND>,
     fields: Vec<(Field, FieldControls)>,
@@ -293,8 +297,12 @@ struct PageBuild {
     roles: Vec<Role>,
     /// Each page's cards and hairlines, by page index.
     cards: Vec<PageCards>,
-    page_height: i32,
+    /// Each page's content height, by page index.
+    heights: Vec<i32>,
 }
+
+/// The least height of the page area, at 96 DPI, however short the screen.
+const MIN_PAGE_VIEW: i32 = 240;
 
 /// The rail, scopes pane, and page area laid out beside each other.
 struct Panes {
@@ -333,24 +341,50 @@ pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) -> Result<(), Platfo
             fields,
             roles,
             cards,
-            page_height,
+            heights,
         } = build_pages(&builder, hwnd, form, instance, page_width)?;
-        let panes = build_panes(&builder, hwnd, &form.nav, page_height, margin, page_width);
+        // Every page area is as tall as the tallest page, unless the screen
+        // is shorter; then the taller pages scroll.
+        let tallest = heights.iter().copied().max().unwrap_or(0);
+        let view = view_height(
+            tallest,
+            available_page_height(&builder, dpi, margin),
+            builder.s(MIN_PAGE_VIEW),
+        );
+        let scrolls: Vec<PageScroll> = heights
+            .iter()
+            .map(|height| PageScroll::new(*height, view))
+            .collect();
+        // A page that scrolls is widened by its scroll bar, so its controls
+        // keep their width, and the window by as much.
+        let bar = if scrolls.iter().any(|scroll| scroll.overflows()) {
+            GetSystemMetricsForDpi(SM_CXVSCROLL, dpi)
+        } else {
+            0
+        };
+        let mut panes = build_panes(&builder, hwnd, &form.nav, view, margin, page_width);
+        panes.client_width += bar;
         let (header_title, header_switch, header_button) =
             build_header(&builder, hwnd, &form.nav, panes.pages_x, page_width, margin);
 
-        for page in &pages {
+        for (page, scroll) in pages.iter().zip(&scrolls) {
+            let width = page_width + if scroll.overflows() { bar } else { 0 };
             let _ = SetWindowPos(
                 *page,
                 Some(HWND_TOP),
                 panes.pages_x,
                 margin + panes.header_height,
-                page_width,
-                page_height,
+                width,
+                view,
                 SWP_NOACTIVATE,
             );
+            set_bar(*page, *scroll);
         }
-        show_page(&pages, form.nav.page_of(form.nav.selected).unwrap_or(0));
+        show_page(
+            hwnd,
+            &pages,
+            form.nav.page_of(form.nav.selected).unwrap_or(0),
+        );
         let scope_rows = form.nav.scopes.clone();
         with_state(hwnd, |state| {
             state.nav_rows = panes.nav_rows;
@@ -371,6 +405,7 @@ pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) -> Result<(), Platfo
             state.roles = roles;
             state.cards = cards;
             state.pages = pages;
+            state.scrolls = scrolls;
             state.list = panes.list;
             state.scopes_list = panes.scopes_list;
             state.header_title = header_title;
@@ -405,7 +440,7 @@ unsafe fn build_pages(
         let mut fields = Vec::new();
         let mut roles = Vec::new();
         let mut page_cards = Vec::new();
-        let mut page_height = 0;
+        let mut heights = Vec::with_capacity(pages.len());
         for (&container, page) in pages.iter().zip(&form.pages) {
             let mut y = builder.s(16);
             let mut cards = PageCards::default();
@@ -446,14 +481,14 @@ unsafe fn build_pages(
                 }
             }
             page_cards.push(cards);
-            page_height = page_height.max(y + builder.s(8));
+            heights.push(y + builder.s(8));
         }
         Ok(PageBuild {
             pages,
             fields,
             roles,
             cards: page_cards,
-            page_height,
+            heights,
         })
     }
 }
@@ -590,8 +625,7 @@ unsafe fn build_command_bar(
     // SAFETY: every control is a child of our live window.
     unsafe {
         let button_height = builder.s(30);
-        let command_bar_height = button_height + 2 * builder.s(14);
-        let client_height = command_bar_top + command_bar_height;
+        let client_height = command_bar_top + command_bar_height(builder);
         let button_width = builder.s(96);
         let gap = builder.s(8);
         let button_y = command_bar_top + builder.s(14);
@@ -625,6 +659,32 @@ unsafe fn build_command_bar(
         }
         (apply, client_height)
     }
+}
+
+/// The command bar's height: its buttons and the room above and below them.
+fn command_bar_height(builder: &Builder) -> i32 {
+    builder.s(30) + 2 * builder.s(14)
+}
+
+/// The height the page area can take on the pointer's monitor, where
+/// `place_window` puts the window: its work area less the window frame, the
+/// header, the margins, and the command bar, so the OK, Cancel, and Apply bar
+/// stays on screen.
+unsafe fn available_page_height(builder: &Builder, dpi: u32, margin: i32) -> i32 {
+    let mut frame = RECT::default();
+    let mut cursor = Default::default();
+    // SAFETY: both only fill in the local out-parameters.
+    unsafe {
+        let _ =
+            AdjustWindowRectExForDpi(&mut frame, window_style(), false, WS_EX_CONTROLPARENT, dpi);
+        let _ = GetCursorPos(&mut cursor);
+    }
+    let work = work_area_at(deskspace_core::geometry::Point::new(cursor.x, cursor.y));
+    work.height
+        - (frame.bottom - frame.top)
+        - 2 * margin
+        - builder.s(HEADER_HEIGHT)
+        - command_bar_height(builder)
 }
 
 /// Sizes the frame for its client area and centers it on the pointer's monitor.
@@ -672,7 +732,7 @@ unsafe fn create_pages(
                     WS_EX_CONTROLPARENT,
                     PAGE_CLASS,
                     w!(""),
-                    WS_CHILD | WS_CLIPCHILDREN,
+                    WS_CHILD | WS_CLIPCHILDREN | WS_VSCROLL,
                     0,
                     0,
                     page_width,

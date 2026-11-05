@@ -104,7 +104,7 @@ pub(super) unsafe fn on_nav_changed(window: HWND) {
         }
         let entry = row_entry(&rows, selected).expect("moved to an entry row");
         if let Some(page) = nav.page_of(entry) {
-            show_page(&pages, page);
+            show_page(window, &pages, page);
         }
         settings_event(SettingsEvent::NavChanged { entry });
     }

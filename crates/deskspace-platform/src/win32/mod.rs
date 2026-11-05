@@ -52,6 +52,7 @@ pub(crate) mod system;
 mod tray;
 pub(crate) mod typography;
 pub(crate) mod watchdog;
+mod wheel_to_page;
 mod window_class;
 mod window_state;
 mod zoom_bar;

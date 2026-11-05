@@ -23,6 +23,18 @@ pub(super) struct PageCards {
     pub(super) hairlines: Vec<Rect>,
 }
 
+impl PageCards {
+    /// The cards where they show on a page scrolled up by `offset`: the
+    /// layout keeps them in content coordinates, as it keeps the controls.
+    fn scrolled(&self, offset: i32) -> Self {
+        let up = |rect: &Rect| Rect::new(rect.x, rect.y - offset, rect.width, rect.height);
+        Self {
+            cards: self.cards.iter().map(up).collect(),
+            hairlines: self.hairlines.iter().map(up).collect(),
+        }
+    }
+}
+
 /// Fills `page` with the body color and then draws its cards, so a card's
 /// fill meets the erasing background rather than showing the body through a
 /// seam.
@@ -36,14 +48,20 @@ pub(super) unsafe fn erase_page(settings: HWND, page: HWND, dc: HDC) -> bool {
         if !erase_body(settings, page, dc) {
             return false;
         }
-        let Some((colors, cards, dpi)) = with_state(settings, |state| {
+        let Some((colors, cards, dpi, offset)) = with_state(settings, |state| {
             let index = state.pages.iter().position(|each| *each == page)?;
-            Some((state.colors, state.cards.get(index)?.clone(), state.dpi))
+            let offset = state.scrolls.get(index).map_or(0, |scroll| scroll.offset());
+            Some((
+                state.colors,
+                state.cards.get(index)?.clone(),
+                state.dpi,
+                offset,
+            ))
         })
         .flatten() else {
             return true;
         };
-        draw(&cards, dc, colors, dpi);
+        draw(&cards.scrolled(offset), dc, colors, dpi);
         true
     }
 }

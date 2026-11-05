@@ -4,6 +4,7 @@
 use super::update::{Update, set_swatch};
 use super::*;
 use windows::Win32::Foundation::COLORREF;
+use windows::Win32::UI::WindowsAndMessaging::IsWindowVisible;
 
 pub(crate) fn colorref(color: Color) -> COLORREF {
     COLORREF(color.r as u32 | ((color.g as u32) << 8) | ((color.b as u32) << 16))
@@ -195,9 +196,17 @@ pub(super) unsafe fn on_scroll(window: HWND, control: HWND) {
 }
 
 /// Shows the page at `index` and hides the rest.
-pub(super) unsafe fn show_page(pages: &[HWND], index: usize) {
+pub(super) unsafe fn show_page(settings: HWND, pages: &[HWND], index: usize) {
     // SAFETY: the handles are live page windows of the settings window.
     unsafe {
+        // A page newly shown starts at its top; one already showing keeps its
+        // place, since the app answers a page switch by showing it again.
+        if pages
+            .get(index)
+            .is_some_and(|page| !IsWindowVisible(*page).as_bool())
+        {
+            super::scroll::to_top(settings, index);
+        }
         for (i, page) in pages.iter().enumerate() {
             let _ = ShowWindow(*page, if i == index { SW_SHOW } else { SW_HIDE });
         }

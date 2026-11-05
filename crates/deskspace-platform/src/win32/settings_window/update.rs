@@ -131,7 +131,7 @@ pub(crate) fn update(hwnd: HWND, form: &SettingsForm) -> bool {
     // SAFETY: every handle in the plan is a live control of this window.
     unsafe {
         update_pages(plan.updates, plan.apply, form);
-        update_panes(plan.rail, plan.page, plan.pages, plan.scopes);
+        update_panes(hwnd, plan.rail, plan.page, plan.pages, plan.scopes);
         update_header(plan.header);
         with_state(hwnd, |state| state.updating = false);
     }
@@ -250,6 +250,7 @@ unsafe fn update_pages(updates: Vec<Update>, apply: Option<HWND>, form: &Setting
 
 /// Rebuilds or selects the rail and scopes pane, and shows the named page.
 unsafe fn update_panes(
+    settings: HWND,
     rail: Option<(HWND, Vec<NavRow>, bool, usize)>,
     page: Option<usize>,
     pages: Vec<HWND>,
@@ -263,7 +264,7 @@ unsafe fn update_panes(
             }
             sync_selection(list, rebuild, selected_row);
             if let Some(page) = page {
-                show_page(&pages, page);
+                show_page(settings, &pages, page);
             }
         }
         if let Some((list, scopes, rebuild, selected)) = scopes {

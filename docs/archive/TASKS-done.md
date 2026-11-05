@@ -6351,3 +6351,27 @@ until I5-I6 all land, so no partial build hides the desktop.
     behind; switching pages starts the next page at the top; a short page has
     no scrollbar; the OK/Cancel/Apply bar is always visible.
 
+- [x] **G10. Scroll a settings page that is taller than the window (platform).**
+  **[needs human]** Written after G5 (decided 2026-11-04, maintainer): keep
+  D26's card spacing, and let a long page scroll. Cards make Appearance and
+  Colors about 850 px tall at 96 DPI, more than a 1080p work area at 150 %.
+  - `place_window` clamps the client height to the monitor's work area, so
+    the command bar stays on screen; the page area takes what is left.
+  - Each page container gets `WS_VSCROLL`, shown only while its content is
+    taller than the page area. `PageBuild` keeps each page's content height,
+    and `SettingsState` its scroll offset.
+  - Scrolling is `ScrollWindowEx(page, 0, -delta, None, None, None, None,
+    SW_SCROLLCHILDREN | SW_INVALIDATE | SW_ERASE)`, then a repaint, so the
+    controls, the cards, and the hairlines move together. `cards::erase_page`
+    subtracts the page's scroll offset when it draws.
+  - A wheel notch over a page hit-tests to the page's offset; `WM_VSCROLL`
+    on the page serves the scrollbar. PageUp, PageDown, Home, and End while a
+    control on the page has focus do the same.
+  - The window's own `WM_MOUSEWHEEL` keeps going to the window procedure it
+    has today; only the page area scrolls.
+  - **[needs human]** check at 100 % and 150 %, in light and dark, on
+    Appearance, Colors, and New spaces: a scrollbar shows while the page does
+    not fit; dragging it, the wheel, and PageUp/PageDown reach every group;
+    the cards and hairlines scroll with the controls, with no card left
+    behind; switching pages starts the next page at the top; a short page has
+    no scrollbar; the OK/Cancel/Apply bar is always visible.

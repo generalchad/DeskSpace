@@ -16,9 +16,11 @@ mod field;
 mod nav;
 mod paint;
 mod preview;
+mod scroll;
 mod update;
 
 pub(crate) use commands::colorref;
+pub(crate) use scroll::on_page_key;
 pub(crate) use update::update;
 
 use deskspace_core::theme::Color;
@@ -51,9 +53,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetForegroundWindow, SetWindowPos, SetWindowTextW,
     ShowWindow, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_CTLCOLORBTN,
     WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_DRAWITEM, WM_ERASEBKGND, WM_HSCROLL,
-    WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SETFONT, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN,
-    WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP,
-    WS_VSCROLL,
+    WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SETFONT, WM_VSCROLL, WS_CAPTION,
+    WS_CHILD, WS_CLIPCHILDREN, WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT, WS_MINIMIZEBOX,
+    WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP, WS_VSCROLL,
 };
 use windows::core::{BOOL, PCWSTR, w};
 
@@ -159,6 +161,8 @@ pub(super) struct SettingsState {
     /// Each page's cards and hairlines, by page index.
     cards: Vec<cards::PageCards>,
     pages: Vec<HWND>,
+    /// How far each page is scrolled, by page index (`scroll.rs`).
+    scrolls: Vec<crate::page_scroll::PageScroll>,
     /// The navigation rail's categories pane.
     list: Option<HWND>,
     /// The rail's rows, rebuilt when the nav changes.
@@ -306,6 +310,7 @@ pub(crate) fn create(form: &SettingsForm, dark: bool) -> Result<HWND, PlatformEr
             roles: Vec::new(),
             cards: Vec::new(),
             pages: Vec::new(),
+            scrolls: Vec::new(),
             list: None,
             nav_rows: Vec::new(),
             scopes_list: None,
@@ -643,7 +648,8 @@ unsafe extern "system" fn wndproc(
     }
 }
 
-/// Page containers forward control notifications to the settings window.
+/// Page containers forward control notifications to the settings window, and
+/// scroll themselves when taller than the window.
 unsafe extern "system" fn page_wndproc(
     window: HWND,
     message: u32,
@@ -658,6 +664,19 @@ unsafe extern "system" fn page_wndproc(
                 Ok(parent) => SendMessageW(parent, message, Some(wparam), Some(lparam)),
                 Err(_) => DefWindowProcW(window, message, wparam, lparam),
             },
+            // A page's own scroll bar sends no control handle.
+            WM_VSCROLL if lparam.0 == 0 => {
+                if let Ok(settings) = GetParent(window) {
+                    scroll::on_vscroll(settings, window, wparam);
+                }
+                LRESULT(0)
+            }
+            WM_MOUSEWHEEL => {
+                if let Ok(settings) = GetParent(window) {
+                    scroll::on_wheel(settings, window, wparam);
+                }
+                LRESULT(0)
+            }
             WM_ERASEBKGND => {
                 let dc = HDC(wparam.0 as *mut core::ffi::c_void);
                 let settings = GetParent(window).unwrap_or_default();

@@ -504,6 +504,12 @@ fn message_loop() -> Result<(), PlatformError> {
             -1 => return Err(PlatformError::Win32(windows::core::Error::from_thread())),
             _ => {}
         }
+        // PageUp, PageDown, Home, and End scroll a settings page taller than
+        // the window, before the dialog manager sees them.
+        if settings_hwnd().is_some_and(|settings| settings_window::on_page_key(settings, &message))
+        {
+            continue;
+        }
         // IsDialogMessage gives the settings and debug windows Tab/Shift+Tab
         // focus movement, and the settings window Enter for OK and Escape
         // for Cancel, like a dialog box.

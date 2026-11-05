@@ -1,7 +1,7 @@
 //! Creates the debug window's section list, pages, and controls, and writes
 //! each control's value.
 
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::Graphics::Gdi::HFONT;
 use windows::Win32::UI::Controls::{
     LVCF_TEXT, LVCF_WIDTH, LVCOLUMNW, LVCOLUMNW_MASK, LVIF_TEXT, LVITEMW, LVM_DELETEALLITEMS,
@@ -12,14 +12,12 @@ use windows::Win32::UI::Controls::{
     WC_LISTVIEWW, WC_STATICW,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
-use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
-    BM_SETCHECK, BS_AUTOCHECKBOX, BS_PUSHBUTTON, CB_ADDSTRING, CB_GETDROPPEDSTATE, CB_RESETCONTENT,
-    CB_SETCURSEL, CBS_DROPDOWNLIST, CreateWindowExW, ES_AUTOVSCROLL, ES_MULTILINE, ES_READONLY,
-    GA_ROOT, GetAncestor, HMENU, LB_ADDSTRING, LB_RESETCONTENT, LB_SETCURSEL, LBS_NOINTEGRALHEIGHT,
-    LBS_NOTIFY, SB_VERT, SendMessageW, SetWindowTextW, WINDOW_EX_STYLE, WINDOW_STYLE,
-    WM_MOUSEWHEEL, WM_NCDESTROY, WM_SETFONT, WS_CHILD, WS_CLIPCHILDREN, WS_EX_CLIENTEDGE,
-    WS_EX_CONTROLPARENT, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    BM_SETCHECK, BS_AUTOCHECKBOX, BS_PUSHBUTTON, CB_ADDSTRING, CB_RESETCONTENT, CB_SETCURSEL,
+    CBS_DROPDOWNLIST, CreateWindowExW, ES_AUTOVSCROLL, ES_MULTILINE, ES_READONLY, HMENU,
+    LB_ADDSTRING, LB_RESETCONTENT, LB_SETCURSEL, LBS_NOINTEGRALHEIGHT, LBS_NOTIFY, SB_VERT,
+    SendMessageW, SetWindowTextW, WINDOW_EX_STYLE, WINDOW_STYLE, WM_SETFONT, WS_CHILD,
+    WS_CLIPCHILDREN, WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 use windows::core::PCWSTR;
 
@@ -30,6 +28,7 @@ use crate::win32::dark_mode::UiColors;
 use crate::win32::dialog;
 use crate::win32::settings_window::colorref;
 use crate::win32::system::wide;
+use crate::win32::wheel_to_page::{WheelControl, pass_wheel_to_page};
 
 /// SS_NOPREFIX | SS_CENTERIMAGE for labels (WinUser.h).
 /// https://learn.microsoft.com/en-us/windows/win32/controls/static-control-styles
@@ -228,7 +227,7 @@ unsafe fn build_control(
                     font,
                 );
                 if let Some(choice) = choice {
-                    let _ = SetWindowSubclass(choice, Some(wheel_scrolls_page), WHEEL_SUBCLASS, 0);
+                    pass_wheel_to_page(choice, WheelControl::DropDown);
                 }
                 choice
             }
@@ -268,42 +267,6 @@ unsafe fn build_control(
             set_value(main, None, &debug.kind);
         }
         ControlHandles { label, main }
-    }
-}
-
-/// The id of `wheel_scrolls_page` on a choice (`SetWindowSubclass`).
-const WHEEL_SUBCLASS: usize = 1;
-
-/// A closed drop-down passes the wheel to the debug window, which scrolls the
-/// page, instead of stepping its own value. A combo box turns each notch into
-/// an arrow key, so scrolling a page of drop-downs, such as the typography
-/// box's, changed whichever one the pointer passed over. An open list still
-/// scrolls itself.
-/// https://learn.microsoft.com/en-us/windows/win32/controls/subclassing-overview
-unsafe extern "system" fn wheel_scrolls_page(
-    choice: HWND,
-    message: u32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-    id: usize,
-    _data: usize,
-) -> LRESULT {
-    // SAFETY: called by comctl32 for our live combo box with its message's
-    // own arguments; the root is our debug window, which scrolls on a
-    // forwarded wheel.
-    unsafe {
-        match message {
-            WM_MOUSEWHEEL if SendMessageW(choice, CB_GETDROPPEDSTATE, None, None).0 == 0 => {
-                let root = GetAncestor(choice, GA_ROOT);
-                SendMessageW(root, message, Some(wparam), Some(lparam));
-                LRESULT(0)
-            }
-            WM_NCDESTROY => {
-                let _ = RemoveWindowSubclass(choice, Some(wheel_scrolls_page), id);
-                DefSubclassProc(choice, message, wparam, lparam)
-            }
-            _ => DefSubclassProc(choice, message, wparam, lparam),
-        }
     }
 }
 

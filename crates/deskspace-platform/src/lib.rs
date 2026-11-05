@@ -3,6 +3,7 @@ mod edit;
 mod error;
 mod icon_queue;
 mod input;
+mod page_scroll;
 mod render;
 mod settings_cards;
 mod ui;

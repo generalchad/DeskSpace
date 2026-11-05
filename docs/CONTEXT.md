@@ -834,6 +834,17 @@ in `ui.rs`. What spans them:
   field's grey description; the platform draws each card's rounded fill and
   the hairlines between its rows, so a page's grouping is read from the
   `Heading` fields it already had.
+- **Scrolling.** Every page area is as tall as the tallest page unless the
+  monitor's work area is shorter (`page_scroll::view_height`), so the
+  command bar stays on screen; a taller page shows a scroll bar and is
+  widened by it. A page scrolls with `ScrollWindowEx(SW_SCROLLCHILDREN)`, so
+  its controls keep their layout coordinates, and `cards::erase_page` draws
+  the cards at the page's offset (`settings_window/scroll.rs`). A page newly
+  shown starts at its top. PageUp, PageDown, Home, and End scroll it from
+  the message loop, except while a drop-down, text box, or slider has the
+  focus. Drop-downs and sliders in the settings and debug windows hand the
+  mouse wheel to their page (`win32/wheel_to_page.rs`), so a scroll past
+  one never changes it.
 - **Modal windows.** The color picker, the installed-apps picker, and the
   custom shortcut dialog are owned by the settings window when it is open,
   else the controller; each disables its owner and pumps every message while
@@ -921,7 +932,7 @@ in `ui.rs`. What spans them:
   and a choice can be greyed rather than removed, so the panel keeps its
   shape (a shape change rebuilds the window). A closed drop-down passes
   the mouse wheel to the page, which scrolls, rather than stepping its
-  value (`build::wheel_scrolls_page`). The
+  value. The
   only state it adds outside `DebugTools` is the session-only
   `AnimationTweak` and the takeover override in `LayerState`.
 
