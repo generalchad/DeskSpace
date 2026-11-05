@@ -6181,3 +6181,42 @@ until I5-I6 all land, so no partial build hides the desktop.
     dark mode while the window is open repaints the cards. Tab order is as
     before.
 
+
+- [x] **G6. Group each page's fields (app).** **[needs human]** After G5,
+  so the check sees the cards. App only: `settings/pages.rs`, plus new
+  heading and note ids in `settings/ids.rs` (next free; never renumber).
+  The first group on a page keeps the page's existing heading id, with the
+  new label. Change no setting, its label, or its page except as listed.
+  - Appearance (`SPACES_HEADING`): "Material" (Color mode, Background
+    material, Corner radius, Tint opacity, Title bar shading), "Border"
+    (Show window border, Border thickness), "Shadow" (Show shadow, Shadow
+    size, Shadow opacity), and "Items" (Item preset).
+  - Move `COMPATIBILITY_NOTE` from the end of the Colors page to right after
+    "Background material", so it becomes that row's description. It
+    describes the materials, and on the Colors page it would read as the
+    Reset button's description.
+  - Colors (`COLORS_HEADING`): "Colors" (Use custom colors, Background tint,
+    Text), "Border" (Border color, Custom border color, Border opacity),
+    "Selection" (Use Windows accent color for the selection, Selection box
+    color, Show selection box border), and "Themes" (Themes, Save theme…,
+    Load theme…, and the reset button).
+  - General (`BEHAVIOR_HEADING`): "Startup" (Start DeskSpace when you sign
+    in, Start with spaces hidden), "Desktop" (Take over the desktop, Snap to
+    grid, Snap resized spaces to whole columns and rows), "Look" (Settings
+    and menus), and "Space icons" (Icon downloads and its note). "Updates"
+    is unchanged.
+  - New spaces: `NEW_SPACES_NOTE` keeps only its second sentence ("A locked
+    space keeps its size and scrolls instead of growing.") and moves right
+    after "Start new spaces locked". A new note right after the heading says
+    "Everything not set here follows the Global appearance and layout."
+  - Every other page is unchanged. Its notes already land where G4's rules
+    put them.
+  - Tests: fix any test that indexes these pages' fields. Add one per
+    regrouped page that checks its headings in order. The handler tests
+    (`every_editable_*_field_has_a_handler`) must pass unchanged.
+  - Collides with: R14, which would rewrite these pages. If R14b has
+    started, stop and ask.
+  - **[needs human]** check: each listed page shows the groups above in
+    that order, with the moved notes under the rows named. Every setting
+    still previews, applies, and cancels as before.
+

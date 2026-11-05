@@ -163,6 +163,18 @@ pub mod field {
     pub const THEMES: u32 = 158;
     pub const SAVE_THEME: u32 = 159;
     pub const LOAD_THEME: u32 = 160;
+
+    // The cards' headings (D26), one per group a page now splits into.
+    pub const APPEARANCE_BORDER_HEADING: u32 = 161;
+    pub const APPEARANCE_SHADOW_HEADING: u32 = 162;
+    pub const APPEARANCE_ITEMS_HEADING: u32 = 163;
+    pub const COLORS_BORDER_HEADING: u32 = 164;
+    pub const COLORS_SELECTION_HEADING: u32 = 165;
+    pub const COLORS_THEMES_HEADING: u32 = 166;
+    pub const DESKTOP_HEADING: u32 = 167;
+    pub const LOOK_HEADING: u32 = 168;
+    pub const SPACE_ICONS_HEADING: u32 = 169;
+    pub const NEW_SPACES_INTRO_NOTE: u32 = 170;
 }
 
 /// The pages, in build order. The first `LOOK_PAGE_COUNT` hold look settings,

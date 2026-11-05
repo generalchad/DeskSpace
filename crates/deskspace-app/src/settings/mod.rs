@@ -608,6 +608,63 @@ mod tests {
         }
     }
 
+    /// `page` of `form`, found by its title.
+    fn page_named<'a>(form: &'a SettingsForm, title: &str) -> &'a SettingsPage {
+        form.pages
+            .iter()
+            .find(|page| page.title == title)
+            .unwrap_or_else(|| panic!("no {title} page"))
+    }
+
+    /// The labels of `page`'s headings, in order.
+    fn headings(page: &SettingsPage) -> Vec<&str> {
+        page.fields
+            .iter()
+            .filter(|field| matches!(field.kind, FieldKind::Heading))
+            .map(|field| field.label.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn each_regrouped_page_lists_its_groups_in_order() {
+        let (config, session) = setup();
+        let built = form(&config, &session);
+        assert_eq!(
+            headings(page_named(&built, "Appearance")),
+            ["Material", "Border", "Shadow", "Items"]
+        );
+        assert_eq!(
+            headings(page_named(&built, "Colors")),
+            ["Colors", "Border", "Selection", "Themes"]
+        );
+        assert_eq!(
+            headings(page_named(&built, "General")),
+            ["Startup", "Desktop", "Look", "Space icons", "Updates"]
+        );
+        assert_eq!(
+            headings(page_named(&built, "New spaces")),
+            ["Defaults for new spaces", "View", "Sort"]
+        );
+    }
+
+    #[test]
+    fn the_moved_notes_describe_the_row_above_them() {
+        let (config, session) = setup();
+        let built = form(&config, &session);
+        let after = |page: &SettingsPage, id: u32| {
+            let index = page.fields.iter().position(|field| field.id == id).unwrap();
+            page.fields[index + 1].id
+        };
+        assert_eq!(
+            after(page_named(&built, "Appearance"), field::BACKDROP),
+            field::COMPATIBILITY_NOTE
+        );
+        assert_eq!(
+            after(page_named(&built, "New spaces"), field::NEW_SPACE_LOCKED),
+            field::NEW_SPACES_NOTE
+        );
+    }
+
     #[test]
     fn new_spaces_page_shows_the_configured_defaults() {
         let (mut config, session) = setup();

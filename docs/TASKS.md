@@ -919,44 +919,6 @@ These tasks are written for juniors and interns. G1, G4, G6, and G7 touch no
 says why and names what a senior reviews. Unless a task says
 otherwise, a name in `code` that does not exist yet is one the task creates.
 
-- [ ] **G6. Group each page's fields (app).** **[needs human]** After G5,
-  so the check sees the cards. App only: `settings/pages.rs`, plus new
-  heading and note ids in `settings/ids.rs` (next free; never renumber).
-  The first group on a page keeps the page's existing heading id, with the
-  new label. Change no setting, its label, or its page except as listed.
-  - Appearance (`SPACES_HEADING`): "Material" (Color mode, Background
-    material, Corner radius, Tint opacity, Title bar shading), "Border"
-    (Show window border, Border thickness), "Shadow" (Show shadow, Shadow
-    size, Shadow opacity), and "Items" (Item preset).
-  - Move `COMPATIBILITY_NOTE` from the end of the Colors page to right after
-    "Background material", so it becomes that row's description. It
-    describes the materials, and on the Colors page it would read as the
-    Reset button's description.
-  - Colors (`COLORS_HEADING`): "Colors" (Use custom colors, Background tint,
-    Text), "Border" (Border color, Custom border color, Border opacity),
-    "Selection" (Use Windows accent color for the selection, Selection box
-    color, Show selection box border), and "Themes" (Themes, Save theme…,
-    Load theme…, and the reset button).
-  - General (`BEHAVIOR_HEADING`): "Startup" (Start DeskSpace when you sign
-    in, Start with spaces hidden), "Desktop" (Take over the desktop, Snap to
-    grid, Snap resized spaces to whole columns and rows), "Look" (Settings
-    and menus), and "Space icons" (Icon downloads and its note). "Updates"
-    is unchanged.
-  - New spaces: `NEW_SPACES_NOTE` keeps only its second sentence ("A locked
-    space keeps its size and scrolls instead of growing.") and moves right
-    after "Start new spaces locked". A new note right after the heading says
-    "Everything not set here follows the Global appearance and layout."
-  - Every other page is unchanged. Its notes already land where G4's rules
-    put them.
-  - Tests: fix any test that indexes these pages' fields. Add one per
-    regrouped page that checks its headings in order. The handler tests
-    (`every_editable_*_field_has_a_handler`) must pass unchanged.
-  - Collides with: R14, which would rewrite these pages. If R14b has
-    started, stop and ask.
-  - **[needs human]** check: each listed page shows the groups above in
-    that order, with the moved notes under the rows named. Every setting
-    still previews, applies, and cancels as before.
-
 - [ ] **G7. The scrolling title's motion (platform, pure).** Lands in the
   same commit as G8, its first caller, as G1 does with G3. "Marquee" in
   this codebase means the selection box (`MARQUEE_COLOR`), so call this the
@@ -2634,6 +2596,7 @@ for a machine that has it.
 | Animation refactor | The 2026-10-19 animation and painter refactors change no pixels, so check that everything looks as before, at 100 % and 150 %, on Acrylic and Solid: every effect on hide, show, Delete, and Fold, and Gradient, Roll, and Fly from each edge (Automatic: Roll and Gradient from the top, Fly to the nearest edge); Pixelate, Dissolve, and Burn at detail 1 and 10; the debug window's preview on one space and on all, pressed twice mid-way, its Kind box named Startup, Delete, Fold, and slow motion; exit plays every space out in reverse reading order. Items, labels, check boxes, the focus rectangle, the rename box, the lock glyph, and the settings highlight sit where they did; the drag image, the debug badge on the window icon, and the zoom pop-up look as before. |
 | G1-G3 (D26) | With `--on-top` at 100 % and 150 %: open Settings on a space, then click other spaces in the scopes pane. Each outline fades in quickly, holds about a second, and fades out, with no flash and no outline left behind. Click a second space mid-fade: the first fades out while the second fades in. Fold and unfold a space while it is highlighted, and hide all spaces mid-fade; nothing sticks. With Windows' "Animation effects" off, it switches as before. With no highlight showing, idle CPU is as before. |
 | G4, G5 (D26) | In light and dark at 100 % and 150 %, on every page of Global, a space, and a lens: each heading's fields sit on one rounded card with hairlines between rows. Labels, check boxes, sliders and their marks, swatches, text boxes, and drop-downs show the card's color behind them, with no body-colored boxes. Notes under a field are grey and sit close under it. Disabled rows still grey out. Switching dark mode while the window is open repaints the cards. Tab order is as before. |
+| G6 (D26) | Appearance shows Material, Border, Shadow, and Items in that order; Colors shows Colors, Border, Selection, and Themes; General shows Startup, Desktop, Look, Space icons, and Updates; New spaces opens with "Everything not set here follows the Global appearance and layout." and its locked-space note sits under "Start new spaces locked". The materials note sits under "Background material". Every setting still previews, applies, and cancels as before. |
 | Flames follow | With Startup and Delete set to Burn at 1000 ms (or `--debug` at ¼×), change a space's rect while it burns: move or resize it in Settings and Apply mid-hide, and change the display layout mid-show. The flames stay on the space's burning edge at its new place, never left where it was; a resized space's flames stand on its new edge. No flame window is left after the burn ends. |
 | Frame clock | On a 60 Hz and a 144 Hz display, and on a space moved to a second monitor with another refresh: Roll, Fade, Fly, Bounce, CRT, and Burn on hide and show at 1000 ms are smooth, with no hitch or jump; `--debug` at ⅒× speed is smooth too; hiding during the startup stagger, and the hotkey twice mid-animation, behave as before. With no animation running, Task Manager shows no "frame clock" thread busy and idle CPU is as before. Lock the session mid-animation: it finishes, and the app stays responsive after unlocking. |
 | No DWM shadow | Windows 11 with "Transparency effects" on, Acrylic, Blur, and Solid at 4 px and 8 px corners, at 100 % and 150 %: a space at rest has smooth rounded corners with no shadow; Fade, Dissolve, Gradient, Pixelate, and Burn on hide, show, and Delete leave no ghost box or outline at any point, and nothing pops off at the end; Roll rolls to a 1 px line with nothing left around it; CRT and Fly look as before. With "Transparency effects" off, spaces keep DWM's corners as before. |
