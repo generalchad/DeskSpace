@@ -1744,22 +1744,6 @@ task goes into its tier, not at the end.
 
 A user can lose their layout, an attacker could reach every install, or the next release waits on it.
 
-- [ ] **P30. Keep the signing key out of the release build (ci).** `release.yml`
-  puts `secrets.DESKSPACE_MINISIGN_KEY` in the job's `env`, so every step can read
-  it. That includes `cargo test`, `cargo build`, and `cargo install cargo-packager`,
-  which run third-party build scripts. A compromised crate could read the key and
-  sign an update that every installed DeskSpace accepts. `icons.yml` already gives
-  the key to its signing step alone.
-  - Delete the job-level `MINISIGN_KEY`. Add a step, before the signing step, that
-    reads the secret in its own `env` and writes only `present=true` or
-    `present=false` to `$env:GITHUB_OUTPUT`. Gate the signing step on
-    `steps.<id>.outputs.present == 'true'`, and leave that step's own `env` as it is.
-  - Keep the comment that says why the gate exists (`secrets` cannot be used in an
-    `if`), reworded to fit.
-  - Run `actionlint` (`TOOLS.md` section 1).
-  - A senior reviews, because this guards the update key. Until R12's dry run, the
-    diff and `actionlint` are the check.
-
 - [ ] **P14b. Measure Explorer's fixed-view cells (no code).** **[needs human]** Part
   of P14. In Explorer, at 100 % and 150 %, measure one cell's width and height, gap
   included, in Medium, Large, and Extra large icons. Record the numbers in P14c,
