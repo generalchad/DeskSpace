@@ -27,6 +27,12 @@ const TICK_COLOR: Color = Color::rgb(255, 255, 255);
 /// An unchecked box: light, with a dark border that shows on any backdrop.
 const UNCHECKED_FILL: Color = Color::rgba(255, 255, 255, 210);
 const UNCHECKED_BORDER: Color = Color::rgba(0, 0, 0, 150);
+/// The opacity of a tile's type and size lines, dimmed under its name (W21).
+const TILE_META_ALPHA: u8 = 150;
+/// The opacity of a Content row's labelled details (W22).
+const CONTENT_META_ALPHA: u8 = 170;
+/// The opacity of the separator under a Content row (W22).
+const CONTENT_SEPARATOR_ALPHA: u8 = 40;
 
 /// Draws the rubber-band selection rectangle over empty space.
 ///
@@ -69,9 +75,6 @@ pub(super) unsafe fn draw_item(
     } = ctx;
     let cell = to_rect_f(item.rect);
     let metrics = scene.metrics;
-    let details = scene.item_layout == ItemLayout::Details;
-    let tiles = scene.item_layout == ItemLayout::Tiles;
-    let content = scene.item_layout == ItemLayout::Content;
     let layout = CellLayout::new(
         cell,
         metrics,
@@ -80,10 +83,6 @@ pub(super) unsafe fn draw_item(
         scene.item_layout,
         scene.details.as_ref(),
     );
-    let line_height = layout.line_height;
-    let label_top = layout.label_top;
-    let name_left = layout.name_left;
-    let meta_left = layout.meta_left;
     let highlight = match item.state {
         ItemState::Normal | ItemState::Dragged => None,
         ItemState::Hovered => Some(scene.hover_fill),
@@ -127,113 +126,14 @@ pub(super) unsafe fn draw_item(
         if scene.show_check_boxes && show_box {
             draw_check_box(ctx, layout.check_box, item.checked, scene.check_fill);
         }
-        if let Some(label_rect) = layout.label {
-            let format = if details || tiles || content {
-                graphics.details_format.clone()
-            } else {
-                graphics.item_label_format_for(scene.label_size, scene.item_layout)
-            };
-            if let (Some(buffer), Some((_, text_edit))) = (edit, &scene.editing_item) {
-                // Explorer's rename box wraps the whole name and grows downward
-                // over the items below it, so lay it out in the label's width
-                // but a tall box; `draw_edit_buffer` hugs the measured lines.
-                draw_edit_buffer(
-                    ctx,
-                    text_edit,
-                    buffer,
-                    &format,
-                    layout.edit,
-                    scene.edit,
-                    scene.caret_visible,
-                );
-            } else {
-                draw_text(
-                    target,
-                    brush,
-                    label,
-                    &format,
-                    label_rect,
-                    item.label_color.unwrap_or(scene.item_text).fade(alpha),
-                    scene.text_shadow.map(|shadow| shadow.fade(alpha)),
-                );
-            }
-        }
+        draw_item_label(ctx, scene, item, label, edit, layout, alpha);
 
-        // Details: the other columns' text, in their header rects (W18).
-        if details && let Some(details_view) = &scene.details {
-            for (column, text) in details_view.columns.iter().skip(1).zip(cells) {
-                let format = match column.align {
-                    ColumnAlign::Left => graphics.details_format.clone(),
-                    ColumnAlign::Right => graphics.details_right_format.clone(),
-                };
-                let pad = details_view.cell_pad as f32;
-                draw_text(
-                    target,
-                    brush,
-                    text,
-                    &format,
-                    rect_f(
-                        column.rect.x as f32 + pad,
-                        cell.top,
-                        column.rect.right() as f32 - pad,
-                        cell.bottom,
-                    ),
-                    item.label_color.unwrap_or(scene.item_text).fade(alpha),
-                    scene.text_shadow.map(|shadow| shadow.fade(alpha)),
-                );
-            }
-        }
-
-        // Tiles: the type and size, dimmed under the name (W21).
-        if tiles {
-            for (index, text) in cells.iter().enumerate().take(2) {
-                let top = label_top + (index as f32 + 1.0) * line_height;
-                draw_text(
-                    target,
-                    brush,
-                    text,
-                    &graphics.details_format,
-                    rect_f(
-                        name_left,
-                        top,
-                        cell.right - metrics.inline_inset as f32,
-                        top + line_height,
-                    ),
-                    scene.item_text.fade(150),
-                    scene.text_shadow.map(|shadow| shadow.fade(alpha)),
-                );
-            }
-        }
-
-        // Content: the labelled details on the right, and the separator that
-        // runs under the row (W22).
-        if content {
-            let mid = meta_left + (cell.right - meta_left) / 2.0;
-            let inset = metrics.inline_inset as f32;
-            for (index, text) in cells.iter().enumerate().take(2) {
-                let (left, right) = if index == 0 {
-                    (meta_left, mid - inset)
-                } else {
-                    (mid, cell.right - inset)
-                };
-                draw_text(
-                    target,
-                    brush,
-                    text,
-                    &graphics.details_right_format,
-                    rect_f(left, cell.top, right, cell.bottom),
-                    scene.item_text.fade(170),
-                    scene.text_shadow.map(|shadow| shadow.fade(alpha)),
-                );
-            }
-            brush.SetColor(&color_f(scene.item_text.fade(40)));
-            target.DrawLine(
-                Vector2::new(cell.left, cell.bottom - 0.5),
-                Vector2::new(cell.right, cell.bottom - 0.5),
-                brush,
-                1.0,
-                None,
-            );
+        match scene.item_layout {
+            ItemLayout::Details => draw_details_cells(ctx, scene, item, cells, cell, alpha),
+            ItemLayout::Tiles => draw_tile_lines(ctx, scene, cells, layout, cell, alpha),
+            ItemLayout::Content => draw_content_meta(ctx, scene, cells, layout, cell, alpha),
+            ItemLayout::Grid => {}
+            ItemLayout::Inline => {}
         }
 
         // A dotted rectangle marks the item with keyboard focus, as Explorer
@@ -242,6 +142,204 @@ pub(super) unsafe fn draw_item(
             brush.SetColor(&color_f(scene.item_text.with_alpha(FOCUS_ALPHA)));
             target.DrawRectangle(&layout.frame, brush, 1.0, Some(&graphics.focus_stroke));
         }
+    }
+}
+
+/// Draws an item's label, or the open rename box over it.
+///
+/// # Safety
+/// Call between `BeginDraw` and `EndDraw` on `ctx.target`.
+unsafe fn draw_item_label(
+    ctx: DrawContext,
+    scene: &SpaceScene,
+    item: &ItemVisual,
+    label: &[u16],
+    edit: Option<&[u16]>,
+    layout: CellLayout,
+    alpha: u8,
+) {
+    let DrawContext {
+        graphics,
+        target,
+        brush,
+    } = ctx;
+    let Some(label_rect) = layout.label else {
+        return;
+    };
+    let details_format = matches!(
+        scene.item_layout,
+        ItemLayout::Details | ItemLayout::Tiles | ItemLayout::Content
+    );
+    let format = if details_format {
+        graphics.details_format.clone()
+    } else {
+        graphics.item_label_format_for(scene.label_size, scene.item_layout)
+    };
+    // SAFETY: caller is inside BeginDraw/EndDraw.
+    unsafe {
+        if let (Some(buffer), Some((_, text_edit))) = (edit, &scene.editing_item) {
+            // Explorer's rename box wraps the whole name and grows downward
+            // over the items below it, so lay it out in the label's width
+            // but a tall box; `draw_edit_buffer` hugs the measured lines.
+            draw_edit_buffer(
+                ctx,
+                text_edit,
+                buffer,
+                &format,
+                layout.edit,
+                scene.edit,
+                scene.caret_visible,
+            );
+        } else {
+            draw_text(
+                target,
+                brush,
+                label,
+                &format,
+                label_rect,
+                item.label_color.unwrap_or(scene.item_text).fade(alpha),
+                scene.text_shadow.map(|shadow| shadow.fade(alpha)),
+            );
+        }
+    }
+}
+
+/// Draws the other columns' text under a Details row's name (W18).
+///
+/// # Safety
+/// Call between `BeginDraw` and `EndDraw` on `ctx.target`.
+unsafe fn draw_details_cells(
+    ctx: DrawContext,
+    scene: &SpaceScene,
+    item: &ItemVisual,
+    cells: &[Vec<u16>],
+    cell: D2D_RECT_F,
+    alpha: u8,
+) {
+    let DrawContext {
+        graphics,
+        target,
+        brush,
+    } = ctx;
+    let Some(details_view) = &scene.details else {
+        return;
+    };
+    // SAFETY: caller is inside BeginDraw/EndDraw.
+    unsafe {
+        for (column, text) in details_view.columns.iter().skip(1).zip(cells) {
+            let format = match column.align {
+                ColumnAlign::Left => graphics.details_format.clone(),
+                ColumnAlign::Right => graphics.details_right_format.clone(),
+            };
+            let pad = details_view.cell_pad as f32;
+            draw_text(
+                target,
+                brush,
+                text,
+                &format,
+                rect_f(
+                    column.rect.x as f32 + pad,
+                    cell.top,
+                    column.rect.right() as f32 - pad,
+                    cell.bottom,
+                ),
+                item.label_color.unwrap_or(scene.item_text).fade(alpha),
+                scene.text_shadow.map(|shadow| shadow.fade(alpha)),
+            );
+        }
+    }
+}
+
+/// Draws a tile's type and size, dimmed under its name (W21).
+///
+/// # Safety
+/// Call between `BeginDraw` and `EndDraw` on `ctx.target`.
+unsafe fn draw_tile_lines(
+    ctx: DrawContext,
+    scene: &SpaceScene,
+    cells: &[Vec<u16>],
+    layout: CellLayout,
+    cell: D2D_RECT_F,
+    alpha: u8,
+) {
+    let DrawContext {
+        graphics,
+        target,
+        brush,
+    } = ctx;
+    let metrics = scene.metrics;
+    let line_height = layout.line_height;
+    let label_top = layout.label_top;
+    let name_left = layout.name_left;
+    // SAFETY: caller is inside BeginDraw/EndDraw.
+    unsafe {
+        for (index, text) in cells.iter().enumerate().take(2) {
+            let top = label_top + (index as f32 + 1.0) * line_height;
+            draw_text(
+                target,
+                brush,
+                text,
+                &graphics.details_format,
+                rect_f(
+                    name_left,
+                    top,
+                    cell.right - metrics.inline_inset as f32,
+                    top + line_height,
+                ),
+                scene.item_text.fade(TILE_META_ALPHA),
+                scene.text_shadow.map(|shadow| shadow.fade(alpha)),
+            );
+        }
+    }
+}
+
+/// Draws a Content row's labelled details and the separator under it (W22).
+///
+/// # Safety
+/// Call between `BeginDraw` and `EndDraw` on `ctx.target`.
+unsafe fn draw_content_meta(
+    ctx: DrawContext,
+    scene: &SpaceScene,
+    cells: &[Vec<u16>],
+    layout: CellLayout,
+    cell: D2D_RECT_F,
+    alpha: u8,
+) {
+    let DrawContext {
+        graphics,
+        target,
+        brush,
+    } = ctx;
+    let metrics = scene.metrics;
+    let meta_left = layout.meta_left;
+    // SAFETY: caller is inside BeginDraw/EndDraw.
+    unsafe {
+        let mid = meta_left + (cell.right - meta_left) / 2.0;
+        let inset = metrics.inline_inset as f32;
+        for (index, text) in cells.iter().enumerate().take(2) {
+            let (left, right) = if index == 0 {
+                (meta_left, mid - inset)
+            } else {
+                (mid, cell.right - inset)
+            };
+            draw_text(
+                target,
+                brush,
+                text,
+                &graphics.details_right_format,
+                rect_f(left, cell.top, right, cell.bottom),
+                scene.item_text.fade(CONTENT_META_ALPHA),
+                scene.text_shadow.map(|shadow| shadow.fade(alpha)),
+            );
+        }
+        brush.SetColor(&color_f(scene.item_text.fade(CONTENT_SEPARATOR_ALPHA)));
+        target.DrawLine(
+            Vector2::new(cell.left, cell.bottom - 0.5),
+            Vector2::new(cell.right, cell.bottom - 0.5),
+            brush,
+            1.0,
+            None,
+        );
     }
 }
 

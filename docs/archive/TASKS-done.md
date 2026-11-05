@@ -6515,3 +6515,20 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Done when: the gates pass with the same test count, and the function is clearly
     under 30 on SonarCloud's next analysis. It changes no behavior, so it needs no
     section V row.
+
+- [x] **P33. Let the compiler find `draw_item` when a layout is added (refactor).**
+  `draw_item` (`render/d2d/item.rs`, 191 lines) turns `scene.item_layout` into three
+  booleans (`details`, `tiles`, and `content`) and draws each layout's extras under
+  its own `if`. A new `ItemLayout` compiles without touching it and draws nothing
+  extra (`ENGINEERING.md` section 2, "No special cases").
+  - Move each `if` block, unchanged, into its own function beside `draw_item`:
+    `draw_details_cells`, `draw_tile_lines`, and `draw_content_meta`. Call them from
+    one exhaustive `match scene.item_layout`, with an empty arm for each layout that
+    draws no extras. No wildcard arm.
+  - Name the fades those blocks use (`150`, `170`, `40`) as constants at the top of
+    `item.rs`, shaped like `CUT_ALPHA` in `d2d/mod.rs`.
+  - This moves code inside `unsafe` blocks, which juniors otherwise leave alone.
+    Every moved block keeps its `// SAFETY:` comment, and a senior reviews.
+  - Collides with: P15f (paint clipping at the content's edge).
+  - Done when: `draw_item` is under about 100 lines and the gates pass. It is a pure
+    move, so it needs no section V row.
