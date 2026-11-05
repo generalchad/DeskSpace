@@ -299,7 +299,7 @@ pub(super) unsafe fn on_draw_swatch(window: HWND, item: &DRAWITEMSTRUCT) {
             return;
         }
         let index = (id - CONTROL_BASE) / 4;
-        let Some((color, colors, body, dpi, glyph_font)) = with_state(window, |state| {
+        let Some((color, colors, background, dpi, glyph_font)) = with_state(window, |state| {
             let (field, _) = state.fields.get(index)?;
             let color = match &field.kind {
                 FieldKind::Color { color } => *color,
@@ -308,7 +308,7 @@ pub(super) unsafe fn on_draw_swatch(window: HWND, item: &DRAWITEMSTRUCT) {
             Some((
                 color,
                 state.colors,
-                state.body_brush,
+                state.field_background(index).1,
                 state.dpi,
                 state.glyph_font,
             ))
@@ -317,9 +317,9 @@ pub(super) unsafe fn on_draw_swatch(window: HWND, item: &DRAWITEMSTRUCT) {
             return;
         };
         let disabled = item.itemState.0 & ODS_DISABLED.0 != 0;
-        // The button is rectangular; clear it to the body so the rounded fill's
-        // corners do not show the control's default background.
-        FillRect(item.hDC, &item.rcItem, body);
+        // The button is rectangular; clear it to the field's background so the
+        // rounded fill's corners do not show the control's default background.
+        FillRect(item.hDC, &item.rcItem, background);
         let rect = Rect::new(
             item.rcItem.left,
             item.rcItem.top,

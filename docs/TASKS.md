@@ -111,7 +111,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | An animation effect | `deskspace-core/src/animation.rs` (the tables), `deskspace-platform/src/render/transition.rs` (frame math), `render/d2d/` (drawing), `win32/space_animation.rs` (playing it on a window), `win32/overlay.rs` (windows beside the space); the recipe is section T |
 | Drawing | `deskspace-platform/src/render/scene.rs`, `render/d2d/` (`mod.rs` the `Painter`, `effects.rs` an animation's resources, `prepared.rs` the `PreparedScene`, `drag_image.rs` the drag image) |
 | The zoom pop-up window and its layout | `deskspace-platform/src/win32/zoom_bar.rs`, `render/zoom_bar.rs`, `render/d2d/zoom_bar.rs` |
-| Settings window controls | `deskspace-platform/src/win32/settings_window/` (`mod.rs`, `build.rs`, `field.rs`, `update.rs`, `nav.rs`, `paint.rs`, `commands.rs`, `preview.rs`) |
+| Settings window controls | `deskspace-platform/src/win32/settings_window/` (`mod.rs`, `build.rs`, `field.rs`, `update.rs`, `nav.rs`, `paint.rs`, `commands.rs`, `preview.rs`, `cards.rs`); the card grouping is `deskspace-platform/src/settings_cards.rs` |
 | The debug window (`--debug`) | `deskspace-platform/src/win32/debug_window/` (`mod.rs`, `build.rs`, `layout.rs`, `pages.rs`, `console.rs`); the console's pure model in `deskspace-platform/src/debug_console.rs`; the log capture in `deskspace-app/src/debug_log.rs`; the panel and actions in `deskspace-app/src/app/debug/` |
 | The color picker popup | `deskspace-platform/src/win32/color_picker/` (`mod.rs` the window, `state.rs` its input, `format.rs` the value box's text, `draw.rs` the settings swatch), `render/color_picker.rs` (layout), `render/d2d/color_picker/` (`mod.rs` the painter, whose ignored `render_preview` test writes PNGs; `pen.rs` its drawing kit) |
 | Shell: open, item menu, drag out | `deskspace-platform/src/win32/shell_items.rs` |
@@ -919,74 +919,6 @@ These tasks are written for juniors and interns. G1, G4, G6, and G7 touch no
 says why and names what a senior reviews. Unless a task says
 otherwise, a name in `code` that does not exist yet is one the task creates.
 
-- [ ] **G4. Plan a page's cards (platform, pure).** Lands in the same
-  commit as G5, its first caller, as G1 does with G3.
-  - A new `deskspace-platform/src/settings_cards.rs`, pure like
-    `debug_console.rs`: `pub fn card_plan(fields: &[Field]) -> Vec<Placement>`,
-    one `Placement` per field, with `Placement { role: Role, opens_card:
-    bool, closes_card: bool }` and `enum Role { Heading, Row, Description }`.
-    The rules, D26's *Cards*:
-    - A `Heading` closes the open card and is drawn above the next one.
-    - A `Note` right after a field that is neither a `Heading` nor a `Note`
-      is that field's `Description`.
-    - Every other field is a `Row` on the open card, and opens one if there
-      is none. Fields before a page's first heading form an untitled card.
-    - The page's last row closes its card.
-  - Card geometry constants at 96 DPI, at the top of the file, each with a
-    one-line doc: `CARD_PADDING_X` 16, `CARD_PADDING_Y` 8, `CARD_RADIUS` 4,
-    `CARD_GAP` 12 (below a card), `ROW_SEPARATOR_GAP` 8 (above a hairline),
-    and `DESCRIPTION_GAP` 2.
-  - `UiColors` (`win32/dark_mode.rs`) gains `card` and `card_stroke`. Dark:
-    `0x32 0x32 0x32` and the divider's `0x3D 0x3D 0x3D`. Light: `0xF9 0xF9
-    0xF9` and `0xE5 0xE5 0xE5`. Extend `text_contrasts_with_the_body_in_both_modes`
-    so text contrasts with the card too, and add a test that the card
-    differs from the body in both modes.
-  - Tests for `card_plan`: the General page's shape (headings, rows, a note
-    as a description); a note after a heading is a row; two notes in a row
-    are a row and then a row; a page with no heading is one untitled card;
-    a heading closes the card before it; an empty page plans nothing.
-
-- [ ] **G5. Draw the cards (platform).** **[needs human]** Includes G4; one
-  commit, `(G4, G5)`.
-  - `build_pages` (`settings_window/build.rs`) reads `card_plan` for each
-    page.
-    - Opening a card adds `CARD_PADDING_Y`. A row after the card's first adds
-      `ROW_SEPARATOR_GAP` and records a hairline. A description starts
-      `DESCRIPTION_GAP` below its row, with no hairline. Closing a card adds
-      `CARD_PADDING_Y` and then `CARD_GAP`.
-    - Every field on a card is laid out `CARD_PADDING_X` further in on both
-      sides. Pass the inset to `Builder::field`; do not change each field
-      builder.
-    - Record each page's card rects and hairlines in `SettingsState`.
-  - Put the drawing in a new `settings_window/cards.rs`, because `build.rs`
-    is near the size limit. The page's `WM_ERASEBKGND` (`page_wndproc`)
-    fills the body, then draws each card with GDI: `RoundRect` in `card`,
-    edged in `card_stroke`, at `CARD_RADIUS`, and each hairline a 1 px
-    `card_stroke` line inset by `CARD_PADDING_X`.
-  - Colors: in `on_ctl_color`, a control on a card gets the `card`
-    background and brush, and a heading keeps the body's. Store a `card`
-    brush beside `body_brush`, and remake it in `set_colors`. A description
-    draws in `secondary_text`, or in `disabled_text` while its row is
-    disabled. Check what the space preview (`settings_window/preview.rs`)
-    fills behind its picture: it must be `card` too.
-  - Window size: the window still fits the tallest page. If any page at
-    150 % is now taller than about 690 px at 96 DPI (a 1080p work area at
-    150 %), stop and ask. Pages do not scroll today, and scrolling would be
-    its own task.
-  - `CONTEXT.md` section 6, the settings window: pages group their fields on
-    cards (`card_plan`). Add `settings_cards.rs` to the file map's "Settings
-    window controls" row.
-  - Senior review: the build and paint code is `unsafe`, and
-    `on_ctl_color` decides every control's colors.
-  - **[needs human]** check, in light and dark at 100 % and 150 %, on every
-    page of Global, a space, and a lens: each heading's fields sit on one
-    rounded card with hairlines between rows. Labels, check boxes, sliders
-    and their marks, swatches, text boxes, and drop-downs show the card's
-    color behind them, with no body-colored boxes. Notes under a field are
-    grey and sit close under it. Disabled rows still grey out. Switching
-    dark mode while the window is open repaints the cards. Tab order is as
-    before.
-
 - [ ] **G6. Group each page's fields (app).** **[needs human]** After G5,
   so the check sees the cards. App only: `settings/pages.rs`, plus new
   heading and note ids in `settings/ids.rs` (next free; never renumber).
@@ -1116,6 +1048,31 @@ otherwise, a name in `code` that does not exist yet is one the task creates.
     short-named space, hovering the long one shows its full name, the short
     one shows nothing, and moving between rows updates the tip. It works in
     light and dark and at 150 %.
+
+- [ ] **G10. Scroll a settings page that is taller than the window (platform).**
+  **[needs human]** Written after G5 (decided 2026-11-04, maintainer): keep
+  D26's card spacing, and let a long page scroll. Cards make Appearance and
+  Colors about 850 px tall at 96 DPI, more than a 1080p work area at 150 %.
+  - `place_window` clamps the client height to the monitor's work area, so
+    the command bar stays on screen; the page area takes what is left.
+  - Each page container gets `WS_VSCROLL`, shown only while its content is
+    taller than the page area. `PageBuild` keeps each page's content height,
+    and `SettingsState` its scroll offset.
+  - Scrolling is `ScrollWindowEx(page, 0, -delta, None, None, None, None,
+    SW_SCROLLCHILDREN | SW_INVALIDATE | SW_ERASE)`, then a repaint, so the
+    controls, the cards, and the hairlines move together. `cards::erase_page`
+    subtracts the page's scroll offset when it draws.
+  - A wheel notch over a page hit-tests to the page's offset; `WM_VSCROLL`
+    on the page serves the scrollbar. PageUp, PageDown, Home, and End while a
+    control on the page has focus do the same.
+  - The window's own `WM_MOUSEWHEEL` keeps going to the window procedure it
+    has today; only the page area scrolls.
+  - **[needs human]** check at 100 % and 150 %, in light and dark, on
+    Appearance, Colors, and New spaces: a scrollbar shows while the page does
+    not fit; dragging it, the wheel, and PageUp/PageDown reach every group;
+    the cards and hairlines scroll with the controls, with no card left
+    behind; switching pages starts the next page at the top; a short page has
+    no scrollbar; the OK/Cancel/Apply bar is always visible.
 
 ## T. Animations (ROADMAP D12, D13, F-33)
 
@@ -2676,6 +2633,7 @@ for a machine that has it.
 | Drawn shadows (D15) | Windows 11 with "Transparency effects" on, at 100 % and 150 % (O2 and O3 ran at 125 %), over Acrylic and Blur as well as Solid: the shadow reads as a soft shadow, not a box. With "Transparency effects" off, Solid at 16 px shows a drawn shadow while 4 and 8 px keep DWM's own; Windows 10 casts one at every radius. On a machine with a desktop host, `--placement desktop-*` casts none (O2 could not cover that here). Roll, Fly, Bounce, and CRT move and crop the shadow with the space; Fade, Dissolve, Gradient, Pixelate, and Burn fade it out to nothing with no ghost box left. Settings > Appearance: "Show shadow" greys "Shadow size" and "Shadow opacity"; Size (2–48 px) and Opacity (0–100 %) preview live and Cancel restores. `--debug` → Windows: "Outline every shadow window" draws a 1 px magenta box around each one, "Hide every shadow" hides them for the session, the "Shadow settings" box edits and saves the three settings (reflected in an open Settings window, kept on Cancel), and the Windows table lists each `DeskSpaceShadow` below its space. The structure and the pixels (one per space, z-order, rect, ex-styles, click-through, Clear/desktop/layer, show_shadow off, a per-space size, half the setting beside and three quarters below, both falloffs to 0, the drop band, the corner, opacity 0, and the Solid cut-out) passed O2 and O3 on 2026-10-27 at 125 % on the composition path (`archive/ROADMAP-progress-log.md`). |
 | Animation refactor | The 2026-10-19 animation and painter refactors change no pixels, so check that everything looks as before, at 100 % and 150 %, on Acrylic and Solid: every effect on hide, show, Delete, and Fold, and Gradient, Roll, and Fly from each edge (Automatic: Roll and Gradient from the top, Fly to the nearest edge); Pixelate, Dissolve, and Burn at detail 1 and 10; the debug window's preview on one space and on all, pressed twice mid-way, its Kind box named Startup, Delete, Fold, and slow motion; exit plays every space out in reverse reading order. Items, labels, check boxes, the focus rectangle, the rename box, the lock glyph, and the settings highlight sit where they did; the drag image, the debug badge on the window icon, and the zoom pop-up look as before. |
 | G1-G3 (D26) | With `--on-top` at 100 % and 150 %: open Settings on a space, then click other spaces in the scopes pane. Each outline fades in quickly, holds about a second, and fades out, with no flash and no outline left behind. Click a second space mid-fade: the first fades out while the second fades in. Fold and unfold a space while it is highlighted, and hide all spaces mid-fade; nothing sticks. With Windows' "Animation effects" off, it switches as before. With no highlight showing, idle CPU is as before. |
+| G4, G5 (D26) | In light and dark at 100 % and 150 %, on every page of Global, a space, and a lens: each heading's fields sit on one rounded card with hairlines between rows. Labels, check boxes, sliders and their marks, swatches, text boxes, and drop-downs show the card's color behind them, with no body-colored boxes. Notes under a field are grey and sit close under it. Disabled rows still grey out. Switching dark mode while the window is open repaints the cards. Tab order is as before. |
 | Flames follow | With Startup and Delete set to Burn at 1000 ms (or `--debug` at ¼×), change a space's rect while it burns: move or resize it in Settings and Apply mid-hide, and change the display layout mid-show. The flames stay on the space's burning edge at its new place, never left where it was; a resized space's flames stand on its new edge. No flame window is left after the burn ends. |
 | Frame clock | On a 60 Hz and a 144 Hz display, and on a space moved to a second monitor with another refresh: Roll, Fade, Fly, Bounce, CRT, and Burn on hide and show at 1000 ms are smooth, with no hitch or jump; `--debug` at ⅒× speed is smooth too; hiding during the startup stagger, and the hotkey twice mid-animation, behave as before. With no animation running, Task Manager shows no "frame clock" thread busy and idle CPU is as before. Lock the session mid-animation: it finishes, and the app stays responsive after unlocking. |
 | No DWM shadow | Windows 11 with "Transparency effects" on, Acrylic, Blur, and Solid at 4 px and 8 px corners, at 100 % and 150 %: a space at rest has smooth rounded corners with no shadow; Fade, Dissolve, Gradient, Pixelate, and Burn on hide, show, and Delete leave no ghost box or outline at any point, and nothing pops off at the end; Roll rolls to a 1 px line with nothing left around it; CRT and Fly look as before. With "Transparency effects" off, spaces keep DWM's corners as before. |

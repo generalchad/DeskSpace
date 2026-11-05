@@ -4,6 +4,7 @@ mod error;
 mod icon_queue;
 mod input;
 mod render;
+mod settings_cards;
 mod ui;
 mod win32;
 

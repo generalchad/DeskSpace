@@ -10,6 +10,7 @@
 //! `WM_NCDESTROY`.
 
 mod build;
+mod cards;
 mod commands;
 mod field;
 mod nav;
@@ -58,6 +59,7 @@ use windows::core::{BOOL, PCWSTR, w};
 
 use crate::error::PlatformError;
 use crate::input::{Event, SettingsEvent};
+use crate::settings_cards::Role;
 use crate::ui::{
     Field, FieldKind, FieldValue, SettingsForm, SettingsHeader, SettingsNav, SettingsScope,
     SliderMark,
@@ -152,6 +154,10 @@ pub(super) struct FieldControls {
 pub(super) struct SettingsState {
     form: SettingsForm,
     fields: Vec<(Field, FieldControls)>,
+    /// Each field's card role, by field index.
+    roles: Vec<Role>,
+    /// Each page's cards and hairlines, by page index.
+    cards: Vec<cards::PageCards>,
     pages: Vec<HWND>,
     /// The navigation rail's categories pane.
     list: Option<HWND>,
@@ -183,6 +189,8 @@ pub(super) struct SettingsState {
     updating: bool,
     colors: UiColors,
     body_brush: HBRUSH,
+    /// The card fill behind a group of fields.
+    card_brush: HBRUSH,
     command_bar_brush: HBRUSH,
     /// The accent fill for the rail's selected bar and the marked dot.
     accent_brush: HBRUSH,
@@ -195,12 +203,18 @@ impl SettingsState {
         // SAFETY: the old brushes are only selected while painting, which is
         // not happening during this short borrow.
         unsafe {
-            for old in [self.body_brush, self.command_bar_brush, self.accent_brush] {
+            for old in [
+                self.body_brush,
+                self.card_brush,
+                self.command_bar_brush,
+                self.accent_brush,
+            ] {
                 if !old.is_invalid() {
                     let _ = DeleteObject(HGDIOBJ(old.0));
                 }
             }
             self.body_brush = CreateSolidBrush(colorref(colors.body));
+            self.card_brush = CreateSolidBrush(colorref(colors.card));
             self.command_bar_brush = CreateSolidBrush(colorref(colors.command_bar));
             self.accent_brush = CreateSolidBrush(colorref(colors.accent));
         }
@@ -238,6 +252,28 @@ impl SettingsState {
             controls.main == Some(control) || controls.swatch == Some(control)
         })
     }
+
+    /// The field any of whose controls is `control`, for its background.
+    fn field_of_control(&self, control: HWND) -> Option<usize> {
+        self.fields.iter().position(|(_, controls)| {
+            controls.main == Some(control)
+                || controls.swatch == Some(control)
+                || controls.label == Some(control)
+                || controls.value_text == Some(control)
+                || controls.value_edit == Some(control)
+                || controls.marks.contains(&control)
+        })
+    }
+
+    /// The color and brush behind field `index`: the card's when it sits on
+    /// one, else the page's body.
+    fn field_background(&self, index: usize) -> (Color, HBRUSH) {
+        if self.roles.get(index) != Some(&Role::Heading) {
+            (self.colors.card, self.card_brush)
+        } else {
+            (self.colors.body, self.body_brush)
+        }
+    }
 }
 
 impl Drop for SettingsState {
@@ -251,6 +287,7 @@ impl Drop for SettingsState {
             let _ = DeleteObject(HGDIOBJ(self.strong_font.0));
             let _ = DeleteObject(HGDIOBJ(self.glyph_font.0));
             let _ = DeleteObject(HGDIOBJ(self.body_brush.0));
+            let _ = DeleteObject(HGDIOBJ(self.card_brush.0));
             let _ = DeleteObject(HGDIOBJ(self.command_bar_brush.0));
             let _ = DeleteObject(HGDIOBJ(self.accent_brush.0));
         }
@@ -266,6 +303,8 @@ pub(crate) fn create(form: &SettingsForm, dark: bool) -> Result<HWND, PlatformEr
         let mut state = SettingsState {
             form: form.clone(),
             fields: Vec::new(),
+            roles: Vec::new(),
+            cards: Vec::new(),
             pages: Vec::new(),
             list: None,
             nav_rows: Vec::new(),
@@ -285,6 +324,7 @@ pub(crate) fn create(form: &SettingsForm, dark: bool) -> Result<HWND, PlatformEr
             updating: true,
             colors: UiColors::for_system(dark),
             body_brush: HBRUSH::default(),
+            card_brush: HBRUSH::default(),
             command_bar_brush: HBRUSH::default(),
             accent_brush: HBRUSH::default(),
             icons: WindowIcons::default(),
@@ -461,20 +501,42 @@ unsafe fn on_ctl_color(
     // SAFETY: `window` is the live settings window and `dc` the control's
     // device context for this message; the state borrow is short.
     unsafe {
-        let (colors, body, field, disabled, rail) = with_state(window, |state| {
-            (
-                state.colors,
-                state.body_brush,
-                state.command_bar_brush,
-                state.is_disabled_label(control),
-                [state.list, state.scopes_list].contains(&Some(control)),
-            )
-        })?;
+        let (colors, body, field, disabled, rail, background, description) =
+            with_state(window, |state| {
+                let index = state.field_of_control(control);
+                let background = index.map(|index| state.field_background(index));
+                let description =
+                    index.is_some_and(|index| state.roles.get(index) == Some(&Role::Description));
+                (
+                    state.colors,
+                    state.body_brush,
+                    state.command_bar_brush,
+                    state.is_disabled_label(control),
+                    [state.list, state.scopes_list].contains(&Some(control)),
+                    background,
+                    description,
+                )
+            })?;
         // The rail panes are part of the window body, not input fields: below
         // their rows they show the body color too.
         if rail {
             SetBkColor(dc, colorref(colors.body));
             return Some(LRESULT(body.0 as isize));
+        }
+        // A field on a card sits on the card's fill, whatever its kind, so a
+        // label or a check box never shows a body-colored box. A description
+        // (a note about the row above it) is grey.
+        if let Some((color, brush)) = background {
+            let text = if disabled {
+                colors.disabled_text
+            } else if description {
+                colors.secondary_text
+            } else {
+                colors.text
+            };
+            SetTextColor(dc, colorref(text));
+            SetBkColor(dc, colorref(color));
+            return Some(LRESULT(brush.0 as isize));
         }
         let editable = matches!(message, WM_CTLCOLOREDIT | WM_CTLCOLORLISTBOX);
         if editable && !colors.dark {
@@ -599,7 +661,7 @@ unsafe extern "system" fn page_wndproc(
             WM_ERASEBKGND => {
                 let dc = HDC(wparam.0 as *mut core::ffi::c_void);
                 let settings = GetParent(window).unwrap_or_default();
-                if erase_body(settings, window, dc) {
+                if cards::erase_page(settings, window, dc) {
                     LRESULT(1)
                 } else {
                     DefWindowProcW(window, message, wparam, lparam)

@@ -137,6 +137,10 @@ pub(crate) struct UiColors {
     pub accent: Color,
     /// Hairline between the navigation panes.
     pub divider: Color,
+    /// The fill of a page's card, behind a group of fields.
+    pub card: Color,
+    /// A card's edge and the hairline between its rows.
+    pub card_stroke: Color,
 }
 
 impl UiColors {
@@ -162,6 +166,8 @@ impl UiColors {
                 disabled_text: Color::rgb(0x7A, 0x7A, 0x7A),
                 accent: Color::rgb(0x4C, 0xC2, 0xFF),
                 divider: Color::rgb(0x3D, 0x3D, 0x3D),
+                card: Color::rgb(0x32, 0x32, 0x32),
+                card_stroke: Color::rgb(0x3D, 0x3D, 0x3D),
             }
         } else {
             Self {
@@ -173,6 +179,8 @@ impl UiColors {
                 disabled_text: Color::rgb(0xA3, 0xA3, 0xA3),
                 accent: Color::rgb(0x00, 0x5F, 0xB8),
                 divider: Color::rgb(0xE5, 0xE5, 0xE5),
+                card: Color::rgb(0xF9, 0xF9, 0xF9),
+                card_stroke: Color::rgb(0xE5, 0xE5, 0xE5),
             }
         }
     }
@@ -188,7 +196,18 @@ mod tests {
             let colors = UiColors::new(dark);
             let contrast = (colors.text.luminance() - colors.body.luminance()).abs();
             assert!(contrast > 0.6, "dark={dark}");
+            let on_card = (colors.text.luminance() - colors.card.luminance()).abs();
+            assert!(on_card > 0.6, "text on a card, dark={dark}");
             assert_eq!(colors.body.luminance() < 0.5, dark);
+        }
+    }
+
+    #[test]
+    fn a_card_stands_off_the_body_and_its_stroke_stands_off_the_card() {
+        for dark in [true, false] {
+            let colors = UiColors::new(dark);
+            assert_ne!(colors.card, colors.body, "dark={dark}");
+            assert_ne!(colors.card_stroke, colors.card, "dark={dark}");
         }
     }
 }

@@ -6112,3 +6112,72 @@ until I5-I6 all land, so no partial build hides the desktop.
     With Windows' "Animation effects" off, it switches as before. With no
     highlight showing, idle CPU is as before.
 
+
+- [x] **G4. Plan a page's cards (platform, pure).** Lands in the same
+  commit as G5, its first caller, as G1 does with G3.
+  - A new `deskspace-platform/src/settings_cards.rs`, pure like
+    `debug_console.rs`: `pub fn card_plan(fields: &[Field]) -> Vec<Placement>`,
+    one `Placement` per field, with `Placement { role: Role, opens_card:
+    bool, closes_card: bool }` and `enum Role { Heading, Row, Description }`.
+    The rules, D26's *Cards*:
+    - A `Heading` closes the open card and is drawn above the next one.
+    - A `Note` right after a field that is neither a `Heading` nor a `Note`
+      is that field's `Description`.
+    - Every other field is a `Row` on the open card, and opens one if there
+      is none. Fields before a page's first heading form an untitled card.
+    - The page's last row closes its card.
+  - Card geometry constants at 96 DPI, at the top of the file, each with a
+    one-line doc: `CARD_PADDING_X` 16, `CARD_PADDING_Y` 8, `CARD_RADIUS` 4,
+    `CARD_GAP` 12 (below a card), `ROW_SEPARATOR_GAP` 8 (above a hairline),
+    and `DESCRIPTION_GAP` 2.
+  - `UiColors` (`win32/dark_mode.rs`) gains `card` and `card_stroke`. Dark:
+    `0x32 0x32 0x32` and the divider's `0x3D 0x3D 0x3D`. Light: `0xF9 0xF9
+    0xF9` and `0xE5 0xE5 0xE5`. Extend `text_contrasts_with_the_body_in_both_modes`
+    so text contrasts with the card too, and add a test that the card
+    differs from the body in both modes.
+  - Tests for `card_plan`: the General page's shape (headings, rows, a note
+    as a description); a note after a heading is a row; two notes in a row
+    are a row and then a row; a page with no heading is one untitled card;
+    a heading closes the card before it; an empty page plans nothing.
+
+- [x] **G5. Draw the cards (platform).** **[needs human]** Includes G4; one
+  commit, `(G4, G5)`.
+  - `build_pages` (`settings_window/build.rs`) reads `card_plan` for each
+    page.
+    - Opening a card adds `CARD_PADDING_Y`. A row after the card's first adds
+      `ROW_SEPARATOR_GAP` and records a hairline. A description starts
+      `DESCRIPTION_GAP` below its row, with no hairline. Closing a card adds
+      `CARD_PADDING_Y` and then `CARD_GAP`.
+    - Every field on a card is laid out `CARD_PADDING_X` further in on both
+      sides. Pass the inset to `Builder::field`; do not change each field
+      builder.
+    - Record each page's card rects and hairlines in `SettingsState`.
+  - Put the drawing in a new `settings_window/cards.rs`, because `build.rs`
+    is near the size limit. The page's `WM_ERASEBKGND` (`page_wndproc`)
+    fills the body, then draws each card with GDI: `RoundRect` in `card`,
+    edged in `card_stroke`, at `CARD_RADIUS`, and each hairline a 1 px
+    `card_stroke` line inset by `CARD_PADDING_X`.
+  - Colors: in `on_ctl_color`, a control on a card gets the `card`
+    background and brush, and a heading keeps the body's. Store a `card`
+    brush beside `body_brush`, and remake it in `set_colors`. A description
+    draws in `secondary_text`, or in `disabled_text` while its row is
+    disabled. Check what the space preview (`settings_window/preview.rs`)
+    fills behind its picture: it must be `card` too.
+  - Window size: the window still fits the tallest page. If any page at
+    150 % is now taller than about 690 px at 96 DPI (a 1080p work area at
+    150 %), stop and ask. Pages do not scroll today, and scrolling would be
+    its own task.
+  - `CONTEXT.md` section 6, the settings window: pages group their fields on
+    cards (`card_plan`). Add `settings_cards.rs` to the file map's "Settings
+    window controls" row.
+  - Senior review: the build and paint code is `unsafe`, and
+    `on_ctl_color` decides every control's colors.
+  - **[needs human]** check, in light and dark at 100 % and 150 %, on every
+    page of Global, a space, and a lens: each heading's fields sit on one
+    rounded card with hairlines between rows. Labels, check boxes, sliders
+    and their marks, swatches, text boxes, and drop-downs show the card's
+    color behind them, with no body-colored boxes. Notes under a field are
+    grey and sit close under it. Disabled rows still grey out. Switching
+    dark mode while the window is open repaints the cards. Tab order is as
+    before.
+

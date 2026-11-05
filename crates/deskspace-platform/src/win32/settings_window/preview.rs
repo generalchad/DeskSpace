@@ -200,6 +200,8 @@ struct FieldData {
     enabled: bool,
     preview: SpacePreview,
     colors: UiColors,
+    /// The field's background: a card's fill when it sits on one.
+    background: Color,
     font: HFONT,
     dpi: u32,
 }
@@ -221,6 +223,7 @@ unsafe fn field_data(window: HWND) -> Option<FieldData> {
                 enabled: field.enabled,
                 preview: preview.clone(),
                 colors: state.colors,
+                background: state.field_background(index).0,
                 font: state.font,
                 dpi: state.dpi,
             })
@@ -475,13 +478,13 @@ unsafe fn draw(
         if data.enabled {
             color
         } else {
-            blend(color, data.colors.body, 0.5)
+            blend(color, data.background, 0.5)
         }
     };
     let radius = s(RADIUS);
     // SAFETY: `dc` is the back buffer; objects are restored and deleted.
     unsafe {
-        fill_rect(dc, client, data.colors.body);
+        fill_rect(dc, client, data.background);
         // The space: its body, then the title bar clipped to its height, so
         // both share the rounded outline.
         round_rect(dc, client, radius, Some(dim(preview.fill)), None);

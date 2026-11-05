@@ -1,12 +1,17 @@
 //! Lays out the settings form: the Builder, page and field control
 //! construction, the rail list boxes, and the fonts and scaling they use.
 
+use super::cards::PageCards;
 use super::commands::show_page;
 use super::nav::{NavRow, entry_row, nav_rows};
 use super::update::{apply_enabled, apply_header};
 use super::*;
+use crate::settings_cards::{
+    CARD_GAP, CARD_PADDING_X, CARD_PADDING_Y, DESCRIPTION_GAP, ROW_SEPARATOR_GAP, Role, card_plan,
+};
 use crate::win32::dialog::{self, ControlSpec};
 use crate::win32::system::{draw_text, message_logfont};
+use deskspace_core::geometry::Rect;
 use windows::Win32::Graphics::Gdi::CreateFontIndirectW;
 
 /// Converts 96-DPI layout units to pixels at `dpi`.
@@ -237,7 +242,8 @@ impl Builder {
     }
 
     /// Creates the controls for one field at `y` inside `page` and returns the
-    /// controls and the height used.
+    /// controls and the height used. `inset` moves the row in from the page's
+    /// edge on both sides, as a card's padding does.
     unsafe fn field(
         &self,
         page: HWND,
@@ -245,8 +251,9 @@ impl Builder {
         field: &Field,
         y: i32,
         width: i32,
+        inset: i32,
     ) -> (FieldControls, i32) {
-        let x = self.s(EDGE);
+        let x = self.s(EDGE + inset);
         let label_width = self.s(LABEL_WIDTH);
         let control_x = x + label_width + self.s(LABEL_GAP);
         let mut row = FieldRow {
@@ -287,6 +294,10 @@ impl Builder {
 struct PageBuild {
     pages: Vec<HWND>,
     fields: Vec<(Field, FieldControls)>,
+    /// Each field's card role, by field index.
+    roles: Vec<Role>,
+    /// Each page's cards and hairlines, by page index.
+    cards: Vec<PageCards>,
     page_height: i32,
 }
 
@@ -325,6 +336,8 @@ pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) -> Result<(), Platfo
         let PageBuild {
             pages,
             fields,
+            roles,
+            cards,
             page_height,
         } = build_pages(&builder, hwnd, form, instance, page_width)?;
         let panes = build_panes(&builder, hwnd, &form.nav, page_height, margin, page_width);
@@ -360,6 +373,8 @@ pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) -> Result<(), Platfo
 
         with_state(hwnd, |state| {
             state.fields = fields;
+            state.roles = roles;
+            state.cards = cards;
             state.pages = pages;
             state.list = panes.list;
             state.scopes_list = panes.scopes_list;
@@ -380,7 +395,8 @@ pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) -> Result<(), Platfo
     }
 }
 
-/// Creates the page containers and every field's controls.
+/// Creates the page containers and every field's controls, laying each page's
+/// fields out on their cards.
 unsafe fn build_pages(
     builder: &Builder,
     hwnd: HWND,
@@ -392,21 +408,56 @@ unsafe fn build_pages(
     unsafe {
         let pages = create_pages(hwnd, instance, form.pages.len(), page_width)?;
         let mut fields = Vec::new();
+        let mut roles = Vec::new();
+        let mut page_cards = Vec::new();
         let mut page_height = 0;
         for (&container, page) in pages.iter().zip(&form.pages) {
             let mut y = builder.s(16);
-            for field in &page.fields {
+            let mut cards = PageCards::default();
+            let mut card_top = 0;
+            for (field, placement) in page.fields.iter().zip(card_plan(&page.fields)) {
+                let on_card = placement.role != Role::Heading;
+                if placement.opens_card {
+                    y += builder.s(CARD_PADDING_Y);
+                    card_top = y;
+                } else if placement.role == Role::Row {
+                    y += builder.s(ROW_SEPARATOR_GAP);
+                    cards.hairlines.push(Rect::new(
+                        builder.s(EDGE + CARD_PADDING_X),
+                        y - builder.s(ROW_SEPARATOR_GAP) / 2,
+                        page_width - 2 * builder.s(EDGE + CARD_PADDING_X),
+                        1,
+                    ));
+                } else if placement.role == Role::Description {
+                    y += builder.s(DESCRIPTION_GAP);
+                }
+                let inset = if on_card { CARD_PADDING_X } else { 0 };
                 let index = fields.len();
-                let (controls, height) = builder.field(container, index, field, y, page_width);
+                let (controls, height) =
+                    builder.field(container, index, field, y, page_width, inset);
                 apply_enabled(&controls, field.enabled);
                 fields.push((field.clone(), controls));
+                roles.push(placement.role);
                 y += height;
+                if placement.closes_card {
+                    y += builder.s(CARD_PADDING_Y);
+                    cards.cards.push(Rect::new(
+                        builder.s(EDGE),
+                        card_top,
+                        page_width - 2 * builder.s(EDGE),
+                        y - card_top,
+                    ));
+                    y += builder.s(CARD_GAP);
+                }
             }
+            page_cards.push(cards);
             page_height = page_height.max(y + builder.s(8));
         }
         Ok(PageBuild {
             pages,
             fields,
+            roles,
+            cards: page_cards,
             page_height,
         })
     }

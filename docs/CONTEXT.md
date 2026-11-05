@@ -794,6 +794,11 @@ in `ui.rs`. What spans them:
   scopes and categories panes, maps an index back to its meaning, and answers
   each event with a new form. The page shape never changes: every page is
   always built, and the app picks which ones the categories pane lists.
+- **Cards.** Each page groups its fields on cards, one per heading
+  (`settings_cards::card_plan`, D26). A note right after a field is that
+  field's grey description; the platform draws each card's rounded fill and
+  the hairlines between its rows, so a page's grouping is read from the
+  `Heading` fields it already had.
 - **Modal windows.** The color picker, the installed-apps picker, and the
   custom shortcut dialog are owned by the settings window when it is open,
   else the controller; each disables its owner and pumps every message while
