@@ -198,10 +198,18 @@ impl App {
 
     /// Ends the rename; on commit, `title_commit` decides what the typed
     /// title does.
+    /// Whether `id`'s title is being renamed now.
+    pub(super) fn is_renaming_title(&self, id: SpaceId) -> bool {
+        self.edit.session().is_some_and(|session| {
+            session.surface == Surface::Space(id) && session.target == EditTarget::Title
+        })
+    }
+
     pub(super) fn finish_rename(&mut self, ui: &mut Ui, commit: bool) {
         let Some(session) = self.edit.take() else {
             return;
         };
+        self.pointer.title_icon_hover = None;
         ui.capture_text_input(false);
         Self::clear_timer(ui, Timer::Caret);
         let surface = session.surface;
@@ -210,15 +218,8 @@ impl App {
                 let Surface::Space(id) = surface else {
                     return;
                 };
-                let default = self.config.window.new_lens.title;
-                if commit
-                    && let Some(command) = self.config.desktop.space(id).and_then(|space| {
-                        title_commit(space, session.text.text(), default, &self.profile)
-                    })
-                {
-                    let effects = self.commit_title(id, command);
-                    self.run(ui, effects);
-                    self.resnapshot_settings(ui, id);
+                if commit {
+                    self.rename_space_to(ui, id, session.text.text());
                 }
             }
             EditTarget::Item {
@@ -231,6 +232,26 @@ impl App {
             }
         }
         self.refresh_surface(ui, surface);
+    }
+
+    /// The command that gives space `id` the title `typed`: a rename, or for
+    /// a lens an empty name puts back its default title. `None` when nothing
+    /// would change.
+    pub(super) fn title_command(&self, id: SpaceId, typed: &str) -> Option<Command> {
+        let default = self.config.window.new_lens.title;
+        let space = self.config.desktop.space(id)?;
+        title_commit(space, typed, default, &self.profile)
+    }
+
+    /// Commits `typed` as space `id`'s title at once, from the desktop's
+    /// rename or the settings window's header, as one undo entry. An open
+    /// settings window takes it into its Cancel snapshot, so Cancel keeps it.
+    pub(super) fn rename_space_to(&mut self, ui: &mut Ui, id: SpaceId, typed: &str) {
+        if let Some(command) = self.title_command(id, typed) {
+            let effects = self.commit_title(id, command);
+            self.run(ui, effects);
+            self.resnapshot_settings(ui, id);
+        }
     }
 
     /// Records a title change as one "Rename space" undo entry.

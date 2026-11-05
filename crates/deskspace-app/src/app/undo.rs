@@ -3,7 +3,7 @@ use std::time::SystemTime;
 
 use deskspace_core::geometry::Point;
 use deskspace_core::{Command, Desktop, Space, SpaceId};
-use deskspace_platform::{OnCollision, Ui, WatchKey, notify_moved};
+use deskspace_platform::{IconUser, OnCollision, Ui, WatchKey, notify_moved};
 
 use crate::storage::StoreError;
 
@@ -711,6 +711,7 @@ impl App {
                     }
                     self.pointer.clear_hover_on(Surface::Space(id));
                     self.view_cache.forget(id);
+                    self.icons.forget_user(IconUser::Space(id.0));
                     if let Some(session) = self.settings_ui.session_mut() {
                         session.forget_space(id);
                     }

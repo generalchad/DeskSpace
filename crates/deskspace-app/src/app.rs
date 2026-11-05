@@ -20,6 +20,7 @@ mod debug;
 mod drag;
 mod effect;
 mod files;
+mod fonts;
 mod hit;
 mod hotkeys;
 mod info_tip;
@@ -31,6 +32,7 @@ mod rename;
 mod selection;
 mod settings_session;
 mod space_icons;
+mod title_icon;
 mod undo;
 mod update;
 mod view;
@@ -586,6 +588,10 @@ pub struct App {
     pub(crate) new_space_on_start: bool,
     /// The desktop layer's flags and the shell entries it draws.
     pub(crate) layer: LayerState,
+    /// Whether the per-user registry entries are DeskSpace's to write. False
+    /// under `--config`, so a scratch run leaves the installed build's desktop
+    /// menu entries and Run value alone.
+    pub(crate) shell_entries: bool,
     /// Update checking and installation state (`app/update.rs`).
     update: UpdateState,
     /// The title icons' sets and glyphs (`app/space_icons.rs`).
@@ -597,6 +603,8 @@ pub struct App {
     animation_tweak: AnimationTweak,
     /// Session-only undo and redo stacks (ROADMAP D11).
     undo: UndoStack,
+    /// The type scale last handed to the platform (`app/fonts.rs`).
+    fonts: fonts::Fonts,
 }
 
 impl App {
@@ -628,11 +636,13 @@ impl App {
             open_settings_on_start: open_settings,
             new_space_on_start: false,
             layer: LayerState::default(),
+            shell_entries: false,
             update: UpdateState::default(),
             space_icons: SpaceIcons::default(),
             debug: None,
             animation_tweak: AnimationTweak::default(),
             undo: UndoStack::default(),
+            fonts: fonts::Fonts::default(),
         }
     }
 
@@ -832,6 +842,7 @@ impl App {
         // `ui_mode` setting; the spaces follow their own Color mode.
         ui.set_ui_dark(self.ui_dark());
         ui.set_recent_colors(self.config.recent_colors.clone());
+        self.sync_typography(ui);
         self.hotkeys.register_all(ui, &self.config.window);
         // The spaces appear as their windows are created, below; this
         // only settles whether they start hidden.
@@ -946,6 +957,16 @@ impl EventHandler for App {
                 }
                 if changed {
                     self.repaint_spaces(ui);
+                    // The settings window shows the icons too.
+                    self.refresh_settings(ui);
+                }
+                // A picker that waited for a set to load opens now, unless
+                // the rename or settings page it belonged to has gone.
+                if let Some(space) = self.space_icons.pending_picker() {
+                    self.space_icons.set_pending_picker(None);
+                    if self.is_renaming_title(space) || self.settings_shows(space) {
+                        self.pick_space_icon(ui, space);
+                    }
                 }
             }
             Event::Wake { .. } => {}

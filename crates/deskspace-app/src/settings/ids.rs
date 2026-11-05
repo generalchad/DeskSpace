@@ -163,23 +163,54 @@ pub mod field {
     pub const THEMES: u32 = 158;
     pub const SAVE_THEME: u32 = 159;
     pub const LOAD_THEME: u32 = 160;
+
+    // The cards' headings (D26), one per group a page now splits into.
+    pub const APPEARANCE_BORDER_HEADING: u32 = 161;
+    pub const APPEARANCE_SHADOW_HEADING: u32 = 162;
+    pub const APPEARANCE_ITEMS_HEADING: u32 = 163;
+    pub const COLORS_BORDER_HEADING: u32 = 164;
+    pub const COLORS_SELECTION_HEADING: u32 = 165;
+    pub const COLORS_THEMES_HEADING: u32 = 166;
+    pub const DESKTOP_HEADING: u32 = 167;
+    pub const LOOK_HEADING: u32 = 168;
+    pub const SPACE_ICONS_HEADING: u32 = 169;
+    pub const NEW_SPACES_INTRO_NOTE: u32 = 170;
+
+    // The font pages. Each `Role` has `FONT_SLOTS` ids from
+    // `FONTS + role * FONT_SLOTS`: its heading, then its family, size, and
+    // weight (`settings/fonts.rs`), so 171-210; its note is
+    // `FONT_NOTES + role`, 211-220. A role is never renumbered.
+    pub const FONTS: u32 = 171;
+    pub const FONT_SLOTS: u32 = 4;
+    pub const FONT_NOTES: u32 = 211;
+    pub const SPACE_FONTS_NOTE: u32 = 221;
+    pub const WINDOW_FONTS_NOTE: u32 = 222;
+    pub const RESET_SPACE_FONTS: u32 = 223;
+    pub const RESET_WINDOW_FONTS: u32 = 224;
 }
 
 /// The pages, in build order. The first `LOOK_PAGE_COUNT` hold look settings,
 /// which a space can override; General, New spaces, Hotkeys, About, and the
 /// animation pages are Global only; Shortcuts is a space's, and Lens is a
-/// lens's (`listed_pages` says which a scope lists).
+/// lens's (`nav_groups` says which a scope lists, and under which title).
 pub mod page {
     pub const APPEARANCE: usize = 0;
     pub const LAYOUT: usize = 2;
+    pub const GENERAL: usize = 5;
+    pub const NEW_SPACES: usize = 6;
+    pub const HOTKEYS: usize = 7;
     pub const ABOUT: usize = 8;
     pub const SHORTCUTS: usize = 9;
     pub const LENS: usize = 10;
     /// The first animation page; one per `ANIMATION_PAGES` row follows.
     pub const ANIMATIONS: usize = 11;
     /// A space's View page (W20), built after the animation pages so no landed
-    /// page id moves; `listed_pages` puts it with the space's pages.
+    /// page id moves; `nav_groups` puts it with the space's pages.
     pub const VIEW: usize = 11 + crate::settings::tables::ANIMATION_PAGES.len();
     /// Global's Lenses defaults page (W23), after View.
     pub const LENSES: usize = VIEW + 1;
+    /// Global's two font pages, after Lenses; `nav_groups` lists them under
+    /// Fonts.
+    pub const SPACE_FONTS: usize = LENSES + 1;
+    pub const WINDOW_FONTS: usize = LENSES + 2;
 }

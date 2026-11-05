@@ -62,6 +62,12 @@ impl App {
         )
     }
 
+    /// Whether Windows' "Animation effects" lets something animate, as
+    /// `play_for` decides it (the debug tweak may ignore the switch).
+    pub(super) fn animations_play(&self) -> bool {
+        self.system.animations() || self.animation_tweak.ignore_windows
+    }
+
     /// The configured stagger between spaces, stretched by the tweak's speed.
     fn stagger(&self) -> Duration {
         let stagger_ms = self.config.window.animations.stagger_ms;

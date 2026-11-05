@@ -5,7 +5,14 @@ use super::build::scaled;
 use super::commands::{colorref, window_text};
 use super::nav::NavRow;
 use super::*;
+use crate::win32::system::draw_text;
 use deskspace_core::geometry::Rect;
+use windows::Win32::Graphics::Gdi::{
+    AC_SRC_ALPHA, AC_SRC_OVER, AlphaBlend, BLENDFUNCTION, CreateCompatibleDC, DeleteDC,
+};
+
+/// A space's own icon in the scopes pane, at 96 DPI.
+const SCOPE_ICON_SIDE: i32 = 16;
 
 /// Paints one row of the scopes pane like a rail entry: an accent bar when
 /// selected, indented rows moved right, and dimmed rows (scopes that only
@@ -59,11 +66,31 @@ pub(super) unsafe fn on_draw_scope(window: HWND, item: &DRAWITEMSTRUCT) {
             } else {
                 0
             };
+        // A space's own icon takes the place of its kind's symbol.
+        let side = scaled(SCOPE_ICON_SIDE, dpi);
+        let icon = row.icon.as_ref().and_then(|glyph| {
+            with_state(window, |state| {
+                state
+                    .glyphs
+                    .icon(&glyph.key, side, text, || Some(glyph.clone()))
+            })
+            .flatten()
+        });
         let glyph = row
             .glyph
-            .filter(|_| !glyph_font.is_invalid())
+            .filter(|_| icon.is_none() && !glyph_font.is_invalid())
             .and_then(|glyph| u16::try_from(u32::from(glyph)).ok());
-        if let Some(glyph) = glyph {
+        if let Some(icon) = &icon {
+            let top = item.rcItem.top + (item.rcItem.bottom - item.rcItem.top - side) / 2;
+            let square = RECT {
+                left,
+                top,
+                right: left + side,
+                bottom: top + side,
+            };
+            blit_icon(item.hDC, icon, square, 255);
+            left = square.right + scaled(SCOPE_GLYPH_GAP, dpi);
+        } else if let Some(glyph) = glyph {
             let mut metrics = TEXTMETRICW::default();
             let _ = GetTextMetricsW(item.hDC, &mut metrics);
             let side = metrics.tmHeight.max(0);
@@ -80,19 +107,25 @@ pub(super) unsafe fn on_draw_scope(window: HWND, item: &DRAWITEMSTRUCT) {
             }
         }
         SetTextColor(item.hDC, colorref(text));
-        let mut label: Vec<u16> = row.label.encode_utf16().collect();
         let mut rect = item.rcItem;
         rect.left = left;
         rect.right -= scaled(12, dpi);
-        DrawTextW(
+        draw_text(
             item.hDC,
-            &mut label,
+            &row.label,
             &mut rect,
             DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX,
         );
         SelectObject(item.hDC, previous);
     }
 }
+
+/// Segoe Fluent Icons / Segoe MDL2 Assets "ChevronDown" and "ChevronRight":
+/// a rail group's caret, open and collapsed.
+const GLYPH_CHEVRON_DOWN: u16 = 0xE70D;
+const GLYPH_CHEVRON_RIGHT: u16 = 0xE76C;
+/// The width a group title keeps for its caret, at 96 DPI.
+const CARET_WIDTH: i32 = 16;
 
 /// Paints one row of the navigation rail: group titles in secondary text,
 /// entries in normal text, an accent bar on the selected entry, and an accent
@@ -101,18 +134,21 @@ pub(super) unsafe fn on_draw_item(window: HWND, item: &DRAWITEMSTRUCT) {
     // SAFETY: `item.hDC` is a live DC owned by the list box during
     // WM_DRAWITEM; the borrowed data is cloned out before any GDI call.
     unsafe {
-        let Some((colors, body, accent, font, strong, dpi, row)) = with_state(window, |state| {
-            Some((
-                state.colors,
-                state.body_brush,
-                state.accent_brush,
-                state.font,
-                state.strong_font,
-                state.dpi,
-                state.nav_rows.get(item.itemID as usize).cloned(),
-            ))
-        })
-        .flatten() else {
+        let Some((colors, body, accent, font, strong, glyphs, dpi, row)) =
+            with_state(window, |state| {
+                Some((
+                    state.colors,
+                    state.body_brush,
+                    state.accent_brush,
+                    state.font,
+                    state.strong_font,
+                    state.glyph_font,
+                    state.dpi,
+                    state.nav_rows.get(item.itemID as usize).cloned(),
+                ))
+            })
+            .flatten()
+        else {
             return;
         };
         FillRect(item.hDC, &item.rcItem, body);
@@ -124,7 +160,7 @@ pub(super) unsafe fn on_draw_item(window: HWND, item: &DRAWITEMSTRUCT) {
         // pages under it are indented, so it reads as a section header
         // rather than one more page.
         let (text, row_font, indent) = match &row {
-            NavRow::Title(_) => (colors.text, strong, 0),
+            NavRow::Title { .. } => (colors.text, strong, 0),
             NavRow::Entry { nested, .. } => (
                 if selected {
                     colors.text
@@ -147,13 +183,27 @@ pub(super) unsafe fn on_draw_item(window: HWND, item: &DRAWITEMSTRUCT) {
         SetBkMode(item.hDC, TRANSPARENT);
         SetTextColor(item.hDC, colorref(text));
         let previous = SelectObject(item.hDC, HGDIOBJ(row_font.0));
-        let mut label: Vec<u16> = row.label().encode_utf16().collect();
         let mut rect = item.rcItem;
         rect.left += inset + indent;
         rect.right -= inset;
-        DrawTextW(
+        // A group title ends in its caret: down while open, right while
+        // collapsed, as Windows 11's own navigation draws them.
+        if let NavRow::Title { collapsed, .. } = &row {
+            let caret = RECT {
+                left: rect.right - scaled(CARET_WIDTH, dpi),
+                ..rect
+            };
+            let glyph = if *collapsed {
+                GLYPH_CHEVRON_RIGHT
+            } else {
+                GLYPH_CHEVRON_DOWN
+            };
+            crate::win32::system::draw_glyph(item.hDC, glyphs, glyph, caret, colors.secondary_text);
+            rect.right = caret.left;
+        }
+        draw_text(
             item.hDC,
-            &mut label,
+            row.label(),
             &mut rect,
             DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX,
         );
@@ -268,11 +318,10 @@ pub(super) unsafe fn on_draw_header_button(window: HWND, item: &DRAWITEMSTRUCT) 
         };
         SetTextColor(item.hDC, colorref(text));
         let previous = SelectObject(item.hDC, HGDIOBJ(font.0));
-        let mut wide: Vec<u16> = label.encode_utf16().collect();
         let mut rect = item.rcItem;
-        DrawTextW(
+        draw_text(
             item.hDC,
-            &mut wide,
+            &label,
             &mut rect,
             DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
         );
@@ -301,7 +350,7 @@ pub(super) unsafe fn on_draw_swatch(window: HWND, item: &DRAWITEMSTRUCT) {
             return;
         }
         let index = (id - CONTROL_BASE) / 4;
-        let Some((color, colors, body, dpi, glyph_font)) = with_state(window, |state| {
+        let Some((color, colors, background, dpi, glyph_font)) = with_state(window, |state| {
             let (field, _) = state.fields.get(index)?;
             let color = match &field.kind {
                 FieldKind::Color { color } => *color,
@@ -310,7 +359,7 @@ pub(super) unsafe fn on_draw_swatch(window: HWND, item: &DRAWITEMSTRUCT) {
             Some((
                 color,
                 state.colors,
-                state.body_brush,
+                state.field_background(index).1,
                 state.dpi,
                 state.glyph_font,
             ))
@@ -319,9 +368,9 @@ pub(super) unsafe fn on_draw_swatch(window: HWND, item: &DRAWITEMSTRUCT) {
             return;
         };
         let disabled = item.itemState.0 & ODS_DISABLED.0 != 0;
-        // The button is rectangular; clear it to the body so the rounded fill's
-        // corners do not show the control's default background.
-        FillRect(item.hDC, &item.rcItem, body);
+        // The button is rectangular; clear it to the field's background so the
+        // rounded fill's corners do not show the control's default background.
+        FillRect(item.hDC, &item.rcItem, background);
         let rect = Rect::new(
             item.rcItem.left,
             item.rcItem.top,
@@ -358,6 +407,43 @@ pub(super) unsafe fn on_draw_swatch(window: HWND, item: &DRAWITEMSTRUCT) {
             };
             let _ = DrawFocusRect(item.hDC, &focus);
         }
+    }
+}
+
+/// Draws `icon`, premultiplied BGRA, scaled into `at`, at `opacity` (255 is
+/// opaque).
+/// https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-alphablend
+pub(super) unsafe fn blit_icon(dc: HDC, icon: &crate::render::Icon, at: RECT, opacity: u8) {
+    let Some(bitmap) = crate::win32::drag_image::dib(icon, true) else {
+        return;
+    };
+    // SAFETY: the source DC and the DIB are made and deleted here, with the
+    // DC's old bitmap put back first.
+    unsafe {
+        let source = CreateCompatibleDC(Some(dc));
+        let previous = SelectObject(source, HGDIOBJ(bitmap.0));
+        let blend_function = BLENDFUNCTION {
+            BlendOp: AC_SRC_OVER as u8,
+            BlendFlags: 0,
+            SourceConstantAlpha: opacity,
+            AlphaFormat: AC_SRC_ALPHA as u8,
+        };
+        let _ = AlphaBlend(
+            dc,
+            at.left,
+            at.top,
+            at.right - at.left,
+            at.bottom - at.top,
+            source,
+            0,
+            0,
+            icon.width() as i32,
+            icon.height() as i32,
+            blend_function,
+        );
+        SelectObject(source, previous);
+        let _ = DeleteObject(HGDIOBJ(bitmap.0));
+        let _ = DeleteDC(source);
     }
 }
 

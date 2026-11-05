@@ -97,4 +97,12 @@ impl App {
         tracing::info!("debug: crashing on request");
         panic!("crash requested from the debug window");
     }
+
+    /// Blocks the UI thread for two seconds, so a low-level hook's timeout can
+    /// be reproduced.
+    pub(super) fn block_ui_thread(&mut self) {
+        tracing::info!("debug: blocking the UI thread for 2 s");
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        tracing::info!("debug: the UI thread is free again");
+    }
 }

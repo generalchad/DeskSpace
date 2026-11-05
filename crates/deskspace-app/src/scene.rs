@@ -93,6 +93,9 @@ pub struct ViewState {
     /// Draw a highlight outline, marking the space selected in the settings
     /// window.
     pub highlight: bool,
+    /// Whether that outline fades in and out rather than switching, as
+    /// Windows' "Animation effects" says.
+    pub highlight_fades: bool,
     /// The item with keyboard focus, drawn with a focus rectangle.
     pub focused: Option<ItemId>,
     /// A lens whose folder cannot be listed (missing, or refused because it
@@ -269,17 +272,21 @@ pub fn space_scene_with_details(
         title_keeps_end: browsed,
         back_button: back,
         title_icon: {
-            let rect = title_icon_rect_after(space.title_height, back);
+            let rect = title_icon_rect_of(space, browsed);
             match glyph {
                 Some(image) => Some(TitleIcon {
                     rect,
                     image: Some(image),
+                    button: false,
+                    hovered: false,
                 }),
                 None => title_icon_request(space, &view.subfolder, view.folder_unavailable)
                     .and_then(|(path, available)| icons.folder_icon(&path, rect.width, available))
                     .map(|image| TitleIcon {
                         rect,
                         image: Some(image),
+                        button: false,
+                        hovered: false,
                     }),
             }
         },
@@ -302,6 +309,7 @@ pub fn space_scene_with_details(
         locked: space.locked(),
         folded: space.folded(),
         highlight: view.highlight,
+        highlight_fades: view.highlight_fades,
         drop_into: if space.is_lens() {
             DropInto::Folder
         } else {
@@ -372,6 +380,35 @@ pub fn space_scene_with_details(
 /// centered vertically, both scaled by `title_height / DEFAULT_TITLE_HEIGHT`.
 pub fn title_icon_rect(title_height: i32) -> Rect {
     title_icon_rect_after(title_height, None)
+}
+
+/// Where `space`'s title icon goes, moved past its Back button while the lens
+/// is `browsed`.
+pub fn title_icon_rect_of(space: &Space, browsed: bool) -> Rect {
+    title_icon_rect_after(
+        space.title_height,
+        browsed.then(|| back_button_rect(space.title_height)),
+    )
+}
+
+/// The title icon as a button while its space's title is renamed: the picture
+/// it has, or the placeholder when `image` is `None` (D16, D26).
+pub fn title_icon_button(rect: Rect, image: Option<Icon>, hovered: bool) -> TitleIcon {
+    TitleIcon {
+        rect,
+        image,
+        button: true,
+        hovered,
+    }
+}
+
+/// Whether `point`, in desktop coordinates, is on `space`'s title icon, which
+/// is a button only while its title is renamed.
+pub fn title_icon_at(space: &Space, browsed: bool, point: Point) -> bool {
+    let origin = space.rect().origin();
+    title_icon_rect_of(space, browsed)
+        .offset(origin.x, origin.y)
+        .contains(point)
 }
 
 /// `title_icon_rect`, moved past a Back button at `back` when there is one,
@@ -498,6 +535,7 @@ pub fn desktop_layer_scene(
         locked: false,
         folded: false,
         highlight: false,
+        highlight_fades: false,
         drop_into: DropInto::Space,
         placeholder: None,
         notice: None,
@@ -1931,6 +1969,24 @@ mod tests {
     }
 
     #[test]
+    fn the_settings_highlight_fades_when_asked() {
+        let space = space();
+        let theme = Theme::default();
+        let scene = space_scene(
+            &space,
+            surface_look(&theme, &theme.palette(true)),
+            ViewState {
+                highlight: true,
+                highlight_fades: true,
+                ..ViewState::default()
+            },
+            &mut IconCache::new(),
+        );
+        assert!(scene.highlight_fades);
+        assert!(!ViewState::default().highlight_fades);
+    }
+
+    #[test]
     fn status_segments_read_explorers_words() {
         assert_eq!(status_segments(0, 0, None), ["0 items"]);
         assert_eq!(status_segments(1, 0, None), ["1 item"]);
@@ -2316,6 +2372,41 @@ mod tests {
         assert!(back_button_at(lens, true, on_button));
         assert!(!back_button_at(lens, false, on_button));
         assert!(!back_button_at(lens, true, Point::new(100 + 200, 50 + 10)));
+    }
+
+    #[test]
+    fn only_a_renaming_title_makes_its_icon_a_button() {
+        let theme = Theme::default();
+        let palette = theme.palette(true);
+        let look = surface_look(&theme, &palette);
+        let space = space();
+        let scene = space_scene(&space, look, ViewState::default(), &mut IconCache::new());
+        assert!(
+            scene.title_icon.as_ref().is_none_or(|icon| !icon.button),
+            "outside a rename the icon is not a button"
+        );
+        // A space with no icon still gets the placeholder while renaming.
+        let button = title_icon_button(title_icon_rect(28), None, true);
+        assert!(button.button);
+        assert!(button.image.is_none(), "the painter draws the placeholder");
+        assert!(button.hovered);
+    }
+
+    #[test]
+    fn the_title_icon_button_covers_only_the_icon() {
+        let space = space();
+        let rect = title_icon_rect_of(&space, false);
+        let origin = space.rect().origin();
+        assert!(title_icon_at(
+            &space,
+            false,
+            Point::new(origin.x + rect.x + 1, origin.y + rect.y + 1)
+        ));
+        assert!(!title_icon_at(
+            &space,
+            false,
+            Point::new(origin.x + rect.right() + 1, origin.y + rect.y)
+        ));
     }
 
     #[test]

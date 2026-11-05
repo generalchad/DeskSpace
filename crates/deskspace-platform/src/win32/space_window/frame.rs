@@ -99,6 +99,7 @@ impl Frame {
             radius: self.radius,
             outline_radius: self.outline_radius(scale),
             border: (self.border_width > 0).then_some(BorderStroke { width }),
+            highlight: 0.0,
         }
     }
 

@@ -9,6 +9,7 @@ use std::iter::Peekable;
 use serde::{Deserialize, Serialize};
 
 use crate::item::{Item, ItemKind, SortKey};
+use crate::lenient::known_or_default;
 
 /// How a space orders its items: the key, its direction, and whether folders
 /// stay above files. It lives in `SpaceView`, so every space has one.
@@ -16,6 +17,7 @@ use crate::item::{Item, ItemKind, SortKey};
 #[serde(default)]
 pub struct SortRule {
     /// The item field the rule compares first.
+    #[serde(deserialize_with = "known_or_default")]
     pub key: SortKey,
     /// Whether the key's order runs from high to low.
     pub descending: bool,

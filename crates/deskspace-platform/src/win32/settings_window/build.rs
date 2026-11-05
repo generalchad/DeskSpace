@@ -1,13 +1,23 @@
 //! Lays out the settings form: the Builder, page and field control
 //! construction, the rail list boxes, and the fonts and scaling they use.
 
+use super::cards::PageCards;
 use super::commands::show_page;
-use super::nav::{NavRow, entry_row, nav_rows};
-use super::update::{apply_enabled, apply_header};
+use super::header::build_header;
+use super::nav::{NavRow, entry_row, fill_list, nav_rows, rail_list, watch_title_clicks};
+use super::scroll::set_bar;
+use super::update::apply_enabled;
 use super::*;
+use crate::page_scroll::{PageScroll, view_height};
+use crate::settings_cards::{
+    CARD_GAP, CARD_PADDING_X, CARD_PADDING_Y, DESCRIPTION_GAP, ROW_SEPARATOR_GAP, Role, card_plan,
+};
 use crate::win32::dialog::{self, ControlSpec};
-use crate::win32::system::message_logfont;
-use windows::Win32::Graphics::Gdi::CreateFontIndirectW;
+use crate::win32::system::draw_text;
+use deskspace_core::geometry::Rect;
+use deskspace_core::typography::Role as FontRole;
+use windows::Win32::UI::HiDpi::GetSystemMetricsForDpi;
+use windows::Win32::UI::WindowsAndMessaging::SM_CXVSCROLL;
 
 /// Converts 96-DPI layout units to pixels at `dpi`.
 pub(super) fn scaled(value: i32, dpi: u32) -> i32 {
@@ -58,19 +68,14 @@ struct Fonts {
 }
 
 unsafe fn create_fonts(dpi: u32) -> Fonts {
-    let body = message_logfont(dpi);
-    let mut strong = body;
-    strong.lfWeight = 600;
-    let mut heading = strong;
-    heading.lfHeight = body.lfHeight * 4 / 3;
-    // SAFETY: the LOGFONTs are fully initialised locals.
-    unsafe {
-        Fonts {
-            body: CreateFontIndirectW(&body),
-            heading: CreateFontIndirectW(&heading),
-            strong: CreateFontIndirectW(&strong),
-            glyph: crate::win32::system::glyph_font(dpi),
-        }
+    let body = crate::win32::system::font_for(FontRole::Body, dpi);
+    let strong = crate::win32::system::font_for(FontRole::Heading3, dpi);
+    let heading = crate::win32::system::font_for(FontRole::Heading1, dpi);
+    Fonts {
+        body,
+        heading,
+        strong,
+        glyph: crate::win32::system::glyph_font(dpi),
     }
 }
 
@@ -214,7 +219,6 @@ impl Builder {
         labels
     }
     pub(super) unsafe fn text_height(&self, parent: HWND, text: &str, width: i32) -> i32 {
-        let mut buffer: Vec<u16> = text.encode_utf16().collect();
         let mut bounds = RECT {
             left: 0,
             top: 0,
@@ -225,9 +229,9 @@ impl Builder {
         unsafe {
             let dc: HDC = GetDC(Some(parent));
             let previous = SelectObject(dc, HGDIOBJ(self.font.0));
-            DrawTextW(
+            draw_text(
                 dc,
-                &mut buffer,
+                text,
                 &mut bounds,
                 DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX,
             );
@@ -238,7 +242,8 @@ impl Builder {
     }
 
     /// Creates the controls for one field at `y` inside `page` and returns the
-    /// controls and the height used.
+    /// controls and the height used. `inset` moves the row in from the page's
+    /// edge on both sides, as a card's padding does.
     unsafe fn field(
         &self,
         page: HWND,
@@ -246,8 +251,9 @@ impl Builder {
         field: &Field,
         y: i32,
         width: i32,
+        inset: i32,
     ) -> (FieldControls, i32) {
-        let x = self.s(EDGE);
+        let x = self.s(EDGE + inset);
         let label_width = self.s(LABEL_WIDTH);
         let control_x = x + label_width + self.s(LABEL_GAP);
         let mut row = FieldRow {
@@ -284,12 +290,20 @@ impl Builder {
     }
 }
 
-/// The pages and fields built for a form, and the tallest page's height.
+/// The pages and fields built for a form, and each page's height.
 struct PageBuild {
     pages: Vec<HWND>,
     fields: Vec<(Field, FieldControls)>,
-    page_height: i32,
+    /// Each field's card role, by field index.
+    roles: Vec<Role>,
+    /// Each page's cards and hairlines, by page index.
+    cards: Vec<PageCards>,
+    /// Each page's content height, by page index.
+    heights: Vec<i32>,
 }
+
+/// The least height of the page area, at 96 DPI, however short the screen.
+const MIN_PAGE_VIEW: i32 = 240;
 
 /// The rail, scopes pane, and page area laid out beside each other.
 struct Panes {
@@ -326,24 +340,52 @@ pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) -> Result<(), Platfo
         let PageBuild {
             pages,
             fields,
-            page_height,
+            roles,
+            cards,
+            heights,
         } = build_pages(&builder, hwnd, form, instance, page_width)?;
-        let panes = build_panes(&builder, hwnd, &form.nav, page_height, margin, page_width);
-        let (header_title, header_switch, header_button) =
+        // Every page area is as tall as the tallest page, unless the screen
+        // is shorter; then the taller pages scroll.
+        let tallest = heights.iter().copied().max().unwrap_or(0);
+        let view = view_height(
+            tallest,
+            available_page_height(&builder, dpi, margin),
+            builder.s(MIN_PAGE_VIEW),
+        );
+        let scrolls: Vec<PageScroll> = heights
+            .iter()
+            .map(|height| PageScroll::new(*height, view))
+            .collect();
+        // A page that scrolls is widened by its scroll bar, so its controls
+        // keep their width, and the window by as much.
+        let bar = if scrolls.iter().any(|scroll| scroll.overflows()) {
+            GetSystemMetricsForDpi(SM_CXVSCROLL, dpi)
+        } else {
+            0
+        };
+        let mut panes = build_panes(&builder, hwnd, &form.nav, view, margin, page_width);
+        panes.client_width += bar;
+        let (header, header_layout) =
             build_header(&builder, hwnd, &form.nav, panes.pages_x, page_width, margin);
 
-        for page in &pages {
+        for (page, scroll) in pages.iter().zip(&scrolls) {
+            let width = page_width + if scroll.overflows() { bar } else { 0 };
             let _ = SetWindowPos(
                 *page,
                 Some(HWND_TOP),
                 panes.pages_x,
                 margin + panes.header_height,
-                page_width,
-                page_height,
+                width,
+                view,
                 SWP_NOACTIVATE,
             );
+            set_bar(*page, *scroll);
         }
-        show_page(&pages, form.nav.page_of(form.nav.selected).unwrap_or(0));
+        show_page(
+            hwnd,
+            &pages,
+            form.nav.page_of(form.nav.selected).unwrap_or(0),
+        );
         let scope_rows = form.nav.scopes.clone();
         with_state(hwnd, |state| {
             state.nav_rows = panes.nav_rows;
@@ -361,12 +403,14 @@ pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) -> Result<(), Platfo
 
         with_state(hwnd, |state| {
             state.fields = fields;
+            state.roles = roles;
+            state.cards = cards;
             state.pages = pages;
+            state.scrolls = scrolls;
             state.list = panes.list;
             state.scopes_list = panes.scopes_list;
-            state.header_title = header_title;
-            state.header_switch = header_switch;
-            state.header_button = header_button;
+            state.header = header;
+            state.header_layout = header_layout;
             state.dividers = panes.dividers;
             state.apply = apply;
             state.font = fonts.body;
@@ -381,7 +425,8 @@ pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) -> Result<(), Platfo
     }
 }
 
-/// Creates the page containers and every field's controls.
+/// Creates the page containers and every field's controls, laying each page's
+/// fields out on their cards.
 unsafe fn build_pages(
     builder: &Builder,
     hwnd: HWND,
@@ -393,22 +438,57 @@ unsafe fn build_pages(
     unsafe {
         let pages = create_pages(hwnd, instance, form.pages.len(), page_width)?;
         let mut fields = Vec::new();
-        let mut page_height = 0;
+        let mut roles = Vec::new();
+        let mut page_cards = Vec::new();
+        let mut heights = Vec::with_capacity(pages.len());
         for (&container, page) in pages.iter().zip(&form.pages) {
             let mut y = builder.s(16);
-            for field in &page.fields {
+            let mut cards = PageCards::default();
+            let mut card_top = 0;
+            for (field, placement) in page.fields.iter().zip(card_plan(&page.fields)) {
+                let on_card = placement.role != Role::Heading;
+                if placement.opens_card {
+                    y += builder.s(CARD_PADDING_Y);
+                    card_top = y;
+                } else if placement.role == Role::Row {
+                    y += builder.s(ROW_SEPARATOR_GAP);
+                    cards.hairlines.push(Rect::new(
+                        builder.s(EDGE + CARD_PADDING_X),
+                        y - builder.s(ROW_SEPARATOR_GAP) / 2,
+                        page_width - 2 * builder.s(EDGE + CARD_PADDING_X),
+                        1,
+                    ));
+                } else if placement.role == Role::Description {
+                    y += builder.s(DESCRIPTION_GAP);
+                }
+                let inset = if on_card { CARD_PADDING_X } else { 0 };
                 let index = fields.len();
-                let (controls, height) = builder.field(container, index, field, y, page_width);
+                let (controls, height) =
+                    builder.field(container, index, field, y, page_width, inset);
                 apply_enabled(&controls, field.enabled);
                 fields.push((field.clone(), controls));
+                roles.push(placement.role);
                 y += height;
+                if placement.closes_card {
+                    y += builder.s(CARD_PADDING_Y);
+                    cards.cards.push(Rect::new(
+                        builder.s(EDGE),
+                        card_top,
+                        page_width - 2 * builder.s(EDGE),
+                        y - card_top,
+                    ));
+                    y += builder.s(CARD_GAP);
+                }
             }
-            page_height = page_height.max(y + builder.s(8));
+            page_cards.push(cards);
+            heights.push(y + builder.s(8));
         }
         Ok(PageBuild {
             pages,
             fields,
-            page_height,
+            roles,
+            cards: page_cards,
+            heights,
         })
     }
 }
@@ -445,12 +525,15 @@ unsafe fn build_panes(
             x += width + builder.s(6);
             dividers.push((x - builder.s(3), margin, margin + panes_height));
         }
-        let nav_rows = nav_rows(nav);
+        // A new window opens with every group expanded.
+        let nav_rows = nav_rows(nav, &[]);
         let list = rail_list(builder, hwnd, (x, margin, rail, panes_height), ID_LIST);
         if let Some(created) = list {
+            watch_title_clicks(created);
             fill_list(created, nav_rows.iter().map(NavRow::label));
-            let selected = entry_row(&nav_rows, nav.selected);
-            SendMessageW(created, LB_SETCURSEL, Some(WPARAM(selected)), None);
+            if let Some(selected) = entry_row(&nav_rows, nav.selected) {
+                SendMessageW(created, LB_SETCURSEL, Some(WPARAM(selected)), None);
+            }
         }
         x += rail + builder.s(6);
         dividers.push((x - builder.s(3), margin, margin + panes_height));
@@ -468,70 +551,6 @@ unsafe fn build_panes(
     }
 }
 
-/// Creates the title, button, and switch above the page.
-unsafe fn build_header(
-    builder: &Builder,
-    hwnd: HWND,
-    nav: &SettingsNav,
-    pages_x: i32,
-    page_width: i32,
-    margin: i32,
-) -> (Option<HWND>, Option<HWND>, Option<HWND>) {
-    // SAFETY: every control is a child of our live window.
-    unsafe {
-        let header_height = builder.s(HEADER_HEIGHT);
-        let switch_width = builder.s(HEADER_SWITCH_WIDTH);
-        let button_width = builder.s(HEADER_BUTTON_WIDTH);
-        let gap = builder.s(8);
-        let switch_x = pages_x + page_width - builder.s(16) - switch_width;
-        let button_x = switch_x - gap - button_width;
-        let title_x = pages_x + builder.s(16);
-        let header = nav.header.as_ref();
-        let header_title = builder.label(
-            hwnd,
-            header.map_or("", |header| header.title.as_str()),
-            (
-                title_x,
-                margin,
-                (button_x - gap - title_x).max(builder.s(40)),
-                header_height,
-            ),
-        );
-        if let Some(title) = header_title {
-            SendMessageW(
-                title,
-                WM_SETFONT,
-                Some(WPARAM(builder.heading_font.0 as usize)),
-                Some(LPARAM(1)),
-            );
-        }
-        let header_button = builder.control(
-            hwnd,
-            ControlSpec {
-                class: WC_BUTTONW,
-                text: "",
-                style: BS_OWNERDRAW as u32 | WS_TABSTOP.0,
-                ex_style: WINDOW_EX_STYLE(0),
-                bounds: (button_x, margin, button_width, header_height),
-                id: ID_HEADER_BUTTON,
-            },
-        );
-        let header_switch = builder.control(
-            hwnd,
-            ControlSpec {
-                class: WC_BUTTONW,
-                text: "",
-                style: BS_AUTOCHECKBOX as u32 | WS_TABSTOP.0,
-                ex_style: WINDOW_EX_STYLE(0),
-                bounds: (switch_x, margin, switch_width, header_height),
-                id: ID_HEADER_SWITCH,
-            },
-        );
-        apply_header(header_title, header_switch, header_button, header);
-        (header_title, header_switch, header_button)
-    }
-}
-
 /// Creates OK, Cancel, and Apply along the bottom, and returns Apply and the
 /// client height.
 unsafe fn build_command_bar(
@@ -545,8 +564,7 @@ unsafe fn build_command_bar(
     // SAFETY: every control is a child of our live window.
     unsafe {
         let button_height = builder.s(30);
-        let command_bar_height = button_height + 2 * builder.s(14);
-        let client_height = command_bar_top + command_bar_height;
+        let client_height = command_bar_top + command_bar_height(builder);
         let button_width = builder.s(96);
         let gap = builder.s(8);
         let button_y = command_bar_top + builder.s(14);
@@ -580,6 +598,32 @@ unsafe fn build_command_bar(
         }
         (apply, client_height)
     }
+}
+
+/// The command bar's height: its buttons and the room above and below them.
+fn command_bar_height(builder: &Builder) -> i32 {
+    builder.s(30) + 2 * builder.s(14)
+}
+
+/// The height the page area can take on the pointer's monitor, where
+/// `place_window` puts the window: its work area less the window frame, the
+/// header, the margins, and the command bar, so the OK, Cancel, and Apply bar
+/// stays on screen.
+unsafe fn available_page_height(builder: &Builder, dpi: u32, margin: i32) -> i32 {
+    let mut frame = RECT::default();
+    let mut cursor = Default::default();
+    // SAFETY: both only fill in the local out-parameters.
+    unsafe {
+        let _ =
+            AdjustWindowRectExForDpi(&mut frame, window_style(), false, WS_EX_CONTROLPARENT, dpi);
+        let _ = GetCursorPos(&mut cursor);
+    }
+    let work = work_area_at(deskspace_core::geometry::Point::new(cursor.x, cursor.y));
+    work.height
+        - (frame.bottom - frame.top)
+        - 2 * margin
+        - builder.s(HEADER_HEIGHT)
+        - command_bar_height(builder)
 }
 
 /// Sizes the frame for its client area and centers it on the pointer's monitor.
@@ -627,7 +671,7 @@ unsafe fn create_pages(
                     WS_EX_CONTROLPARENT,
                     PAGE_CLASS,
                     w!(""),
-                    WS_CHILD | WS_CLIPCHILDREN,
+                    WS_CHILD | WS_CLIPCHILDREN | WS_VSCROLL,
                     0,
                     0,
                     page_width,
@@ -641,55 +685,6 @@ unsafe fn create_pages(
             Ok(page?)
         })
         .collect()
-}
-
-/// Creates an owner-drawn list box for a rail pane (scopes or categories).
-unsafe fn rail_list(
-    builder: &Builder,
-    parent: HWND,
-    bounds: (i32, i32, i32, i32),
-    id: usize,
-) -> Option<HWND> {
-    // SAFETY: creating and configuring a child list box of our own window.
-    unsafe {
-        let list = builder.control(
-            parent,
-            ControlSpec {
-                class: WC_LISTBOXW,
-                text: "",
-                style: (LBS_OWNERDRAWFIXED | LBS_NOTIFY | LBS_HASSTRINGS) as u32
-                    | WS_VSCROLL.0
-                    | WS_TABSTOP.0,
-                ex_style: WINDOW_EX_STYLE(0),
-                bounds,
-                id,
-            },
-        )?;
-        SendMessageW(
-            list,
-            LB_SETITEMHEIGHT,
-            Some(WPARAM(0)),
-            Some(LPARAM(builder.s(NAV_ROW_HEIGHT) as isize)),
-        );
-        Some(list)
-    }
-}
-
-/// Replaces a rail list's rows with `labels`.
-pub(super) unsafe fn fill_list<'a>(list: HWND, labels: impl Iterator<Item = &'a str>) {
-    // SAFETY: `list` is a live list box; each string outlives its message.
-    unsafe {
-        SendMessageW(list, LB_RESETCONTENT, None, None);
-        for label in labels {
-            let text = wide(label);
-            SendMessageW(
-                list,
-                LB_ADDSTRING,
-                None,
-                Some(LPARAM(text.as_ptr() as isize)),
-            );
-        }
-    }
 }
 
 #[cfg(test)]

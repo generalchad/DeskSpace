@@ -55,6 +55,12 @@ impl SpaceStyle {
 pub struct TitleIcon {
     pub rect: Rect,
     pub image: Option<Icon>,
+    /// Whether the icon is a button: while the space's title is being renamed
+    /// (D16, D26). A button with no image draws a placeholder, so a space
+    /// without an icon still has something to click.
+    pub button: bool,
+    /// Whether the pointer is over the button, which shows a hover fill.
+    pub hovered: bool,
 }
 
 /// What a drop on a window lands in.
@@ -117,6 +123,9 @@ pub struct SpaceScene {
     /// Draws a highlight outline just inside the frame, following the corner
     /// radius, to point out the space selected in the settings window.
     pub highlight: bool,
+    /// Whether the highlight fades in and out rather than switching: off
+    /// while Windows' "Animation effects" is off.
+    pub highlight_fades: bool,
     /// What a drop on this window lands in, which decides the modifiers and
     /// menu entries the drop target offers.
     pub drop_into: DropInto,

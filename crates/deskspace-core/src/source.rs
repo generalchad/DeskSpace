@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::id::ItemId;
 use crate::item::{Item, ItemFacts, ItemKind};
+use crate::lenient::known_or_default;
 
 /// What fills a space. `Items` is a normal space whose items DeskSpace owns;
 /// `Folder` is a lens, a live view of a real folder that DeskSpace never
@@ -56,7 +57,7 @@ pub struct FolderView {
     /// The folder the lens mirrors.
     pub path: PathBuf,
     /// How the space's title follows the folder.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "known_or_default")]
     pub title: LensTitle,
     pub show_hidden: bool,
     /// "Show only": `*`/`?` patterns a file's name must match to be listed,

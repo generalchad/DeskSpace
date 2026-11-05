@@ -86,6 +86,9 @@ pub(super) struct PointerState {
     /// button is: it shows the folder on display as a tip after the usual
     /// delay (W27). A normal space's title shows nothing.
     pub(super) title_hover: Option<SpaceId>,
+    /// The space whose title icon button the pointer is over, while its title
+    /// is being renamed (D16).
+    pub(super) title_icon_hover: Option<SpaceId>,
     pub(super) dragged: Option<(Surface, Vec<ItemId>)>,
     pub(super) marquee: Option<(Surface, Rect)>,
     pub(super) drag_image: Option<DragImage>,
@@ -228,7 +231,9 @@ impl App {
         }
         // Clicking anywhere commits a rename in progress before the click is
         // handled, as clicking away from a title does elsewhere; so does the
-        // mouse's back button, which empties the lens the rename is in.
+        // mouse's back button, which empties the lens the rename is in. A
+        // press on the title icon button opens the icon picker and leaves the
+        // rename open behind it (D16).
         if self.edit.is_active()
             && matches!(
                 event,
@@ -237,6 +242,9 @@ impl App {
                     | SpaceEvent::BackButton
             )
         {
+            if self.title_icon_pressed(ui, surface, event) {
+                return false;
+            }
             self.finish_rename(ui, true);
         }
         // A space is part of the desktop, and never takes activation, so a
@@ -531,6 +539,10 @@ impl App {
     }
 
     pub(super) fn update_cursor(&self, ui: &mut Ui, id: SpaceId, point: Point) {
+        if self.title_icon_button_at(id, point) {
+            ui.set_space_cursor(id.0, CursorShape::Hand);
+            return;
+        }
         let edges = self
             .config
             .desktop
@@ -572,15 +584,21 @@ impl App {
                 .map(|_| id),
             _ => None,
         };
+        let icon_hover = match surface {
+            Surface::Space(id) if self.title_icon_button_at(id, point) => Some(id),
+            _ => None,
+        };
         if hovered == self.pointer.hovered
             && status_hover == self.pointer.status_hover
             && title_hover == self.pointer.title_hover
+            && icon_hover == self.pointer.title_icon_hover
         {
             return;
         }
         let previous = std::mem::replace(&mut self.pointer.hovered, hovered);
         let previous_status = std::mem::replace(&mut self.pointer.status_hover, status_hover);
         let previous_title = std::mem::replace(&mut self.pointer.title_hover, title_hover);
+        self.pointer.title_icon_hover = icon_hover;
         // A different item (or none) cancels any shown tip and its delay.
         ui.hide_info_tip();
         Self::clear_timer(ui, Timer::InfoTip);

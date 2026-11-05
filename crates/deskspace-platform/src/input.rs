@@ -258,6 +258,13 @@ pub enum SettingsEvent {
     },
     /// The header button (`SettingsHeader::button`) was pressed.
     HeaderButton,
+    /// The title's in-place edit ended with `title` (Enter, or the focus
+    /// leaving it); Esc ends it without this.
+    HeaderRenamed {
+        title: String,
+    },
+    /// The header's icon slot was double-clicked.
+    HeaderIconPressed,
     /// The X on item `index` of the space preview `field` was clicked.
     PreviewRemove {
         field: u32,

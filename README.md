@@ -37,7 +37,8 @@ not a finished product yet.
   and a small helper (`deskspace-watchdog.exe`, kept beside `deskspace.exe`)
   puts them back if it crashes.
 - **Themes.** All spaces share one look by default, and you can customize a
-  single space without changing the rest.
+  single space without changing the rest. Settings > Fonts (Spaces and
+  Windows) choose the family, size, and weight of each kind of text.
 - **Control center.** A tray icon, right-click menus, keyboard shortcuts, and a
   settings window where every option can be changed and previewed live.
 
@@ -178,7 +179,9 @@ help inspect the look and the desktop layer.
   selection to the Recycle Bin (Shift+Delete removes it for good).
 - `F2` renames the selected item, or the current space's title when no item is
   selected. On a lens, the title is a nickname; clear it and press `Enter` to
-  show the folder's name again. `Alt+Enter` opens the selected item's Properties, or DeskSpace
+  show the folder's name again. While a space's title is being renamed, click
+  its icon to choose another one: a space with no icon shows a placeholder to
+  click. `Alt+Enter` opens the selected item's Properties, or DeskSpace
   Settings when no item is selected. `Enter` opens the selected item, `Escape`
   clears the selection, `F5` refreshes the spaces, and the Menu key or
   `Shift+F10` opens the context menu. `Ctrl+Plus` and `Ctrl+Minus` make the

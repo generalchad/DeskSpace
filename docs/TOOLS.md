@@ -62,8 +62,9 @@ only prints what it would do. Never run a copy with the real steps in place.
   section X). Prefer it to adding temporary logging.
 - `-v` and `-vv` (or `RUST_LOG`) raise the console log level. The debug window
   has its own level.
-- `--config <scratch.toml>` keeps a run away from the real config. Always use
-  it when testing; `dev.ps1` does by default.
+- `--config <scratch.toml>` keeps a run away from the real config, its
+  storage, and the per-user registry entries. Always use it when testing;
+  `dev.ps1` does by default.
 
 ## 4. Finding a hang or a missed shutdown
 

@@ -1,6 +1,8 @@
 use deskspace_core::animation::Animations;
+use deskspace_core::lenient::known_or_default;
 use deskspace_core::source::LensTitle;
 use deskspace_core::theme::RECENT_COLORS_LIMIT;
+use deskspace_core::typography::Typography;
 use deskspace_core::{Color, Desktop, SpaceIcon, SpaceView, Theme};
 use serde::{Deserialize, Serialize};
 
@@ -26,6 +28,10 @@ pub struct Config {
     /// `window` so a settings Cancel, which restores `window`, keeps them.
     #[serde(default)]
     pub recent_colors: Vec<Color>,
+    /// The fonts of every text role, from the settings window's font pages.
+    /// Global only: a space's look does not carry fonts.
+    #[serde(default)]
+    pub typography: Typography,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,8 +62,10 @@ pub struct WindowSettings {
     pub new_space_locked: bool,
     /// Whether DeskSpace may download an icon set, and whether the question
     /// was asked. Nothing is fetched before the user agrees.
+    #[serde(deserialize_with = "known_or_default")]
     pub icon_downloads: IconDownloads,
     /// The icon a new space starts with.
+    #[serde(deserialize_with = "known_or_default")]
     pub new_space_icon: NewSpaceIcon,
     /// The view settings a new space starts with (W40): its mode, status
     /// bar, and sort rule. The default is today's view, so nothing changes
@@ -92,6 +100,7 @@ pub struct NewLens {
     /// The new lens's view settings. The default turns the status bar on.
     pub view: SpaceView,
     /// How the new lens's title follows its folder.
+    #[serde(deserialize_with = "known_or_default")]
     pub title: LensTitle,
     /// Whether the new lens lists hidden files.
     pub show_hidden: bool,
@@ -194,6 +203,7 @@ impl Default for Config {
             theme: Theme::default(),
             window: WindowSettings::default(),
             recent_colors: Vec::new(),
+            typography: Typography::default(),
         }
     }
 }
@@ -454,6 +464,25 @@ mod tests {
         assert_eq!(look.gap, GAP_RANGE.1);
         assert_eq!(look.padding, GAP_RANGE.0);
         assert_eq!(look.theme.overlay_size, OVERLAY_SIZE_RANGE.0);
+    }
+
+    #[test]
+    fn fonts_load_and_save_with_the_config() {
+        use deskspace_core::typography::{Font, Role};
+
+        let parsed: Config = toml::from_str(
+            "version = 2
+",
+        )
+        .unwrap();
+        assert_eq!(parsed.typography, Typography::default(), "an older file");
+        let mut config = Config::new();
+        config
+            .typography
+            .set(Role::ItemLabel, Font::new("Consolas", 11.0, 400));
+        let saved = toml::to_string(&config).unwrap();
+        let reloaded: Config = toml::from_str(&saved).unwrap();
+        assert_eq!(reloaded.typography, config.typography);
     }
 
     #[test]

@@ -6,8 +6,8 @@ use deskspace_core::geometry::{Point, Rect, Size};
 use windows::UI::ViewManagement::{UIColorType, UISettings};
 use windows::Win32::Foundation::{ERROR_SUCCESS, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
-    CreateFontIndirectW, DT_CENTER, DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER, DeleteObject,
-    DrawTextW, GetDC, GetMonitorInfoW, GetTextFaceW, HDC, HFONT, HGDIOBJ, LOGFONTW,
+    CreateFontIndirectW, DRAW_TEXT_FORMAT, DT_CENTER, DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER,
+    DeleteObject, DrawTextW, GetDC, GetMonitorInfoW, GetTextFaceW, HDC, HFONT, HGDIOBJ, LOGFONTW,
     MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint, ReleaseDC, SelectObject, SetBkMode,
     SetTextColor, TRANSPARENT,
 };
@@ -269,6 +269,27 @@ pub(crate) fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
+/// The message font at `dpi` for `role`, from the type scale: the role's
+/// family (or Windows' message family when it is empty), size in 96-DPI
+/// pixels, and weight. Callers delete the returned font.
+pub(crate) fn font_for(role: deskspace_core::typography::Role, dpi: u32) -> HFONT {
+    let typography = super::typography::current();
+    let font = typography.font(role);
+    let mut logfont = message_logfont(dpi);
+    let scale = dpi as f32 / 96.0;
+    logfont.lfHeight = -((font.size * scale).round().max(1.0) as i32);
+    logfont.lfWeight = i32::from(font.weight);
+    if !font.family.is_empty() {
+        let mut face = [0u16; 32];
+        for (slot, ch) in face.iter_mut().zip(font.family.encode_utf16()) {
+            *slot = ch;
+        }
+        logfont.lfFaceName = face;
+    }
+    // SAFETY: the LOGFONT is a fully initialised local.
+    unsafe { CreateFontIndirectW(&logfont) }
+}
+
 /// The system message font (`Segoe UI 9pt` on Windows 11) at `dpi`, from
 /// `SPI_GETNONCLIENTMETRICS`. The settings window and the color picker build
 /// their fonts from it, so both match native windows.
@@ -353,6 +374,29 @@ unsafe fn face_is(font: HFONT, expected: PCWSTR) -> bool {
     &name[..length.min(name.len())] == expected
 }
 
+/// `DrawTextW` for `text`, returning its height. Empty text draws and
+/// measures nothing and leaves `rect` as it was.
+///
+/// The windows crate hands Windows an empty slice as a dangling pointer
+/// (`0x2`) with a count of 0, and Windows 11 build 26300's `DrawTextExWorker`
+/// reads the first character anyway. That access violation killed the app
+/// whenever the settings window opened, on the Lens page's empty folder note.
+/// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-drawtextw
+pub(crate) unsafe fn draw_text(
+    hdc: HDC,
+    text: &str,
+    rect: &mut RECT,
+    format: DRAW_TEXT_FORMAT,
+) -> i32 {
+    if text.is_empty() {
+        return 0;
+    }
+    let mut wide: Vec<u16> = text.encode_utf16().collect();
+    // SAFETY: `wide` is a live, non-empty buffer whose length the slice
+    // carries; the caller passes a live DC.
+    unsafe { DrawTextW(hdc, &mut wide, rect, format) }
+}
+
 /// Draws symbol `glyph` from `font` centered in `rect`, in `color`. The font
 /// rendering is anti-aliased, so this is used for the picker's check mark and
 /// the settings window's eyedropper. Does nothing if `font` is null.
@@ -396,6 +440,7 @@ pub(crate) fn hiword(value: isize) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use windows::Win32::Graphics::Gdi::DT_CALCRECT;
 
     #[test]
     fn word_extraction_sign_extends() {
@@ -407,6 +452,25 @@ mod tests {
     #[test]
     fn wide_strings_are_nul_terminated() {
         assert_eq!(wide("ab"), vec![b'a' as u16, b'b' as u16, 0]);
+    }
+
+    #[test]
+    fn empty_text_measures_nothing_and_text_measures_a_line() {
+        let start = RECT {
+            right: 200,
+            ..Default::default()
+        };
+        // SAFETY: the screen DC is released before the block ends.
+        unsafe {
+            let dc = GetDC(None);
+            let mut empty = start;
+            let empty_height = draw_text(dc, "", &mut empty, DT_CALCRECT);
+            let mut line = start;
+            let line_height = draw_text(dc, "Folder", &mut line, DT_CALCRECT);
+            ReleaseDC(None, dc);
+            assert_eq!((empty_height, empty), (0, start));
+            assert!(line_height > 0 && line.bottom > 0, "{line_height} {line:?}");
+        }
     }
 
     #[test]

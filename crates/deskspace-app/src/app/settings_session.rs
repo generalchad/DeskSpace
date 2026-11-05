@@ -44,6 +44,9 @@ pub(super) struct SettingsUi {
     pending_preview: Preview,
     /// The space highlighted for the settings window, until `Timer::Highlight`.
     highlighted: Option<SpaceId>,
+    /// A form refresh was skipped because the page it would fill was hidden
+    /// (`refresh_preview`); the next page switch makes it.
+    refresh_owed: bool,
 }
 
 impl SettingsUi {
@@ -76,11 +79,20 @@ impl App {
         if let Some(session) = self.settings_ui.session.as_mut() {
             session.forget_space(id);
         }
+        self.icons.forget_user(IconUser::SettingsPreview(id.0));
         self.clear_highlight(ui);
         self.refresh_settings(ui);
     }
 
     fn settings_form(&mut self) -> Option<deskspace_platform::SettingsForm> {
+        let glyphs = self
+            .config
+            .desktop
+            .spaces()
+            .iter()
+            .filter_map(|space| Some((space.id, self.space_icons.space_glyph(space)?)))
+            .collect();
+        self.settings_ui.session.as_mut()?.glyphs = glyphs;
         let scope = self.settings_ui.session.as_ref()?.scope;
         let preview = self.space_preview(scope);
         self.settings_ui.session.as_ref().map(|session| {
@@ -151,10 +163,13 @@ impl App {
     /// Opens the settings window, or brings it to the front, on `scope` when
     /// one is given (a space's "Space settings…"); otherwise where it was.
     pub(super) fn open_settings_with(&mut self, ui: &mut Ui, scope: Option<SpaceId>) {
+        self.load_installed_fonts(ui);
         let config = &self.config;
+        let fonts = self.fonts.installed();
         let session = self.settings_ui.session.get_or_insert_with(|| {
             let mut session = Session::new(config);
             session.themes = ThemeFile::list(&self.store.themes_dir());
+            session.fonts = fonts.to_vec();
             session
         });
         if scope.is_some() {
@@ -203,7 +218,16 @@ impl App {
         }
     }
 
+    /// Whether the settings window shows space `id`'s pages.
+    pub(super) fn settings_shows(&self, id: SpaceId) -> bool {
+        self.settings_ui
+            .session
+            .as_ref()
+            .is_some_and(|session| session.scope == Some(id))
+    }
+
     pub(super) fn refresh_settings(&mut self, ui: &mut Ui) {
+        self.settings_ui.refresh_owed = false;
         if let Some(form) = self.settings_form() {
             ui.update_settings(&form);
         }
@@ -211,13 +235,19 @@ impl App {
 
     /// A Shortcuts preview's icons arrived: rebuild the form if the window
     /// still shows that space's Shortcuts page, so the picture fills in only
-    /// while it is on screen.
+    /// while it is on screen. On another of that space's pages, the next page
+    /// switch rebuilds it.
     pub(super) fn refresh_preview(&mut self, ui: &mut Ui, id: SpaceId) {
-        let showing = self.settings_ui.session.as_ref().is_some_and(|session| {
-            session.scope == Some(id) && session.page == settings::page::SHORTCUTS
-        });
-        if showing {
+        let Some(session) = self.settings_ui.session.as_ref() else {
+            return;
+        };
+        if session.scope != Some(id) {
+            return;
+        }
+        if session.page == settings::page::SHORTCUTS {
             self.refresh_settings(ui);
+        } else {
+            self.settings_ui.refresh_owed = true;
         }
     }
 
@@ -245,6 +275,8 @@ impl App {
                     self.schedule_preview(ui, Preview::relayout_all());
                 } else if effect == FieldEffect::Look {
                     self.schedule_preview(ui, Preview::look_all());
+                } else if effect == FieldEffect::Fonts {
+                    self.sync_typography(ui);
                 }
                 self.refresh_settings(ui);
             }
@@ -262,9 +294,27 @@ impl App {
                     self.delete_space_from_settings(ui, id);
                 }
             }
+            // The name and the icon commit at once, as on the desktop, and
+            // Cancel keeps them (D16).
+            SettingsEvent::HeaderRenamed { title } => {
+                if let Some(id) = session.scope {
+                    self.rename_space_to(ui, id, &title);
+                    self.refresh_settings(ui);
+                }
+            }
+            SettingsEvent::HeaderIconPressed => {
+                if let Some(id) = session.scope {
+                    self.pick_space_icon(ui, id);
+                }
+            }
             SettingsEvent::ScopeChanged { scope } => {
+                let previous = session.scope;
                 let id = settings::scope_at(&self.config, scope);
                 let kind = ScopeKind::of(id.and_then(|id| self.config.desktop.space(id)));
+                if let Some(previous) = previous {
+                    self.icons
+                        .forget_user(IconUser::SettingsPreview(previous.0));
+                }
                 session.select_scope(id, kind);
                 self.refresh_settings(ui);
                 match id {
@@ -272,9 +322,13 @@ impl App {
                     None => self.clear_highlight(ui),
                 }
             }
+            // The window has already switched pages and no field changed, so
+            // a page switch needs no new form unless one is owed.
             SettingsEvent::NavChanged { entry } => {
                 session.select_entry(entry);
-                self.refresh_settings(ui);
+                if self.settings_ui.refresh_owed {
+                    self.refresh_settings(ui);
+                }
             }
             SettingsEvent::PreviewRemove { index, .. } => {
                 if let Some(id) = session.scope {
@@ -291,7 +345,11 @@ impl App {
                 self.refresh_settings(ui);
             }
             SettingsEvent::Ok => {
+                let scope = session.scope;
                 if self.apply_settings(ui) {
+                    if let Some(scope) = scope {
+                        self.icons.forget_user(IconUser::SettingsPreview(scope.0));
+                    }
                     self.settings_ui.session = None;
                     self.clear_highlight(ui);
                     ui.close_settings();
@@ -300,7 +358,11 @@ impl App {
                 }
             }
             SettingsEvent::Cancel => {
+                let scope = session.scope;
                 self.cancel_settings(ui);
+                if let Some(scope) = scope {
+                    self.icons.forget_user(IconUser::SettingsPreview(scope.0));
+                }
                 ui.close_settings();
             }
         }
@@ -342,6 +404,11 @@ impl App {
             (ButtonAction::OpenLensFolder | ButtonAction::ChangeLensFolder, None) => {}
             (ButtonAction::OpenWindowsAnimationSettings, _) => {
                 ui.open_url(settings::windows_animation_settings_uri(windows_build()));
+            }
+            (ButtonAction::ResetFonts(reset), _) => {
+                settings::reset_fonts(&mut self.config, reset);
+                self.sync_typography(ui);
+                self.refresh_settings(ui);
             }
         }
     }
@@ -600,6 +667,7 @@ impl App {
         self.restore_spaces(ui, &session.saved_spaces);
         session.revert(&mut self.config);
         ui.set_ui_dark(self.ui_dark());
+        self.sync_typography(ui);
         if restyle {
             self.restyle_all(ui);
         }
@@ -664,6 +732,51 @@ mod tests {
     fn app() -> App {
         let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
         App::new(Config::new(), store, false, false)
+    }
+
+    #[test]
+    fn a_header_rename_commits_only_a_new_name() {
+        let mut app = app();
+        let space = crate::fixtures::create_space(
+            &mut app.config.desktop,
+            "Work",
+            deskspace_core::Rect::new(0, 0, 240, 120),
+        );
+        assert_eq!(
+            app.title_command(space, "  Play  "),
+            Some(Command::RenameSpace {
+                id: space,
+                title: "Play".into()
+            }),
+            "trimmed"
+        );
+        assert_eq!(app.title_command(space, "Work"), None, "unchanged");
+        assert_eq!(app.title_command(space, "   "), None, "empty");
+    }
+
+    #[test]
+    fn a_header_rename_of_a_lens_survives_cancel() {
+        let mut app = app();
+        let lens = crate::fixtures::create_lens(
+            &mut app.config.desktop,
+            "Downloads",
+            deskspace_core::Rect::new(0, 0, 240, 120),
+            "C:/Users/me/Downloads",
+        );
+        let mut session = Session::new(&app.config);
+        let command = app.title_command(lens, "Inbox").expect("a new name");
+        crate::fixtures::apply(&mut app.config.desktop, command);
+        // `rename_space_to` takes the rename into the Cancel snapshot.
+        session.resnapshot(app.config.desktop.space(lens).unwrap());
+        let saved = session
+            .saved_spaces
+            .iter()
+            .find(|saved| saved.id == lens)
+            .unwrap();
+        assert!(matches!(
+            saved.restore_title(),
+            Some(Command::SetLensTitle { text, .. }) if text == "Inbox"
+        ));
     }
 
     #[test]

@@ -381,6 +381,7 @@ impl App {
                 .settings_ui
                 .highlighted()
                 .is_some_and(|id| surface == Surface::Space(id)),
+            highlight_fades: self.animations_play(),
             focused: (self.selection.surface == Some(surface))
                 .then_some(self.selection.focused)
                 .flatten(),
@@ -1013,13 +1014,35 @@ impl App {
             .filter(|session| session.surface == surface)
         {
             match session.target {
-                EditTarget::Title => scene.editing = Some(session.text.clone()),
+                EditTarget::Title => {
+                    scene.editing = Some(session.text.clone());
+                    self.show_title_icon_button(scene, surface);
+                }
                 EditTarget::Item { id: item, .. } => {
                     scene.editing_item = Some((item.0, session.text.clone()));
                 }
             }
         }
         scene.caret_visible = self.edit.caret_visible();
+    }
+
+    /// Makes the space's title icon a button while its title is renamed: the
+    /// picture it has, or the placeholder, with the hover fill when the
+    /// pointer is over it (D16, D26).
+    fn show_title_icon_button(&self, scene: &mut SpaceScene, surface: Surface) {
+        let Surface::Space(id) = surface else {
+            return;
+        };
+        let Some(space) = self.config.desktop.space(id) else {
+            return;
+        };
+        let rect = crate::scene::title_icon_rect_of(space, self.is_browsed(id));
+        let image = scene.title_icon.take().and_then(|icon| icon.image);
+        scene.title_icon = Some(crate::scene::title_icon_button(
+            rect,
+            image,
+            self.pointer.title_icon_hover == Some(id),
+        ));
     }
 
     /// The work behind `Event::SystemThemeChanged`: re-read Windows' look and

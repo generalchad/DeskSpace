@@ -30,7 +30,7 @@ pub(super) fn look_pages(
     let appearance = SettingsPage {
         title: "Appearance".into(),
         fields: vec![
-            Field::heading(field::SPACES_HEADING, "Spaces"),
+            Field::heading(field::SPACES_HEADING, "Material"),
             Field::choice(
                 field::MODE,
                 "Color mode",
@@ -42,6 +42,13 @@ pub(super) fn look_pages(
                 "Background material",
                 &labels(&BACKDROPS),
                 index_of(&BACKDROPS, theme.backdrop),
+            ),
+            Field::note(
+                field::COMPATIBILITY_NOTE,
+                "Clear glass at 0% tint and 0% title shading, without a border, \
+                 shows only the icons and labels. Acrylic and blur use Windows 11's \
+                 own corners, up to 8 px; larger radii apply to clear glass and \
+                 solid. Desktop-hosted spaces are drawn opaque.",
             ),
             Field::slider(
                 field::CORNERS,
@@ -68,6 +75,7 @@ pub(super) fn look_pages(
                     .title_shading
                     .clamp(TITLE_SHADING_RANGE.0, TITLE_SHADING_RANGE.1) as i32,
             ),
+            Field::heading(field::APPEARANCE_BORDER_HEADING, "Border"),
             Field::toggle(field::BORDER, "Show window border", theme.show_border),
             Field::slider(
                 field::BORDER_WIDTH,
@@ -79,6 +87,7 @@ pub(super) fn look_pages(
             )
             .suffix(" px")
             .enabled(theme.show_border),
+            Field::heading(field::APPEARANCE_SHADOW_HEADING, "Shadow"),
             Field::toggle(field::SHADOW, "Show shadow", theme.show_shadow),
             Field::slider(
                 field::SHADOW_SIZE,
@@ -100,6 +109,7 @@ pub(super) fn look_pages(
             )
             .suffix(" %")
             .enabled(theme.show_shadow),
+            Field::heading(field::APPEARANCE_ITEMS_HEADING, "Items"),
             Field::choice(
                 field::PRESET,
                 "Item preset",
@@ -187,11 +197,7 @@ pub(super) fn look_pages(
         Field::color(field::TINT, "Background tint", palette.tint.with_alpha(255))
             .enabled(theme.custom_colors),
         Field::color(field::TEXT, "Text", palette.title_text).enabled(theme.custom_colors),
-        Field::toggle(
-            field::USE_ACCENT,
-            "Use Windows accent color for the selection",
-            theme.use_accent,
-        ),
+        Field::heading(field::COLORS_BORDER_HEADING, "Border"),
         Field::choice(
             field::BORDER_SOURCE,
             "Border color",
@@ -215,6 +221,12 @@ pub(super) fn look_pages(
         )
         .suffix(" %")
         .enabled(theme.show_border),
+        Field::heading(field::COLORS_SELECTION_HEADING, "Selection"),
+        Field::toggle(
+            field::USE_ACCENT,
+            "Use Windows accent color for the selection",
+            theme.use_accent,
+        ),
         Field::color(
             field::MARQUEE_COLOR,
             "Selection box color",
@@ -226,6 +238,7 @@ pub(super) fn look_pages(
             "Show selection box border",
             theme.show_marquee_border,
         ),
+        Field::heading(field::COLORS_THEMES_HEADING, "Themes"),
     ];
     // The row is always built so the page keeps its shape; it is disabled
     // until the folder holds a theme.
@@ -245,13 +258,6 @@ pub(super) fn look_pages(
     colors_fields.push(Field::button(field::SAVE_THEME, "", "Save theme\u{2026}"));
     colors_fields.push(Field::button(field::LOAD_THEME, "", "Load theme\u{2026}"));
     colors_fields.push(Field::button(field::RESET, "", reset));
-    colors_fields.push(Field::note(
-        field::COMPATIBILITY_NOTE,
-        "Clear glass at 0% tint and 0% title shading, without a border, \
-         shows only the icons and labels. Acrylic and blur use Windows 11's \
-         own corners, up to 8 px; larger radii apply to clear glass and \
-         solid. Desktop-hosted spaces are drawn opaque.",
-    ));
     let colors_page = SettingsPage {
         title: "Colors".into(),
         fields: colors_fields,
@@ -308,11 +314,22 @@ pub(super) fn general_page(config: &Config) -> SettingsPage {
     SettingsPage {
         title: "General".into(),
         fields: vec![
-            Field::heading(field::BEHAVIOR_HEADING, "Behavior"),
+            Field::heading(field::BEHAVIOR_HEADING, "Startup"),
+            Field::toggle(
+                field::START_WITH_WINDOWS,
+                "Start DeskSpace when you sign in",
+                config.window.start_with_windows,
+            ),
             Field::toggle(
                 field::START_HIDDEN,
                 "Start with spaces hidden",
                 config.window.start_hidden,
+            ),
+            Field::heading(field::DESKTOP_HEADING, "Desktop"),
+            Field::toggle(
+                field::TAKE_OVER_DESKTOP,
+                "Take over the desktop (hide Explorer's icons)",
+                config.window.take_over_desktop,
             ),
             Field::slider(
                 field::SNAP,
@@ -326,22 +343,14 @@ pub(super) fn general_page(config: &Config) -> SettingsPage {
                 "Snap resized spaces to whole columns and rows",
                 config.desktop.layout.fit_to_grid,
             ),
-            Field::toggle(
-                field::START_WITH_WINDOWS,
-                "Start DeskSpace when you sign in",
-                config.window.start_with_windows,
-            ),
-            Field::toggle(
-                field::TAKE_OVER_DESKTOP,
-                "Take over the desktop (hide Explorer's icons)",
-                config.window.take_over_desktop,
-            ),
+            Field::heading(field::LOOK_HEADING, "Look"),
             Field::choice(
                 field::UI_MODE,
                 "Settings and menus",
                 &labels(&MODES),
                 index_of(&MODES, config.theme.ui_mode),
             ),
+            Field::heading(field::SPACE_ICONS_HEADING, "Space icons"),
             Field::choice(
                 field::ICON_DOWNLOADS,
                 "Icon downloads",
@@ -415,6 +424,10 @@ pub(super) fn new_spaces_page(config: &Config) -> SettingsPage {
         title: "New spaces".into(),
         fields: vec![
             Field::heading(field::NEW_SPACES_HEADING, "Defaults for new spaces"),
+            Field::note(
+                field::NEW_SPACES_INTRO_NOTE,
+                "Everything not set here follows the Global appearance and layout.",
+            ),
             Field::text(
                 field::NEW_SPACE_TITLE,
                 "Default title",
@@ -435,16 +448,15 @@ pub(super) fn new_spaces_page(config: &Config) -> SettingsPage {
                 "Start new spaces locked",
                 window.new_space_locked,
             ),
+            Field::note(
+                field::NEW_SPACES_NOTE,
+                "A locked space keeps its size and scrolls instead of growing.",
+            ),
             Field::choice(
                 field::NEW_SPACE_ICON,
                 "Icon",
                 &labels(&NEW_SPACE_ICON_OPTIONS),
                 index_of(&NEW_SPACE_ICON_OPTIONS, window.new_space_icon),
-            ),
-            Field::note(
-                field::NEW_SPACES_NOTE,
-                "New spaces otherwise follow the Global appearance and layout. \
-                 A locked space keeps its size and scrolls instead of growing.",
             ),
         ]
         .into_iter()
@@ -506,7 +518,7 @@ pub(super) fn lenses_page(config: &Config) -> SettingsPage {
         ),
     ]);
     SettingsPage {
-        title: "Lenses".into(),
+        title: "New lenses".into(),
         fields,
     }
 }

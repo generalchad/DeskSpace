@@ -547,3 +547,53 @@ The run also showed that `shadow_opacity` is the black's own alpha, not the
 darkest pixel: the blur leaves the peak at about three quarters of it below
 the space and half beside it. The maintainer chose on 2026-10-27 to keep
 that look; the theme field's comment and D15 now say so.
+
+### 2026-11-04: settings text on build 26300
+
+On the installed 0.3.0-alpha.1 build (`a2e51c0`), at 100 % in dark and
+light mode: the settings window opened on Global, on a plain space, and on
+a lens, and stayed up; the rail, scopes, and header labels and the button
+text drew as before, and the lens's Folder note showed its path. Not
+covered: 150 %.
+
+### 2026-11-04: W2, a lens follows its folder
+
+On a hand-made lens over `C:\Temp\lens-test` with a custom title, at
+100 %: creating and deleting files in the folder showed in the lens at
+once. Renaming the folder on the same volume was followed, with the
+"Folder moved:" notice and every item kept, and the title did not change,
+which is what a custom title does (D19; W45 owns the title-following
+check). The row's "the lens empties, and fills again when renamed back"
+predated D19, so the row is gone and W5 now makes its folder unavailable
+by deleting or moving it.
+
+### 2026-11-04: W3b, files into a lens
+
+On a hand-made lens over `C:\Temp\lens-test` with two spaces, from
+Explorer and from a normal space: a move landed in the folder and left
+the space; a clashing drop showed the shell's Replace or Skip; Ctrl+Z in
+Explorer put the file back (the first attempt failed only because the
+lens folder's rename sat on top of Explorer's undo stack); a right drop
+with "Copy here" kept the original; "Add files…" moved its file into the
+folder; and a clashing drop on a normal space became " (2)" with no
+dialog. The right drop's clash exposed P46 on the way: the shell's
+Replace or Skip window opened behind the editor and looked like a hang.
+
+### 2026-11-04: W5, an unavailable lens
+
+Deleting the lens's folder to the Recycle Bin showed "Folder not
+available" and the path, centered and faded, with its items gone; restore
+from the Recycle Bin brought every item back within 5 s. Not covered: the
+long-path wrap inside the lens, which needs a deeper path than this
+session's `C:\Temp\lens-test`.
+
+### 2026-11-04: W6, the lens menu
+
+On a hand-made lens: Open folder opened its folder; Change folder… moved
+the lens to another folder and kept it after the storage folder was
+refused with a message; Sort by had Explorer's four keys, both
+directions, and Folders first, checked the current pair, and reordered at
+once; Show hidden files applied at once; a normal space's Sort by looked
+the same and sorted once. After a restart the lens came back sorted by
+Type, descending, folders first, with hidden files shown, and the saved
+config held the same values.

@@ -3,7 +3,9 @@ mod edit;
 mod error;
 mod icon_queue;
 mod input;
+mod page_scroll;
 mod render;
+mod settings_cards;
 mod ui;
 mod win32;
 
@@ -23,9 +25,10 @@ pub use render::{
 };
 pub use ui::{
     CursorShape, CustomShortcut, DebugControl, DebugControlKind, DebugPanel, DebugSection, Field,
-    FieldKind, FieldValue, LogLevel, LogLine, MenuEntry, PreviewItem, SettingsButton, SettingsForm,
-    SettingsHeader, SettingsNav, SettingsNavEntry, SettingsNavGroup, SettingsPage, SettingsScope,
-    SettingsSwitch, ShortcutTarget, SliderMark, SpacePreview,
+    FieldKind, FieldValue, HeaderIcon, IconChoice, IconPickerRequest, LogLevel, LogLine, MenuEntry,
+    PickerSet, PreviewItem, SettingsButton, SettingsForm, SettingsHeader, SettingsNav,
+    SettingsNavEntry, SettingsNavGroup, SettingsPage, SettingsScope, SettingsSwitch,
+    ShortcutTarget, SliderMark, SpacePreview,
 };
 pub use win32::Placement;
 pub use win32::autostart::set_start_with_windows;

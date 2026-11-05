@@ -28,6 +28,7 @@ use crate::win32::dark_mode::UiColors;
 use crate::win32::dialog;
 use crate::win32::settings_window::colorref;
 use crate::win32::system::wide;
+use crate::win32::wheel_to_page::{WheelControl, pass_wheel_to_page};
 
 /// SS_NOPREFIX | SS_CENTERIMAGE for labels (WinUser.h).
 /// https://learn.microsoft.com/en-us/windows/win32/controls/static-control-styles
@@ -215,15 +216,21 @@ unsafe fn build_control(
                 id,
                 font,
             ),
-            DebugControlKind::Choice { .. } => control(
-                page,
-                WC_COMBOBOXW,
-                "",
-                CBS_DROPDOWNLIST as u32 | WS_VSCROLL.0 | tab,
-                WINDOW_EX_STYLE(0),
-                id,
-                font,
-            ),
+            DebugControlKind::Choice { .. } => {
+                let choice = control(
+                    page,
+                    WC_COMBOBOXW,
+                    "",
+                    CBS_DROPDOWNLIST as u32 | WS_VSCROLL.0 | tab,
+                    WINDOW_EX_STYLE(0),
+                    id,
+                    font,
+                );
+                if let Some(choice) = choice {
+                    pass_wheel_to_page(choice, WheelControl::DropDown);
+                }
+                choice
+            }
             DebugControlKind::Readout { .. } => control(
                 page,
                 WC_EDITW,

@@ -120,7 +120,11 @@ pub(crate) fn is_outside(point: POINT) -> bool {
         }
         let mut class = [0u16; 16];
         let length = GetClassNameW(root, &mut class) as usize;
-        String::from_utf16_lossy(&class[..length]) != MENU_CLASS
+        if String::from_utf16_lossy(&class[..length]) == MENU_CLASS {
+            return false;
+        }
+        // A press on the icon picker keeps the rename that opened it (D16).
+        !crate::win32::icon_picker::is_picker(root)
     }
 }
 

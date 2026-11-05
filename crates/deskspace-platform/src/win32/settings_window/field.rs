@@ -1,6 +1,7 @@
 //! Builds the controls for each settings field kind.
 
 use crate::win32::dialog::ControlSpec;
+use crate::win32::wheel_to_page::{WheelControl, pass_wheel_to_page};
 
 use super::build::{
     BUTTON_ADVANCE, BUTTON_HEIGHT, BUTTON_WIDTH, Builder, CHOICE_ADVANCE, COLOR_ADVANCE,
@@ -86,6 +87,9 @@ impl Builder {
                 },
             );
             if let Some(combo) = combo {
+                // The page scrolls; a scroll past a closed drop-down must not
+                // change it.
+                pass_wheel_to_page(combo, WheelControl::DropDown);
                 for option in options {
                     let text = wide(option);
                     SendMessageW(
@@ -190,6 +194,7 @@ impl Builder {
                 },
             );
             if let Some(slider) = slider {
+                pass_wheel_to_page(slider, WheelControl::Slider);
                 SendMessageW(
                     slider,
                     TBM_SETRANGEMIN,

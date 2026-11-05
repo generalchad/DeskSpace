@@ -3,7 +3,9 @@
 
 use super::update::{Update, set_swatch};
 use super::*;
-use windows::Win32::Foundation::COLORREF;
+use windows::Win32::Foundation::{COLORREF, POINT};
+use windows::Win32::Graphics::Gdi::{MapWindowPoints, RDW_UPDATENOW, UnionRect};
+use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, IsWindowVisible, WM_SETREDRAW};
 
 pub(crate) fn colorref(color: Color) -> COLORREF {
     COLORREF(color.r as u32 | ((color.g as u32) << 8) | ((color.b as u32) << 16))
@@ -194,12 +196,83 @@ pub(super) unsafe fn on_scroll(window: HWND, control: HWND) {
     }
 }
 
-/// Shows the page at `index` and hides the rest.
-pub(super) unsafe fn show_page(pages: &[HWND], index: usize) {
+/// Shows the page at `index` and hides the rest, painting the swap once.
+///
+/// Shown and hidden one by one, each page repainted on its own, and a frame
+/// could show the old page gone and the new one half drawn. So the window
+/// stops drawing while the pages change, then the area both cover is painted
+/// in one pass. Nothing happens when the page already shows alone.
+pub(super) unsafe fn show_page(settings: HWND, pages: &[HWND], index: usize) {
+    let Some(&page) = pages.get(index) else {
+        return;
+    };
     // SAFETY: the handles are live page windows of the settings window.
     unsafe {
-        for (i, page) in pages.iter().enumerate() {
-            let _ = ShowWindow(*page, if i == index { SW_SHOW } else { SW_HIDE });
+        let shown: Vec<HWND> = pages
+            .iter()
+            .copied()
+            .filter(|each| IsWindowVisible(*each).as_bool())
+            .collect();
+        if shown == [page] {
+            return;
+        }
+        // A page newly shown starts at its top.
+        if !shown.contains(&page) {
+            super::scroll::to_top(settings, index);
+        }
+        // WM_SETREDRAW TRUE marks a window visible again, so a window not yet
+        // shown, whose first page is chosen while it is built, is left alone.
+        // https://learn.microsoft.com/en-us/windows/win32/gdi/wm-setredraw
+        let freeze = IsWindowVisible(settings).as_bool();
+        if freeze {
+            SendMessageW(settings, WM_SETREDRAW, Some(WPARAM(0)), None);
+        }
+        let _ = ShowWindow(page, SW_SHOW);
+        for other in shown.iter().filter(|each| **each != page) {
+            let _ = ShowWindow(*other, SW_HIDE);
+        }
+        if freeze {
+            SendMessageW(settings, WM_SETREDRAW, Some(WPARAM(1)), None);
+            let area = shown
+                .iter()
+                .map(|each| client_rect_of(settings, *each))
+                .fold(client_rect_of(settings, page), |union, rect| {
+                    let mut both = RECT::default();
+                    let _ = UnionRect(&mut both, &union, &rect);
+                    both
+                });
+            let _ = RedrawWindow(
+                Some(settings),
+                Some(&area),
+                None,
+                RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW,
+            );
+        }
+    }
+}
+
+/// `child`'s rect in `settings`' client coordinates.
+unsafe fn client_rect_of(settings: HWND, child: HWND) -> RECT {
+    let mut rect = RECT::default();
+    // SAFETY: both are live windows; the points are a local array.
+    unsafe {
+        let _ = GetWindowRect(child, &mut rect);
+        let mut corners = [
+            POINT {
+                x: rect.left,
+                y: rect.top,
+            },
+            POINT {
+                x: rect.right,
+                y: rect.bottom,
+            },
+        ];
+        MapWindowPoints(None, Some(settings), &mut corners);
+        RECT {
+            left: corners[0].x,
+            top: corners[0].y,
+            right: corners[1].x,
+            bottom: corners[1].y,
         }
     }
 }

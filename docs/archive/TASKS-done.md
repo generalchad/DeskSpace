@@ -5919,3 +5919,536 @@ until I5-I6 all land, so no partial build hides the desktop.
     it.
   - Run `actionlint` (`TOOLS.md` section 1). Done when it passes and CI is green on
     the commit.
+
+- [x] **K9. Split `win32/icons.rs`.** 793 lines of non-test code (measured
+  2026-11-02), and the next change would pass the guideline, so it goes before P24.
+  Turn it into `win32/icons/mod.rs` plus:
+  - `worker.rs`: `start_worker`, `run_worker`, `next_request`, `should_report`,
+    and `report_loaded`, with `Worker` and `WorkerState`, and their tests.
+  - `load.rs`: everything that reads an icon from the shell, from `load_icon` to
+    `composite_overlay`, including `shell_item_icon` and `resample`, and their tests.
+  - `mod.rs` keeps `IconUser`, `IconKind`, `Key`, `GenericIcon`, `CachedIcon`, and
+    `IconCache`. It re-exports `shell_item_icon` and `resample`, so `app_catalog` and
+    the other callers do not change.
+  - Done when: `mod.rs` is well under 800 lines of non-test code and the K rules
+    above hold.
+
+- [x] **P24. Let the icon cache forget a window (fix).** After: K9. Nothing ever
+  removes an entry from `IconCache::demand`, so the limit only rises. A previewed
+  space adds at most 60 for good, and a deleted space's scene stays counted, which
+  for a large lens is much more.
+  - `IconCache::forget_user(user)`: remove it from `demand`, and when a worker exists
+    call `queue.set_wanted(&user, &[])`, so it stops loading icons nobody will draw.
+  - `store` evicts once per insert, so a lower limit would never shrink the cache.
+    Turn its eviction into a `while` that runs until the entries are under the limit.
+    A replaced key still evicts nothing.
+  - Call it for `IconUser::SettingsPreview` in `app/settings_session.rs`, with the
+    old scope, read before `select_scope` in `ScopeChanged`, and on Ok and Cancel.
+    Call it for `IconUser::Space` beside both `view_cache.forget(id)` calls
+    (`app/files.rs`, `app/undo.rs`). Undoing that delete makes a new scene, which
+    registers again.
+  - Tests in the cache, which can set `demand` directly: the limit falls after a
+    forget, and the next store evicts down to it, oldest first. No shell calls.
+
+- [x] **P28. Delete the `deskspace.ico` cleanup (fix).** `App::sync_desktop_verbs`
+  (`app/visibility.rs`) deletes `deskspace.ico` beside the storage folder on every
+  show and hide. Under `--config` that is the config's own folder, wherever the user
+  put it, so a file of theirs with that name is deleted without asking. Only builds
+  from before 2026-10-11 wrote the file. The cleanup came in `325f079`, two days
+  before the first tag (`v0.2.0-alpha.1`), so no release ever wrote it.
+  - Delete the `leftover` lines and the comment above them. Change nothing else.
+  - Done when: the gates pass, and `rg -n "deskspace.ico" crates` finds only
+    `deskspace-app/build.rs` and `deskspace-app/Cargo.toml`.
+
+- [x] **P31. Leave the per-user registry alone under `--config` (fix).** A scratch
+  run (`dev.ps1` uses one by default) still writes the desktop menu entries and the
+  Run value, so both point at `target\debug\deskspace.exe`. Its clean exit then
+  deletes the installed build's desktop entries. `CONTEXT.md` section 5 says a
+  scratch config never touches real storage, and the registry should be no
+  different. Decided (maintainer, 2026-11-04): under `--config` the app writes
+  neither.
+  - `App` gets `shell_entries: bool`, with a `///` doc, `false` in `App::new`.
+    `bootstrap::run` sets it to `cli.config.is_none()`, beside `app.layer`.
+  - `sync_desktop_verbs`, `remove_desktop_verbs`, and `sync_start_with_windows`
+    (`app/visibility.rs`) return early unless it is set. Tests build `App` with it
+    off, so their `cfg!(test)` checks no longer do anything; delete them.
+  - Under `--config`, the "Start with Windows" switch still saves to the scratch
+    file. That is fine.
+  - Docs: `CONTEXT.md` section 5 (beside the storage sentence), and `TOOLS.md`
+    section 3's `--config` line. In section V, the C9 row and the E1/E2 row's
+    desktop verb check say to run `./scripts/dev.ps1 -RealConfig`.
+  - **[needs human]** check: with the installed DeskSpace running, run
+    `./scripts/dev.ps1` and exit it. The desktop menu still shows the installed
+    build's entries, and they still work.
+
+- [x] **P32a. A debug button that blocks the UI thread (debug tool).** Part of P32,
+  which needs it to reproduce the bug. Add "Block the UI thread 2 s" to the debug
+  window, built the way `DebugId::ThemeChanged` is: a `DebugId` (next free value) and
+  its `ALL` entry in `app/debug/ids.rs`, a row in `table.rs`, an arm in `mod.rs`, and
+  the method in `simulate.rs`. The method logs at `info`, calls
+  `std::thread::sleep`, and logs again.
+  - It exists only under the hidden `--debug` flag, so no user can press it.
+  - Done when: the gates pass, and `debug_ids_are_unique` and
+    `debug_ids_round_trip` (`ids.rs`) cover the new id.
+
+- [x] **P34. Let an older build read a newer config or theme file (fix).** **Land
+  before the next release**, so the version people may go back to can read what
+  later versions write. One enum word this build does not know fails the whole file.
+  A config with `backdrop = "mica_alt"`, written by a later DeskSpace or by hand,
+  fails to parse, and `load_or_default` backs it up and starts with no spaces
+  (checked 2026-11-04). A shared theme file from a later version fails the same way.
+  `view.rs` already guards `Column` (`#[serde(other)]`) and `GroupBy` (`Lenient`);
+  the other persisted enums have no guard. Decided (maintainer, 2026-11-04): an
+  unknown word falls back to that field's default, and a wrong type still fails the
+  file, as N1's `wrong-type` reference pins.
+  - Add `deskspace-core/src/lenient.rs` (`pub mod lenient`), and move `Lenient`
+    there from `view.rs`, so lenient reading has one home. Add `pub fn
+    known_or_default`, for `#[serde(deserialize_with = ...)]`. It reads an untagged
+    `enum Word<T> { Known(T), Unknown(String) }`. A known value is kept, any other
+    string becomes `T::default()`, and a value of another type is still an error.
+  - The guard, written first: a test in `deskspace-config` that builds a config
+    through `Command`s (a space with an item, a lens, and a customized look), saves
+    it, and walks the TOML. It replaces each string value, one at a time, with a
+    word no build knows, and the config must still load with all its spaces. A
+    second test does the same to N1's `full` theme file. Free text (titles, paths,
+    hotkeys) passes as it is, so the failures are the enum fields to fix.
+  - Fix each failure by putting `known_or_default` on that field. On 2026-11-04 the
+    unguarded enums were `ThemeMode`, `Backdrop`, `LabelShadow`, `BorderSource`,
+    `Preset`, `Edge`, `StartupOrder`, `SortKey`, `ItemKind`, `LensTitle`,
+    `Extensions`, `ViewMode`, `IconDownloads`, and `NewSpaceIcon`. Let the test
+    decide, not this list. `EffectChoice` and `SpaceIcon` already read any string
+    (`from = "String"`).
+  - `preset` already has its own reader (`preset_or_legacy`, `theme.rs`); give it
+    the same fallback for an unknown word. If a field fails that is not an enum (a
+    string with a format of its own), stop and ask.
+  - N1's reference files stay untouched, and `wrong-type` must still fail.
+  - The next save writes the default over the newer value. That is the price of
+    loading at all, and the "newer" backup still holds the original.
+  - Done when: both guard tests pass, and `CONTEXT.md` section 5 says what an
+    unknown word does, beside `ThemeFile`'s rules.
+
+- [x] **G1. The highlight's fade (platform, pure).** Lands in the same
+  commit as G3, its first caller; tick and archive both. A junior can write
+  and test it first, then hand the branch on.
+  - `render/highlight.rs`, beside `render/transition.rs`: `pub const
+    HIGHLIGHT_FADE_IN: Duration` (150 ms) and `HIGHLIGHT_FADE_OUT` (250 ms),
+    and `pub struct HighlightFade { from: f32, to: f32, start: Duration }`.
+    Its methods:
+    - `at_rest(on: bool) -> Self`;
+    - `level(now) -> f32`, which eases from `from` to `to` with
+      `math::smoothstep`;
+    - `toward(on: bool, now)`, which restarts from `level(now)`;
+    - `jump(on: bool)`;
+    - `is_done(now) -> bool`.
+  - A fade's length is its full duration times `(to - from).abs()`, so a
+    fade reversed half-way takes half the time and starts with no jump.
+  - Tests: at rest it stays at 0 or 1. A full fade in reaches 1 at 150 ms
+    and a fade out reaches 0 at 250 ms. The level only rises during a fade in
+    and only falls during a fade out. It never leaves 0..1. Reversing at
+    half-way starts from the level it had and ends early in proportion.
+    `is_done` is true from the end on.
+  - It cannot land alone: with no caller, clippy's `-D warnings` fails on
+    dead code, and `#[expect]` is not the answer.
+
+- [x] **G2. Let a window hold two frame subscriptions (platform).** G3 gives
+  a space window a second reason to want frames while an animation may hold
+  the first. Today `Subscribers` (`win32/frame_clock.rs`) keeps one entry
+  per window. The first `Subscription` to drop removes it, which would stop
+  the other one's frames.
+  - `Subscribers` counts per window: `add` increments, `remove` decrements,
+    and the entry goes at 0. A window is still owed one frame per
+    composition, however many subscriptions it has.
+  - `messages::FRAME` in the space window's procedure
+    (`space_window/mod.rs`) calls `frame_clock::delivered(window)` once,
+    then `space_animation::on_frame`. Move the `delivered` call out of
+    `on_frame` to do this.
+  - Update `Subscription`'s doc comment: a window may hold several, and it
+    gets frames while any of them lives.
+  - Tests in `frame_clock.rs`, on `Subscribers` alone: two adds and one
+    remove still list the window in `take_due`; the second remove empties
+    it; a window with two subscriptions is listed once per `take_due`.
+  - Senior review: `Subscribers` is shared with the frame thread under
+    `CLOCK`'s lock. The change itself stays inside that type.
+  - Done when: the gates pass and nothing else changes. The "Frame clock"
+    row in section V already covers it, so add no row.
+
+- [x] **G3. Fade the highlight in and out (platform, app).** **[needs
+  human]** After G2. Includes G1; one commit, `(G1, G3)`.
+  - App: `SpaceScene` gains `highlight_fades: bool` (`render/scene.rs`,
+    with a `///` doc), filled in `space_scene` (`deskspace-app/src/scene.rs`).
+    It is true unless Windows' "Animation effects" is off. Decide it as
+    `play_for` (`app/animation.rs`) does, including the debug tweak's
+    `ignore_windows`. `Timer::Highlight` and `HIGHLIGHT_MS` stay as they are.
+    Scene test: copy `the_settings_highlight_reaches_the_scene`.
+  - Platform: put the window side in a new `space_window/highlight.rs`,
+    because `space_window/mod.rs` is already past the size limit's 800
+    lines. `SpaceState` gains a `highlight` that holds a `HighlightFade`
+    and an `Option<frame_clock::Subscription>`.
+    - Every place that stores a new `PreparedScene` in `state.scene`
+      (`set_scene`, and `show_scene` in `space_animation.rs`) goes through
+      one helper. Leave `paint` alone: it only puts back the scene it took
+      out. The helper compares the old scene's `highlight` with the
+      new one's. On a change it calls `toward` and subscribes when
+      `highlight_fades` is set, and calls `jump` when it is not. A fold's
+      deferred scene therefore fades when it lands.
+    - `messages::FRAME` then also calls the highlight's frame step. The step
+      invalidates the window while the level moves, and drops the
+      subscription once `is_done`.
+  - Paint: `PaintFrame` (`space_window/frame.rs`) gains `highlight: f32`,
+    set from the fade's level at paint time. The painter (`render/d2d/mod.rs`,
+    the block after the border) draws while the level is above 0, at
+    `selected_fill` with alpha `255 × level`, and no longer reads
+    `scene.highlight`.
+  - `CONTEXT.md` section 6, "Highlight": it fades in and out, and switches
+    while Windows' "Animation effects" is off.
+  - Senior review: the paint and window code is `unsafe`. Every new block
+    keeps or gains its `// SAFETY:` comment.
+  - **[needs human]** check, with `--on-top` at 100 % and 150 %: open
+    Settings on a space, then click other spaces in the scopes pane. Each
+    outline fades in quickly, holds about a second, and fades out, with no
+    flash and no outline left behind. Click a second space mid-fade: the
+    first fades out while the second fades in. Fold and unfold a space
+    while it is highlighted, and hide all spaces mid-fade; nothing sticks.
+    With Windows' "Animation effects" off, it switches as before. With no
+    highlight showing, idle CPU is as before.
+
+
+- [x] **G4. Plan a page's cards (platform, pure).** Lands in the same
+  commit as G5, its first caller, as G1 does with G3.
+  - A new `deskspace-platform/src/settings_cards.rs`, pure like
+    `debug_console.rs`: `pub fn card_plan(fields: &[Field]) -> Vec<Placement>`,
+    one `Placement` per field, with `Placement { role: Role, opens_card:
+    bool, closes_card: bool }` and `enum Role { Heading, Row, Description }`.
+    The rules, D26's *Cards*:
+    - A `Heading` closes the open card and is drawn above the next one.
+    - A `Note` right after a field that is neither a `Heading` nor a `Note`
+      is that field's `Description`.
+    - Every other field is a `Row` on the open card, and opens one if there
+      is none. Fields before a page's first heading form an untitled card.
+    - The page's last row closes its card.
+  - Card geometry constants at 96 DPI, at the top of the file, each with a
+    one-line doc: `CARD_PADDING_X` 16, `CARD_PADDING_Y` 8, `CARD_RADIUS` 4,
+    `CARD_GAP` 12 (below a card), `ROW_SEPARATOR_GAP` 8 (above a hairline),
+    and `DESCRIPTION_GAP` 2.
+  - `UiColors` (`win32/dark_mode.rs`) gains `card` and `card_stroke`. Dark:
+    `0x32 0x32 0x32` and the divider's `0x3D 0x3D 0x3D`. Light: `0xF9 0xF9
+    0xF9` and `0xE5 0xE5 0xE5`. Extend `text_contrasts_with_the_body_in_both_modes`
+    so text contrasts with the card too, and add a test that the card
+    differs from the body in both modes.
+  - Tests for `card_plan`: the General page's shape (headings, rows, a note
+    as a description); a note after a heading is a row; two notes in a row
+    are a row and then a row; a page with no heading is one untitled card;
+    a heading closes the card before it; an empty page plans nothing.
+
+- [x] **G5. Draw the cards (platform).** **[needs human]** Includes G4; one
+  commit, `(G4, G5)`.
+  - `build_pages` (`settings_window/build.rs`) reads `card_plan` for each
+    page.
+    - Opening a card adds `CARD_PADDING_Y`. A row after the card's first adds
+      `ROW_SEPARATOR_GAP` and records a hairline. A description starts
+      `DESCRIPTION_GAP` below its row, with no hairline. Closing a card adds
+      `CARD_PADDING_Y` and then `CARD_GAP`.
+    - Every field on a card is laid out `CARD_PADDING_X` further in on both
+      sides. Pass the inset to `Builder::field`; do not change each field
+      builder.
+    - Record each page's card rects and hairlines in `SettingsState`.
+  - Put the drawing in a new `settings_window/cards.rs`, because `build.rs`
+    is near the size limit. The page's `WM_ERASEBKGND` (`page_wndproc`)
+    fills the body, then draws each card with GDI: `RoundRect` in `card`,
+    edged in `card_stroke`, at `CARD_RADIUS`, and each hairline a 1 px
+    `card_stroke` line inset by `CARD_PADDING_X`.
+  - Colors: in `on_ctl_color`, a control on a card gets the `card`
+    background and brush, and a heading keeps the body's. Store a `card`
+    brush beside `body_brush`, and remake it in `set_colors`. A description
+    draws in `secondary_text`, or in `disabled_text` while its row is
+    disabled. Check what the space preview (`settings_window/preview.rs`)
+    fills behind its picture: it must be `card` too.
+  - Window size: the window still fits the tallest page. If any page at
+    150 % is now taller than about 690 px at 96 DPI (a 1080p work area at
+    150 %), stop and ask. Pages do not scroll today, and scrolling would be
+    its own task.
+  - `CONTEXT.md` section 6, the settings window: pages group their fields on
+    cards (`card_plan`). Add `settings_cards.rs` to the file map's "Settings
+    window controls" row.
+  - Senior review: the build and paint code is `unsafe`, and
+    `on_ctl_color` decides every control's colors.
+  - **[needs human]** check, in light and dark at 100 % and 150 %, on every
+    page of Global, a space, and a lens: each heading's fields sit on one
+    rounded card with hairlines between rows. Labels, check boxes, sliders
+    and their marks, swatches, text boxes, and drop-downs show the card's
+    color behind them, with no body-colored boxes. Notes under a field are
+    grey and sit close under it. Disabled rows still grey out. Switching
+    dark mode while the window is open repaints the cards. Tab order is as
+    before.
+
+
+- [x] **G6. Group each page's fields (app).** **[needs human]** After G5,
+  so the check sees the cards. App only: `settings/pages.rs`, plus new
+  heading and note ids in `settings/ids.rs` (next free; never renumber).
+  The first group on a page keeps the page's existing heading id, with the
+  new label. Change no setting, its label, or its page except as listed.
+  - Appearance (`SPACES_HEADING`): "Material" (Color mode, Background
+    material, Corner radius, Tint opacity, Title bar shading), "Border"
+    (Show window border, Border thickness), "Shadow" (Show shadow, Shadow
+    size, Shadow opacity), and "Items" (Item preset).
+  - Move `COMPATIBILITY_NOTE` from the end of the Colors page to right after
+    "Background material", so it becomes that row's description. It
+    describes the materials, and on the Colors page it would read as the
+    Reset button's description.
+  - Colors (`COLORS_HEADING`): "Colors" (Use custom colors, Background tint,
+    Text), "Border" (Border color, Custom border color, Border opacity),
+    "Selection" (Use Windows accent color for the selection, Selection box
+    color, Show selection box border), and "Themes" (Themes, Save theme…,
+    Load theme…, and the reset button).
+  - General (`BEHAVIOR_HEADING`): "Startup" (Start DeskSpace when you sign
+    in, Start with spaces hidden), "Desktop" (Take over the desktop, Snap to
+    grid, Snap resized spaces to whole columns and rows), "Look" (Settings
+    and menus), and "Space icons" (Icon downloads and its note). "Updates"
+    is unchanged.
+  - New spaces: `NEW_SPACES_NOTE` keeps only its second sentence ("A locked
+    space keeps its size and scrolls instead of growing.") and moves right
+    after "Start new spaces locked". A new note right after the heading says
+    "Everything not set here follows the Global appearance and layout."
+  - Every other page is unchanged. Its notes already land where G4's rules
+    put them.
+  - Tests: fix any test that indexes these pages' fields. Add one per
+    regrouped page that checks its headings in order. The handler tests
+    (`every_editable_*_field_has_a_handler`) must pass unchanged.
+  - Collides with: R14, which would rewrite these pages. If R14b has
+    started, stop and ask.
+  - **[needs human]** check: each listed page shows the groups above in
+    that order, with the moved notes under the rows named. Every setting
+    still previews, applies, and cancels as before.
+
+
+- [x] **S9. The icon picker (platform).** Lands in the same commit as S10,
+  its first caller, which holds the on-screen check.
+  - `win32/icon_picker.rs`, a modal window copied from `app_picker.rs`
+    (owner, disabled-owner loop, dark mode, DPI). At the top, a set
+    dropdown, shown only when the request has more than one set (D16's
+    packs scaffold), and a search box (cue "Search icons") that filters as
+    you type through `deskspace_core::icon_match::search`. Below them, a
+    note line (`request.note` or the chosen set's), and an `LVS_ICON` list
+    view with `LVS_OWNERDATA`, so a set of thousands opens at once. It
+    labels each cell with the name, hyphens as spaces, and fills images
+    on demand (`LVN_GETDISPINFOW`) from a `GlyphCache` at 32 px, scaled, in
+    the window's text color. At the bottom, "Automatic", "No icon",
+    Cancel, and OK. OK is the default and enabled while a cell is
+    selected; Enter or a double-click on a cell is OK.
+  - `Ui::pick_icon(&IconPickerRequest) -> Option<IconChoice>` in
+    `runtime/ui_chrome.rs`, beside `pick_apps`: `IconPickerRequest<'a> {
+    title, sets: Vec<PickerSet<'a>>, current: Option<&IconRef> }`, with
+    `PickerSet { prefix, label, set: Option<&IconSet>, words, note:
+    Option<&str> }` (a set not ready has `None` and a note saying why), and
+    `IconChoice { Automatic, None, Icon(IconRef) }`. Its owner is the
+    settings window when open, else the controller, as `pick_apps`'s is.
+    It opens on `current`, selected and scrolled to.
+  - `win32/outside_click.rs` `is_outside`: a press on the picker is not
+    outside, as one on a popup menu is not, so a rename behind it stays
+    open (S10).
+  - Tests, pure: the cell label from a name; which cell the request opens
+    on; the dropdown shown only for two or more sets.
+
+- [x] **S10. Changing the icon while renaming (app, platform).** Includes
+  S9; one commit, tick and archive both. **[needs human]**
+  - `TitleIcon` gains `button: bool` and `hovered: bool`. While the space's
+    title is being renamed, `space_scene` always sets `title_icon`, with
+    `button: true`. The image is the space's icon or `None`, which the
+    painter draws as a placeholder: a rounded outline in the title color
+    at reduced alpha, with Segoe Fluent's "Add" glyph (`E710`). A hovered
+    button gets the item hover fill behind it. Outside a rename nothing
+    changes (S rule 4).
+  - `CursorShape::Hand` (`IDC_HAND`; map it beside the others), shown
+    while the pointer is over the button during a rename.
+    `PointerState` tracks the hover so the scene can draw it.
+  - `app/pointer.rs` `prepare_space_event`, before the click commits the
+    rename: a left press inside the button of the title being renamed opens
+    the picker and returns false, leaving the rename open. Add the check as
+    one named method (`title_icon_pressed`).
+  - `App::pick_space_icon(ui, id)` (in `space_icons.rs`): turn key capture
+    off (`ui.capture_text_input(false)`) so the picker's search box gets
+    keys. Build the request: every `ICON_SETS` row, with `need_icon_set`'s
+    state as each set's note ("Downloading the icons…", "Icon downloads
+    are off. Turn them on in Settings > General.", or the failure). Then
+    `ui.pick_icon`, then capture back on. A choice commits `SetSpaceIcon`
+    at once (`self.commit`) and refreshes the space; the rename goes on,
+    and Esc later cancels only the text. If the set is not ready and
+    consent is `Allowed` or `Ask`, call `need_icon_set` first (it decides through `next_step`, S rule 2); when the
+    download is still running, remember the space (`pending_picker`) and
+    open the picker from `ICONS_WAKE` if that rename is still open.
+  - `CONTEXT.md` section 8 (rename) and README Controls: during a rename,
+    click the icon to change it.
+  - Tests: the scene shows the button only while renaming, and the
+    placeholder for a space without an icon; `title_icon_pressed` hits only
+    the button of the space being renamed; the request's notes for each
+    state.
+  - **[needs human]** check, on the desktop at 100 % and 150 %: outside a
+    rename, the icon shows no hand and a click does what the title bar
+    does. F2 on a space, then hover the icon: hand and hover fill. A click
+    opens the picker in front, with the rename still showing behind it.
+    Search "pho", pick an icon, then OK: the icon changes at once, and you
+    can type more of the name and press Enter. Esc in the picker changes
+    nothing. "Automatic" and "No icon" work; a space without an icon shows
+    the placeholder. Clicking in the picker never ends the rename. With
+    downloads declined, the picker opens with the note and its two
+    buttons.
+
+
+- [x] **G11. Apply the typography table everywhere (platform).** Written after
+  the type scale landed as `deskspace_core::typography` (2026-11-04). The
+  platform keeps the current `Typography` and every font comes from it.
+  - `win32/typography.rs`: the current table, set through
+    `Ui::set_typography`, which also drops the cached `render::d2d` graphics
+    so DirectWrite formats are made again, and repaints every space.
+  - GDI: `system::message_logfont` takes a `Role`; `dialog::DialogChrome`,
+    `settings_window::build::create_fonts`, and the debug window build their
+    fonts per role (Body, Heading 1, Heading 3, Caption).
+  - DirectWrite: `Graphics::new` builds every format from its role
+    (`SpaceTitle`, `ItemLabel`, `Details`, `Placeholder`, `Zoom`, `Body`), and
+    the label-size percentage still scales `ItemLabel`.
+  - `Ui::font_families()` lists installed families through DirectWrite once,
+    sorted and deduplicated.
+  - An open settings or debug window takes the new fonts on its next open; a
+    settings window is not rebuilt under a preview (a rebuild would discard
+    unapplied edits), so the Debug box says "reopen Settings to see this".
+  - **[needs human]** check: change Body and Heading 1, then reopen Settings,
+    the Debug window, and a dialog: each follows; a space's title, labels, and
+    Details cells follow theirs live; a size at either end of the range clamps.
+
+- [x] **G12. The Debug window's typography box and language choice (app).**
+  After G11.
+  - A "Typography" section: one row per `Role` with a family `Choice`, a size
+    `Choice` (the `FONT_SIZE_STEP` series inside `FONT_SIZE_RANGE`), and a
+    weight `Choice` (`FONT_WEIGHTS`); a "Reset fonts" button; and two
+    `Readout`s showing `text::lookup` for `Key::FontSample` and
+    `Key::LanguageSample`.
+  - A `Language` `Choice` (`Language::ALL`), which the samples and the panel's
+    next push use. Session-only, as every debug tool is (D14).
+  - Rows use the shadow-settings pattern (a id base, `DebugControl::group`).
+
+
+  **[needs human]** Written after G5 (decided 2026-11-04, maintainer): keep
+  D26's card spacing, and let a long page scroll. Cards make Appearance and
+  Colors about 850 px tall at 96 DPI, more than a 1080p work area at 150 %.
+  - `place_window` clamps the client height to the monitor's work area, so
+    the command bar stays on screen; the page area takes what is left.
+  - Each page container gets `WS_VSCROLL`, shown only while its content is
+    taller than the page area. `PageBuild` keeps each page's content height,
+    and `SettingsState` its scroll offset.
+  - Scrolling is `ScrollWindowEx(page, 0, -delta, None, None, None, None,
+    SW_SCROLLCHILDREN | SW_INVALIDATE | SW_ERASE)`, then a repaint, so the
+    controls, the cards, and the hairlines move together. `cards::erase_page`
+    subtracts the page's scroll offset when it draws.
+  - A wheel notch over a page hit-tests to the page's offset; `WM_VSCROLL`
+    on the page serves the scrollbar. PageUp, PageDown, Home, and End while a
+    control on the page has focus do the same.
+  - The window's own `WM_MOUSEWHEEL` keeps going to the window procedure it
+    has today; only the page area scrolls.
+  - **[needs human]** check at 100 % and 150 %, in light and dark, on
+    Appearance, Colors, and New spaces: a scrollbar shows while the page does
+    not fit; dragging it, the wheel, and PageUp/PageDown reach every group;
+    the cards and hairlines scroll with the controls, with no card left
+    behind; switching pages starts the next page at the top; a short page has
+    no scrollbar; the OK/Cancel/Apply bar is always visible.
+
+- [x] **G10. Scroll a settings page that is taller than the window (platform).**
+  **[needs human]** Written after G5 (decided 2026-11-04, maintainer): keep
+  D26's card spacing, and let a long page scroll. Cards make Appearance and
+  Colors about 850 px tall at 96 DPI, more than a 1080p work area at 150 %.
+  - `place_window` clamps the client height to the monitor's work area, so
+    the command bar stays on screen; the page area takes what is left.
+  - Each page container gets `WS_VSCROLL`, shown only while its content is
+    taller than the page area. `PageBuild` keeps each page's content height,
+    and `SettingsState` its scroll offset.
+  - Scrolling is `ScrollWindowEx(page, 0, -delta, None, None, None, None,
+    SW_SCROLLCHILDREN | SW_INVALIDATE | SW_ERASE)`, then a repaint, so the
+    controls, the cards, and the hairlines move together. `cards::erase_page`
+    subtracts the page's scroll offset when it draws.
+  - A wheel notch over a page hit-tests to the page's offset; `WM_VSCROLL`
+    on the page serves the scrollbar. PageUp, PageDown, Home, and End while a
+    control on the page has focus do the same.
+  - The window's own `WM_MOUSEWHEEL` keeps going to the window procedure it
+    has today; only the page area scrolls.
+  - **[needs human]** check at 100 % and 150 %, in light and dark, on
+    Appearance, Colors, and New spaces: a scrollbar shows while the page does
+    not fit; dragging it, the wheel, and PageUp/PageDown reach every group;
+    the cards and hairlines scroll with the controls, with no card left
+    behind; switching pages starts the next page at the top; a short page has
+    no scrollbar; the OK/Cancel/Apply bar is always visible.
+
+- [x] **S11. Icons in the settings window (platform, app).** **[needs
+  human]** Amended 2026-11-04 by D26: the header always shows an icon slot
+  on a space's page, with the placeholder for a space without an icon.
+  - `ui.rs`: `SettingsScope.icon: Option<Glyph>` and `SettingsHeader.icon:
+    Option<HeaderIcon>`, with `enum HeaderIcon { Glyph(Glyph), Placeholder }`.
+    `None` means no slot (Global); `Placeholder` is a space without an icon.
+    Both are owned, so the form stays plain data. The settings window
+    rasterizes them through a `GlyphCache` in its state, in its own text
+    color and DPI. `settings/mod.rs` `build_form` takes the glyphs by space
+    (a `&BTreeMap<SpaceId, Glyph>` that `settings_session.rs` builds from
+    `App::space_glyph`, the S7 lookup before rasterizing), so `settings/`
+    stays pure.
+  - Scopes pane (`settings_window/paint.rs` `on_draw_scope`): the icon at
+    s(16), left of the label, after the indent, dimmed with dimmed rows.
+  - Header: put the new code in a new `settings_window/header.rs`. An
+    owner-drawn static (`SS_OWNERDRAW | SS_NOTIFY`, so S12 can take its
+    double-click) of s(20) square at `title_x`, centred on the title's line,
+    draws the icon. `Placeholder` draws S10's placeholder in GDI: a rounded
+    outline in the text color blended halfway to the body (`paint.rs`
+    `blend`), with Segoe Fluent's "Add" glyph (`E710`) from the glyph font.
+    The static takes no click until S12. On a space's page the title starts
+    s(20) + s(8) right of `title_x`, and `apply_header` shows, hides, and
+    moves both. Global has no slot, and its title stays where it is.
+  - Tests: `build_form` gives each space scope the glyph it was handed and
+    the header `HeaderIcon::Glyph` of it; a space with no glyph gets
+    `Placeholder` in the header and `None` in its scope row; Global gets
+    `None` in both.
+  - **[needs human]** check: in light and dark, at 100 % and 150 %, spaces
+    with icons show them in the scopes pane and the header, aligned with
+    the text; a space without one shows the placeholder in the header and
+    nothing in its scopes row, which is laid out as before; a dimmed
+    scope's icon is dimmed; the header icon takes no click; Global's header
+    has no icon and its title has not moved.
+
+- [x] **S12. Renaming in the settings header (platform, app).** **[needs
+  human]** After S10 and S11. Amended 2026-11-04 by D26: the icon opens the
+  picker on a double-click at any time, not only during the name's edit.
+  - `SettingsHeader.renamable: bool` (true for a space scope). In
+    `settings_window/header.rs`, double-clicking the title (`SS_NOTIFY`,
+    `STN_DBLCLK`) puts an edit over it with the text selected and focused.
+    The edit answers `WM_GETDLGCODE` with `DLGC_WANTALLKEYS`, so Enter and
+    Esc reach it rather than the window's OK and Cancel. Enter, or focus
+    leaving for anything but the header icon or the picker, raises
+    `SettingsEvent::HeaderRenamed { title }`; Esc ends the edit and
+    changes nothing. If G8 has landed, the edit hides the scrolling title
+    and stops its scroll while it is open (G8 says how).
+  - Double-clicking the header icon (S11's static, `STN_DBLCLK`), with or
+    without the edit open, raises `SettingsEvent::HeaderIconPressed`. A
+    single click does nothing. Over the icon the cursor is a hand
+    (`WM_SETCURSOR` in the settings window's procedure, for that control
+    only), and a tooltip says "Double-click to change the icon": a second
+    tool on G8's header tooltip if G8 has landed, or else create that
+    tooltip here as G8 describes, and G8 reuses it. Opening the picker
+    does not end an open edit. `apply_header` updates the icon and the
+    label without closing an open edit.
+  - App, `on_settings_event`: `HeaderRenamed` commits `RenameSpace` at once,
+    through the same helper the desktop rename's commit uses (extract it
+    from `finish_rename` if it is inline), ignoring an empty or unchanged
+    title. `HeaderIconPressed` calls `pick_space_icon` (S10); the picker is
+    owned by the settings window. Neither goes into `SpaceSnapshot`, so
+    Cancel leaves both (D16), and add them to `CONTEXT.md`'s "these also
+    commit at once" list.
+  - Tests: both events reach their `Command`; an empty or unchanged title
+    commits nothing; a rename made this way survives settings Cancel.
+  - **[needs human]** check: on a space's page, double-click the name: an
+    edit opens with the name selected. Type, then Enter: the header, the
+    scopes pane, and the space on the desktop show the new name, and the
+    window stays open. Esc in the edit keeps the old name and the window
+    open. Double-click the icon, once with the edit closed and once with
+    it open: the picker opens over the settings window each time, an open
+    edit stays open behind it, and a choice shows at once in the header,
+    the scopes pane, and on the desktop. A single click on the icon does
+    nothing; the cursor over it is a hand and its tooltip shows. A space
+    with no icon: double-click the placeholder, pick one, and it replaces
+    the placeholder. Cancel afterwards keeps both changes. Global's header
+    does not edit and has no icon.

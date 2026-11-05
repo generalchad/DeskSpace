@@ -20,6 +20,7 @@ mod system;
 mod table;
 mod takeover;
 mod test_spaces;
+mod typography;
 mod windows;
 
 use std::path::Path;
@@ -72,6 +73,15 @@ pub(crate) struct DebugTools {
     marks: u32,
     /// Whether every shadow is hidden for this session (ROADMAP D15).
     pub(crate) hide_shadows: bool,
+    /// The type scale the Debug window's typography box applied over the
+    /// saved one, for this session only; `None` follows the saved scale.
+    pub(crate) typography: Option<deskspace_core::typography::Typography>,
+    /// The typography box's picks not yet applied; `None` when the box shows
+    /// the scale in force. Picks wait for "Apply fonts", so browsing a list
+    /// does not rebuild every font at each step.
+    pub(crate) typography_draft: Option<deskspace_core::typography::Typography>,
+    /// The interface language for the samples (G12), session only.
+    pub(crate) language: deskspace_core::text::Language,
 }
 
 impl DebugTools {
@@ -90,6 +100,9 @@ impl DebugTools {
             log_events: false,
             marks: 0,
             hide_shadows: false,
+            typography: None,
+            typography_draft: None,
+            language: deskspace_core::text::Language::default(),
         }
     }
 }
@@ -157,6 +170,7 @@ impl App {
             | DebugId::AnimationsChanged
             | DebugId::ExplorerRestarted
             | DebugId::CrashNow
+            | DebugId::BlockUiThread
             | DebugId::SaveNow
             | DebugId::ClearIconCache => DebugControlKind::Button { enabled: true },
             DebugId::ReflowAll => DebugControlKind::Button {
@@ -308,6 +322,7 @@ impl App {
                 }
             }
             DebugId::CrashNow => self.crash_now(ui),
+            DebugId::BlockUiThread => self.block_ui_thread(),
             DebugId::SpaceTable | DebugId::InputState => {}
             DebugId::MarkLog => self.mark_log(),
             DebugId::LogEvents => {
@@ -341,6 +356,7 @@ impl App {
     /// log feed and the panel refresh. A reopened window gets the whole ring
     /// again; one already open keeps what it has.
     pub(super) fn open_debug(&mut self, ui: &mut Ui) {
+        self.load_installed_fonts(ui);
         let panel = self.debug_panel(ui);
         let Some(tools) = self.debug.as_mut() else {
             return;
@@ -384,6 +400,9 @@ impl App {
                 }
                 if section == DebugSectionId::Animations {
                     controls.extend(self.animation_setting_controls());
+                }
+                if section == DebugSectionId::Typography {
+                    controls.extend(typography::controls(self));
                 }
                 (!controls.is_empty()).then(|| DebugSection {
                     title: section.title().to_string(),
@@ -484,6 +503,7 @@ impl App {
                 self.on_animation_setting(ui, id, index);
             }
             self.on_shadow_setting(ui, id, input);
+            self.on_typography_setting(ui, id, input);
         }
         self.undo.set_suppressed(false);
         self.push_debug_panel(ui);

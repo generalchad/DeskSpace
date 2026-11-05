@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::lenient::known_or_default;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Color {
     pub r: u8,
@@ -274,11 +276,14 @@ pub const SHADOW_OPACITY_DEFAULT: u8 = 35;
 #[serde(default)]
 pub struct Theme {
     /// The color mode of the spaces. `ui_mode` colors DeskSpace's own chrome.
+    #[serde(deserialize_with = "known_or_default")]
     pub mode: ThemeMode,
     /// The color mode of DeskSpace's own chrome (the settings window and popup
     /// menus). Separate from `mode`, which only colors the spaces.
+    #[serde(deserialize_with = "known_or_default")]
     pub ui_mode: ThemeMode,
     /// The material behind a space's tint.
+    #[serde(deserialize_with = "known_or_default")]
     pub backdrop: Backdrop,
     /// Corner radius in pixels, `0..=corner::MAX`. Also reads the older
     /// `corners = "round" | "small" | "square"` setting.
@@ -294,6 +299,7 @@ pub struct Theme {
     /// The border's thickness in pixels at 96 DPI, scaled with the monitor.
     pub border_width: u8,
     /// Where the border's color comes from.
+    #[serde(deserialize_with = "known_or_default")]
     pub border_source: BorderSource,
     /// The custom border color; used only with `BorderSource::Custom`.
     pub border_color: Color,
@@ -320,6 +326,7 @@ pub struct Theme {
     /// of the icon size (100 is Explorer's own proportion).
     pub overlay_size: u8,
     /// When item labels get a 1 px text shadow.
+    #[serde(deserialize_with = "known_or_default")]
     pub label_shadow: LabelShadow,
     /// When false, `tint` and `text` are ignored and the palette follows the
     /// light or dark mode.
@@ -382,11 +389,18 @@ fn preset_or_legacy<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result
     enum PresetOrLegacy {
         Legacy(bool),
         Named(Preset),
+        Other(String),
     }
     Ok(match PresetOrLegacy::deserialize(deserializer)? {
         PresetOrLegacy::Legacy(true) => Preset::MatchExplorer,
         PresetOrLegacy::Legacy(false) => Preset::Custom,
         PresetOrLegacy::Named(preset) => preset,
+        PresetOrLegacy::Other(word) => {
+            // The word is deliberately unused: it only proves the file held a
+            // string this build does not know.
+            let _ = word;
+            Preset::default()
+        }
     })
 }
 

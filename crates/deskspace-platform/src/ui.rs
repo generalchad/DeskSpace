@@ -2,6 +2,7 @@
 //! app builds these; `win32` turns them into controls. Nothing here touches
 //! the OS.
 
+use deskspace_core::Glyph;
 use deskspace_core::theme::Color;
 
 /// The mouse pointer shown over a space window.
@@ -17,6 +18,43 @@ pub enum CursorShape {
     SizeNorthWestSouthEast,
     /// Top-right or bottom-left corner.
     SizeNorthEastSouthWest,
+    /// A clickable control, such as a space's icon while its title is renamed.
+    Hand,
+}
+
+/// One icon set the icon picker offers.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PickerSet<'a> {
+    /// The set's prefix, as an `IconRef` names it.
+    pub prefix: &'a str,
+    /// The set's label.
+    pub label: &'a str,
+    /// The set's glyphs, or `None` while it does not load.
+    pub set: Option<&'a deskspace_core::icon_set::IconSet>,
+    /// The set's curated search words.
+    pub words: &'a [(&'a str, &'a str)],
+    /// Why the set has no glyphs, or a note to show under the search box.
+    pub note: Option<&'a str>,
+}
+
+/// What the icon picker is asked to show.
+#[derive(Debug, Clone, PartialEq)]
+pub struct IconPickerRequest<'a> {
+    pub title: &'a str,
+    pub sets: Vec<PickerSet<'a>>,
+    /// The icon to open on, selected and scrolled to when its set is offered.
+    pub current: Option<&'a deskspace_core::IconRef>,
+}
+
+/// What the icon picker returned.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IconChoice {
+    /// Match the title automatically.
+    Automatic,
+    /// Show no icon.
+    None,
+    /// Show this icon.
+    Icon(deskspace_core::IconRef),
 }
 
 /// What a custom shortcut opens (the "Custom shortcut" dialog, F-53).
@@ -200,6 +238,8 @@ pub struct SettingsScope {
     /// A symbol drawn before the label, from the icon font. `None` draws
     /// nothing and leaves the label where it is.
     pub glyph: Option<char>,
+    /// The space's own icon, drawn in `glyph`'s place when it has one.
+    pub icon: Option<Glyph>,
     /// Indents the row under the one above it.
     pub indent: bool,
     /// Draws the row in disabled text, for a scope that only inherits.
@@ -217,6 +257,22 @@ pub struct SettingsHeader {
     /// hides it, so the same header space can hold a button for one scope and
     /// not another (the page shape is unaffected).
     pub button: Option<SettingsButton>,
+    /// The slot left of the title; `None` has no slot (Global), and the
+    /// title stays at the left edge.
+    pub icon: Option<HeaderIcon>,
+    /// A double-click on the title edits it in place, reported as
+    /// `SettingsEvent::HeaderRenamed`.
+    pub renamable: bool,
+}
+
+/// What the header's icon slot shows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HeaderIcon {
+    /// The space's icon.
+    Glyph(Glyph),
+    /// A space without an icon: an outlined "+", which a double-click opens
+    /// the picker from, as it does on an icon.
+    Placeholder,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

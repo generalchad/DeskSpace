@@ -254,7 +254,7 @@ impl Animation {
 }
 
 /// The time on the one clock every transition runs on.
-fn now() -> Duration {
+pub(super) fn now() -> Duration {
     // Process state: the clock's start, so `Transition` can take plain
     // durations; set on first use and never cleared.
     static EPOCH: OnceLock<Instant> = OnceLock::new();
@@ -281,7 +281,7 @@ unsafe fn with_animation<R>(window: HWND, f: impl FnOnce(&mut Animation) -> R) -
 /// As `with_state`.
 unsafe fn show_scene(window: HWND, scene: PreparedScene) {
     // SAFETY: the caller's contract; the borrow does not re-enter.
-    unsafe { with_state(window, |state| state.scene = Some(scene)) };
+    unsafe { crate::win32::space_window::store_scene(window, scene) };
 }
 
 /// Shows or hides `window` with `play`. An animation already running the
@@ -562,7 +562,6 @@ unsafe fn follow_overlay(window: HWND, rect: Rect) {
 /// # Safety
 /// `window` is a live space window, handling `messages::FRAME`.
 pub(crate) unsafe fn on_frame(window: HWND) {
-    frame_clock::delivered(window);
     let now = now();
     // SAFETY: the caller's contract; the borrow does not re-enter.
     let step = unsafe {

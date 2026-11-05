@@ -12,8 +12,7 @@ use std::path::PathBuf;
 use deskspace_core::geometry::Point;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    CreateFontIndirectW, CreateSolidBrush, DeleteObject, HBRUSH, HDC, HFONT, HGDIOBJ, SetBkColor,
-    SetTextColor,
+    CreateSolidBrush, DeleteObject, HBRUSH, HDC, HFONT, HGDIOBJ, SetBkColor, SetTextColor,
 };
 use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -26,19 +25,18 @@ use windows::Win32::UI::Shell::{
     SHGetKnownFolderItem, SIGDN_FILESYSPATH,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DestroyWindow, DispatchMessageW, EnumChildWindows, GetClassNameW,
-    GetCursorPos, GetMessageW, GetWindowTextLengthW, GetWindowTextW, HMENU, IsDialogMessageW,
-    IsWindow, MSG, PostQuitMessage, SW_SHOW, SendMessageW, SetForegroundWindow, ShowWindow,
-    TranslateMessage, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX,
-    WM_SETFONT, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN, WS_EX_CONTROLPARENT, WS_EX_DLGMODALFRAME,
-    WS_POPUP, WS_SYSMENU, WS_VISIBLE,
+    CreateWindowExW, DestroyWindow, DispatchMessageW, GetCursorPos, GetMessageW,
+    GetWindowTextLengthW, GetWindowTextW, HMENU, IsDialogMessageW, IsWindow, MSG, PostQuitMessage,
+    SW_SHOW, SendMessageW, SetForegroundWindow, ShowWindow, TranslateMessage, WINDOW_EX_STYLE,
+    WINDOW_STYLE, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_SETFONT, WS_CAPTION, WS_CHILD,
+    WS_CLIPCHILDREN, WS_EX_CONTROLPARENT, WS_EX_DLGMODALFRAME, WS_POPUP, WS_SYSMENU, WS_VISIBLE,
 };
-use windows::core::{BOOL, PCWSTR};
+use windows::core::PCWSTR;
 
-use crate::win32::dark_mode::{self, ControlTheme, UiColors};
+use crate::win32::dark_mode::{self, UiColors};
 use crate::win32::settings_window::colorref;
 use crate::win32::shortcuts::display_name;
-use crate::win32::system::{message_logfont, wide, work_area_at};
+use crate::win32::system::{font_for, wide, work_area_at};
 
 /// The dialog-manager ids `IsDialogMessageW` sends for Enter and Escape, so
 /// the dialogs give their OK and Cancel buttons these ids.
@@ -65,7 +63,7 @@ impl DialogChrome {
         unsafe {
             Self {
                 dpi,
-                font: CreateFontIndirectW(&message_logfont(dpi)),
+                font: font_for(deskspace_core::typography::Role::Body, dpi),
                 colors,
                 body_brush: CreateSolidBrush(colorref(colors.body)),
                 field_brush: CreateSolidBrush(colorref(colors.command_bar)),
@@ -182,7 +180,7 @@ pub(crate) unsafe fn show(dialog: HWND, dark: bool) {
     dark_mode::set_caption_dark(dialog, dark);
     // SAFETY: `dialog` is our live window.
     unsafe {
-        theme_children(dialog, dark);
+        dark_mode::theme_children(dialog, dark);
         let _ = ShowWindow(dialog, SW_SHOW);
         let _ = SetForegroundWindow(dialog);
     }
@@ -225,29 +223,6 @@ pub(crate) unsafe fn control(font: HFONT, parent: HWND, spec: ControlSpec<'_>) -
             Some(LPARAM(1)),
         );
         Some(hwnd)
-    }
-}
-
-/// Gives every child control the dark or light visual style for its class.
-unsafe fn theme_children(window: HWND, dark: bool) {
-    unsafe extern "system" fn visit(control: HWND, dark: LPARAM) -> BOOL {
-        let mut class = [0u16; 32];
-        // SAFETY: `control` is a live descendant being enumerated; the buffer
-        // is sized for the call.
-        let length = unsafe { GetClassNameW(control, &mut class) } as usize;
-        let theme = match String::from_utf16_lossy(&class[..length]).as_str() {
-            "Button" | "SysListView32" => Some(ControlTheme::Explorer),
-            "Edit" => Some(ControlTheme::FileDialog),
-            _ => None,
-        };
-        if let Some(theme) = theme {
-            dark_mode::theme_control(control, theme, dark.0 != 0);
-        }
-        BOOL::from(true)
-    }
-    // SAFETY: the callback only themes the enumerated controls.
-    unsafe {
-        let _ = EnumChildWindows(Some(window), Some(visit), LPARAM(dark as isize));
     }
 }
 

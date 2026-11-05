@@ -1,69 +1,23 @@
 //! Refreshes an open settings window in place from a new SettingsForm.
 
-use super::build::fill_list;
 use super::commands::{show_page, window_text};
-use super::nav::{NavRow, entry_row, nav_rows};
+use super::header::{HeaderControls, HeaderLayout, apply_header};
+use super::nav::{NavRow, entry_row, fill_list, nav_rows};
 use super::*;
+use windows::Win32::UI::WindowsAndMessaging::CB_RESETCONTENT;
 
-/// Selects `row` in a rail list. Edits arrive on every slider tick; touching
-/// the list only when it changed keeps it from repainting each time.
-unsafe fn sync_selection(list: HWND, rebuilt: bool, row: usize) {
+/// Selects `row` in a rail list, or nothing for `None` (an entry inside a
+/// collapsed group). Edits arrive on every slider tick; touching the list
+/// only when it changed keeps it from repainting each time.
+unsafe fn sync_selection(list: HWND, rebuilt: bool, row: Option<usize>) {
+    // -1 (usize::MAX) is "no selection" to LB_SETCURSEL and LB_GETCURSEL.
+    let row = row.unwrap_or(usize::MAX);
     // SAFETY: `list` is a live list box of the settings window.
     unsafe {
         let current = SendMessageW(list, LB_GETCURSEL, None, None).0;
         if rebuilt || current != row as isize {
             SendMessageW(list, LB_SETCURSEL, Some(WPARAM(row)), None);
             let _ = InvalidateRect(Some(list), None, false);
-        }
-    }
-}
-
-/// Shows `header` in the header controls: the title, the button, and the
-/// switch, each only when the header supplies one.
-pub(super) unsafe fn apply_header(
-    title: Option<HWND>,
-    switch: Option<HWND>,
-    button: Option<HWND>,
-    header: Option<&SettingsHeader>,
-) {
-    // SAFETY: the handles are live controls of the settings window. Neither
-    // SetWindowText on a static/checkbox/button nor BM_SETCHECK reports an edit.
-    unsafe {
-        if let Some(title) = title {
-            let text = header.map_or("", |header| header.title.as_str());
-            if window_text(title) != text {
-                let text = wide(text);
-                let _ = SetWindowTextW(title, PCWSTR(text.as_ptr()));
-            }
-        }
-        if let Some(control) = button {
-            match header.and_then(|header| header.button.as_ref()) {
-                Some(state) => {
-                    if window_text(control) != state.label {
-                        let text = wide(&state.label);
-                        let _ = SetWindowTextW(control, PCWSTR(text.as_ptr()));
-                    }
-                    let _ = ShowWindow(control, SW_SHOW);
-                }
-                None => {
-                    let _ = ShowWindow(control, SW_HIDE);
-                }
-            }
-        }
-        if let Some(control) = switch {
-            match header.and_then(|header| header.switch.as_ref()) {
-                Some(state) => {
-                    if window_text(control) != state.label {
-                        let text = wide(&state.label);
-                        let _ = SetWindowTextW(control, PCWSTR(text.as_ptr()));
-                    }
-                    SendMessageW(control, BM_SETCHECK, Some(WPARAM(state.on as usize)), None);
-                    let _ = ShowWindow(control, SW_SHOW);
-                }
-                None => {
-                    let _ = ShowWindow(control, SW_HIDE);
-                }
-            }
         }
     }
 }
@@ -94,16 +48,17 @@ pub(super) enum Update {
     Enable(Option<HWND>, Option<HWND>, Vec<HWND>, bool),
     Text(HWND, String),
     Choice(HWND, usize),
+    /// A drop-down whose list changed, and its new selection.
+    Options(HWND, Vec<String>, usize),
     Check(HWND, bool),
     Slider(HWND, i32),
     Repaint(HWND),
 }
 
-/// The header controls and the header they should show.
+/// The header controls, their layout, and the header they should show.
 struct HeaderUpdate {
-    title: Option<HWND>,
-    switch: Option<HWND>,
-    button: Option<HWND>,
+    controls: HeaderControls,
+    layout: HeaderLayout,
     header: Option<SettingsHeader>,
 }
 
@@ -112,7 +67,7 @@ struct HeaderUpdate {
 struct UpdatePlan {
     updates: Vec<Update>,
     apply: Option<HWND>,
-    rail: Option<(HWND, Vec<NavRow>, bool, usize)>,
+    rail: Option<(HWND, Vec<NavRow>, bool, Option<usize>)>,
     page: Option<usize>,
     pages: Vec<HWND>,
     scopes: Option<(HWND, Vec<SettingsScope>, bool, usize)>,
@@ -131,7 +86,7 @@ pub(crate) fn update(hwnd: HWND, form: &SettingsForm) -> bool {
     // SAFETY: every handle in the plan is a live control of this window.
     unsafe {
         update_pages(plan.updates, plan.apply, form);
-        update_panes(plan.rail, plan.page, plan.pages, plan.scopes);
+        update_panes(hwnd, plan.rail, plan.page, plan.pages, plan.scopes);
         update_header(plan.header);
         with_state(hwnd, |state| state.updating = false);
     }
@@ -157,7 +112,7 @@ unsafe fn plan_update(hwnd: HWND, form: &SettingsForm) -> Option<UpdatePlan> {
                 plan_field(old, controls, new, &mut updates);
                 *old = new.clone();
             }
-            let new_rows = nav_rows(&form.nav);
+            let new_rows = nav_rows(&form.nav, &state.collapsed);
             let rebuild = state.nav_rows != new_rows;
             let selected_row = entry_row(&new_rows, form.nav.selected);
             let page = form.nav.page_of(form.nav.selected);
@@ -174,9 +129,8 @@ unsafe fn plan_update(hwnd: HWND, form: &SettingsForm) -> Option<UpdatePlan> {
             let new_header = form.nav.header.clone();
             let old_header = state.form.nav.header.as_ref();
             let header = (old_header != new_header.as_ref()).then_some(HeaderUpdate {
-                title: state.header_title,
-                switch: state.header_switch,
-                button: state.header_button,
+                controls: state.header,
+                layout: state.header_layout,
                 header: new_header,
             });
             state.nav_rows = new_rows.clone();
@@ -226,6 +180,19 @@ unsafe fn update_pages(updates: Vec<Update>, apply: Option<HWND>, form: &Setting
                 Update::Choice(control, index) => {
                     SendMessageW(control, CB_SETCURSEL, Some(WPARAM(index)), None);
                 }
+                Update::Options(control, options, index) => {
+                    SendMessageW(control, CB_RESETCONTENT, None, None);
+                    for option in options {
+                        let text = wide(&option);
+                        SendMessageW(
+                            control,
+                            CB_ADDSTRING,
+                            None,
+                            Some(LPARAM(text.as_ptr() as isize)),
+                        );
+                    }
+                    SendMessageW(control, CB_SETCURSEL, Some(WPARAM(index)), None);
+                }
                 Update::Check(control, on) => {
                     SendMessageW(control, BM_SETCHECK, Some(WPARAM(on as usize)), None);
                 }
@@ -250,7 +217,8 @@ unsafe fn update_pages(updates: Vec<Update>, apply: Option<HWND>, form: &Setting
 
 /// Rebuilds or selects the rail and scopes pane, and shows the named page.
 unsafe fn update_panes(
-    rail: Option<(HWND, Vec<NavRow>, bool, usize)>,
+    settings: HWND,
+    rail: Option<(HWND, Vec<NavRow>, bool, Option<usize>)>,
     page: Option<usize>,
     pages: Vec<HWND>,
     scopes: Option<(HWND, Vec<SettingsScope>, bool, usize)>,
@@ -263,14 +231,14 @@ unsafe fn update_panes(
             }
             sync_selection(list, rebuild, selected_row);
             if let Some(page) = page {
-                show_page(&pages, page);
+                show_page(settings, &pages, page);
             }
         }
         if let Some((list, scopes, rebuild, selected)) = scopes {
             if rebuild {
                 fill_list(list, scopes.iter().map(|scope| scope.label.as_str()));
             }
-            sync_selection(list, rebuild, selected);
+            sync_selection(list, rebuild, Some(selected));
         }
     }
 }
@@ -280,12 +248,7 @@ unsafe fn update_header(header: Option<HeaderUpdate>) {
     if let Some(header) = header {
         // SAFETY: every handle is a live control of this window.
         unsafe {
-            apply_header(
-                header.title,
-                header.switch,
-                header.button,
-                header.header.as_ref(),
-            );
+            apply_header(header.controls, header.layout, header.header.as_ref());
         }
     }
 }
@@ -312,6 +275,18 @@ fn plan_field(old: &Field, controls: &mut FieldControls, new: &Field, updates: &
         return;
     };
     match (&old.kind, &new.kind) {
+        // A font's list holds its current size or family when no preset
+        // does, so it can change with the value; an index alone would then
+        // name another option.
+        (
+            FieldKind::Choice { options: a, .. },
+            FieldKind::Choice {
+                options: b,
+                selected,
+            },
+        ) if a != b => {
+            updates.push(Update::Options(main, b.clone(), *selected));
+        }
         (FieldKind::Choice { selected: a, .. }, FieldKind::Choice { selected: b, .. })
             if a != b =>
         {

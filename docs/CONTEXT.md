@@ -98,6 +98,7 @@ platform, data-driven UI) are `ENGINEERING.md` section 3.
   | `clipboard` | cut / copy / paste |
   | `menus` | space, item, and tray menus, `create_space` |
   | `space_icons` | `SpaceIcons`: the title icons' sets, loaded off the main thread, the automatic match memo, the glyph cache, and the download consent (D16) |
+  | `title_icon` | the title icon as a button while a space's title is renamed (D16) |
   | `lens` | keeping folder watches in line with the model, swapping in a lens's list, browsing into subfolders |
   | `undo` | `UndoStack`, recording an action, and undoing or redoing it (ROADMAP D11) |
   | `animation` | turning the settings and Windows' switch into each window's `Play` (ROADMAP D12) |
@@ -210,7 +211,7 @@ selected files' size on the left, and the Details and Large icons buttons on
 the right. It is chrome, so `Space::content_rect` leaves its height out and
 layout, scrolling, and hit tests shrink with it. It is off for new spaces and
 on for new lenses. A new lens takes its view, its title mode, and its
-hidden-files choice from Global's Lenses page (`WindowSettings.new_lens`);
+hidden-files choice from Global's New lenses page (`WindowSettings.new_lens`);
 a new space its view from the New spaces page
 (`WindowSettings.new_space_view`, W40). `SpaceView.extensions` (W28)
 decides whether a space's labels show filename extensions: `Show` and
@@ -480,6 +481,37 @@ Automatic decided, through `Play::side`. `Animations` holds one
 "same as" to an effect, and `clamped` replaces an effect a kind does not
 offer, or one from a newer version, with the kind's default.
 
+### Typography and language (`typography.rs`, `text.rs`)
+
+`Typography` is the type scale: one `Font` (family, size at 96 DPI, weight)
+per `Role` (Body, Heading 1-3, Caption, and the spaces' own roles), with
+defaults in `Font::default_for` and clamping in `Font::clamped`. A family of
+`""` means Windows' message font. The platform turns a role into an `HFONT`
+for GDI and an `IDWriteTextFormat` for Direct2D, so one table drives the
+settings window, the debug window, dialogs, and space text. The current table
+lives in `win32/typography.rs`; `Ui::set_typography` replaces it, drops the
+cached DirectWrite formats, repaints the spaces, and restyles an open debug
+window in place. A settings window open at the time keeps the fonts it was
+built with until it is reopened.
+
+The saved scale is `Config::typography`. The Debug window's typography box
+can override it for the session (`DebugTools::typography`): its picks are a
+draft until "Apply fonts", so browsing a list of families rebuilds nothing,
+and "Reset to saved fonts" drops the override. `font_choices.rs` holds the
+option lists a family, size, and weight choice shows, for the Debug box and
+the settings window's font pages alike; a size or family that no preset
+lists is offered in its place, so the settings window refreshes a
+drop-down's list when it changes, not only its selection. `App::typography`
+(`app/fonts.rs`) says which scale is in force.
+`App::sync_typography` hands it to the platform at startup and after every
+change, and skips an unchanged scale, because each hand-off rebuilds every
+DirectWrite format.
+
+`text::Key` is a user-visible message and `text::lookup(language, key)` its
+only reader; `Language` is English or a pseudo-localization that accents and
+frames each string, which the Debug window can switch to. This is the seam
+ROADMAP D20's Fluent catalogs fill; call sites name a key, never a sentence.
+
 ## 5. Configuration (`deskspace-config`)
 
 `Config { version, desktop, theme, window }` and `WindowSettings`, the
@@ -509,7 +541,9 @@ default in `Default`.
   path. `storage_dir()`, where dropped files are moved, is
   `%LOCALAPPDATA%\DeskSpace\DeskSpace\data\storage`, or a `storage` folder
   beside an explicit config file, so scratch configs never touch real
-  storage. `save` writes a sibling `*.toml.tmp`, flushes it to disk, and
+  storage. A scratch config writes no per-user registry entries either: the
+  desktop verbs and the Run value are left as the installed build set them.
+  `save` writes a sibling `*.toml.tmp`, flushes it to disk, and
   renames it, so a crash or a power cut never truncates the config.
 - `icons_dir()`, the cache of downloaded icon sets (`icons.rs`,
   `IconStore`, D16), is `%LOCALAPPDATA%\DeskSpace\DeskSpace\data\icons`, or
@@ -526,7 +560,16 @@ default in `Default`.
   `themes_dir()` is a `themes` folder beside the config, so a scratch
   `--config` has its own. The Colors page uses the file dialogs (C10b) to
   save and load one, and lists the folder's files when the window opens
-  (C10c).
+  (C10c). A word this build does not know in an enum field, in a theme file or
+  the config, loads as that field's default through
+  `deskspace_core::lenient::known_or_default`, so a file from a newer build
+  still opens; a value of the wrong type still fails the file.
+- `typography` is the type scale (section 4), outside `theme` because a
+  space's look copies the whole `Theme` and fonts are global. It saves only
+  the roles that differ from their defaults, as `[typography.<role>]`
+  tables keyed by `Role::key`; a missing part keeps the role's default, and
+  an unknown role or unreadable font is skipped, so a role left alone
+  follows a later build's default.
 - `window.icon_downloads` (D16) is `Ask` by default: the app reads a set
   from the cache first, and only `Allowed` downloads a missing one (the
   signed file). `Ask` shows one question a session and saves the answer;
@@ -574,7 +617,7 @@ Everything with `unsafe` is under `win32/`:
 | Area | Modules |
 |------|---------|
 | Runtime and controller | `runtime`, `controller`, `tray`, `console`, `hotkey`, `outside_click` |
-| Windows | `window_class` and `window_state` (class registration and `GWLP_USERDATA` state; every window class uses both), `space_window`, `dwm`, `composition`, `drag_ghost`, `info_tip`, `menu`, `settings_window`, `debug_window`, `color_picker`, `dark_mode`, `dialog`, `app_picker`, `app_catalog`, `shortcut_dialog`, `zoom_bar` |
+| Windows | `window_class` and `window_state` (class registration and `GWLP_USERDATA` state; every window class uses both), `space_window`, `dwm`, `composition`, `drag_ghost`, `info_tip`, `menu`, `settings_window`, `icon_picker`, `debug_window`, `color_picker`, `dark_mode`, `dialog`, `app_picker`, `app_catalog`, `shortcut_dialog`, `zoom_bar` |
 | Input | `keyboard` (the low-level hook), `drop_target` |
 | Shell | `desktop_items`, `icons`, `glyphs`, `shell_items`, `shell_view`, `shell_selection`, `display_settings`, `clipboard`, `file_op`, `drag_image`, `folder_watch`, `shortcuts` |
 | Desktop takeover | `desktop_shell`, `desktop_icons`, `watchdog`, `desktop_entry` |
@@ -686,6 +729,7 @@ one arm in `App::on_event`, whose match is exhaustive.
 - Everything else about a space window lives where it happens: `dwm.rs` owns
   the material, corners, and border; `composition.rs` the visual tree and
   the startup choice; `space_animation.rs` and `frame_clock.rs` the frames;
+  `space_window/highlight.rs` the settings highlight's fade;
   `space_window/mod.rs` the backing and resizing and `space_window/mouse.rs`
   the mouse modifiers; and
   `shadow_window.rs` / `render/shadow.rs` the shadow. ROADMAP D12 and D15
@@ -787,7 +831,28 @@ in `ui.rs`. What spans them:
 - **Panes.** The platform knows nothing about spaces: the app fills the
   scopes and categories panes, maps an index back to its meaning, and answers
   each event with a new form. The page shape never changes: every page is
-  always built, and the app picks which ones the categories pane lists.
+  always built, and the app picks which ones the categories pane lists. A
+  page switch is the exception: the window shows the page itself, painting
+  the swap once with drawing paused (`commands::show_page`), and the app only
+  records it, rebuilding the form only to make up a Shortcuts preview refresh
+  it skipped while that page was hidden (`refresh_owed`). Each switch logs
+  its time at debug level ("settings: switched page").
+- **Cards.** Each page groups its fields on cards, one per heading
+  (`settings_cards::card_plan`, D26). A note right after a field is that
+  field's grey description; the platform draws each card's rounded fill and
+  the hairlines between its rows, so a page's grouping is read from the
+  `Heading` fields it already had.
+- **Scrolling.** Every page area is as tall as the tallest page unless the
+  monitor's work area is shorter (`page_scroll::view_height`), so the
+  command bar stays on screen; a taller page shows a scroll bar and is
+  widened by it. A page scrolls with `ScrollWindowEx(SW_SCROLLCHILDREN)`, so
+  its controls keep their layout coordinates, and `cards::erase_page` draws
+  the cards at the page's offset (`settings_window/scroll.rs`). A page newly
+  shown starts at its top. PageUp, PageDown, Home, and End scroll it from
+  the message loop, except while a drop-down, text box, or slider has the
+  focus. Drop-downs and sliders in the settings and debug windows hand the
+  mouse wheel to their page (`win32/wheel_to_page.rs`), so a scroll past
+  one never changes it.
 - **Modal windows.** The color picker, the installed-apps picker, and the
   custom shortcut dialog are owned by the settings window when it is open,
   else the controller; each disables its owner and pumps every message while
@@ -802,14 +867,34 @@ in `ui.rs`. What spans them:
   restores `window` wholesale.
 - **Highlight.** Selecting a space in the scopes pane, or opening the window
   on one, highlights it on the desktop for about 1.2 s
-  (`SpaceScene::highlight`, cleared by `Timer::Highlight`). Selecting another
-  space moves it; Cancel, OK, and closing the window clear it.
+  (`SpaceScene::highlight`, cleared by `Timer::Highlight`). The outline fades
+  in over 150 ms and out over 250 ms rather than switching, which the
+  platform plays (`render/highlight.rs`, `space_window/highlight.rs`), and
+  switches while Windows' "Animation effects" is off, as `play_for` decides
+  for animations. Selecting another space moves it; Cancel, OK, and closing
+  the window clear it.
 - **The app's form** (`settings/`): the scopes are Global, then every space
   indented, dimmed while it follows Global. Each row shows its kind's glyph in
-  the row's text color, so a dimmed row dims its glyph too. Global lists every
-  page but View, Shortcuts and Lens, and adds a Lenses page after New spaces
-  for a new lens's defaults; a space lists the five look pages, which
-  show
+  the row's text color, so a dimmed row dims its glyph too, or the space's
+  own icon in its place. A space's page header shows its icon left of its
+  name, or an outlined + for a space without one (`settings_window/header.rs`);
+  Global's has none. The app hands the icons over as `Session::glyphs`,
+  filled before every form is built, and the window draws them through its
+  own `GlyphCache` in its text color. The categories
+  pane lists each scope's pages in titled groups (`settings/nav_groups.rs`,
+  the one source for the pane and `listed_pages`): Global's five look pages
+  first under Look, and a space's own pages under This space before its
+  look, a lens's starting with its Lens page; a scope that does not list
+  the current page opens on its first one. A click on a group's title collapses or expands it,
+  shown by its caret; the platform keeps which titles are collapsed for the
+  window's life, across scope changes, and a page in a collapsed group shows
+  with no rail row selected. The keyboard steps over titles and opens a
+  collapsed group it moves into (`settings_window/nav.rs`). Global lists every page but View, Shortcuts and Lens:
+  Fonts holds Spaces and Windows (`settings/fonts.rs`: a card per text
+  role, edits writing `Config::typography` and previewed through
+  `App::sync_typography`; a reset per page), and New items holds New spaces
+  and New lenses, a new lens's defaults. A space lists the five look pages,
+  which show
   its values (from Global until customized) greyed unless the header's
   "Customize this space" switch is on, its always-enabled View page (the view
   mode, the status bar, the extension choice, and the sort rule, which
@@ -836,6 +921,12 @@ in `ui.rs`. What spans them:
   that Cancel undoes, a load on a space customizes it, and a theme never
   changes `ui_mode`.
   These also commit at once, so Cancel does not undo them:
+  - a space's name and icon from the top line (D16): a double-click on the
+    name edits it in place (Enter or the focus leaving keeps it, Esc drops
+    it; the edit takes both keys from the dialog manager), and a
+    double-click on the icon or its + opens the icon picker. The rename goes
+    through `App::rename_space_to`, the desktop rename's own commit, and into
+    the snapshot so Cancel keeps it;
   - the Lens page's "Change folder…", which writes the new path into the
     snapshot so Cancel keeps it;
   - the Shortcuts page's X deletes an item after a confirmation
@@ -853,7 +944,12 @@ in `ui.rs`. What spans them:
   marked dots, and picker ring take Windows' accent in the shade Windows'
   own settings use (`UiColors::for_system`, WinRT `UISettings`), and the
   default accent's shades when it cannot be read; an open settings window
-  follows an accent change.
+  follows an accent change. The settings window, the debug window, and the
+  dialogs theme their controls through one table,
+  `dark_mode::theme_children`: only `DarkMode_Explorer` draws a dark
+  scroll bar, so every window that scrolls takes it (a page, a list, a
+  multi-line text box), and each drop-down's list, a window of its own, is
+  themed through its combo box.
 - **The debug window** (`--debug`, ROADMAP D14; `win32/debug_window/`,
   `app/debug/`). Modeless and data-driven like settings: the app builds a
   `DebugPanel` from `DEBUG_CONTROLS` and pushes it only when a value
@@ -869,7 +965,9 @@ in `ui.rs`. What spans them:
   ask first (`debug_confirm`) when destructive. A control can sit in a
   titled box (`DebugControl::group`), which the page draws as it erases,
   and a choice can be greyed rather than removed, so the panel keeps its
-  shape (a shape change rebuilds the window). The
+  shape (a shape change rebuilds the window). A closed drop-down passes
+  the mouse wheel to the page, which scrolls, rather than stepping its
+  value. The
   only state it adds outside `DebugTools` is the session-only
   `AnimationTweak` and the takeover override in `LayerState`.
 
@@ -979,8 +1077,10 @@ exact steps, ranges, edge cases, and the code behind them.
   Reset at 100 %, and hides 2 s after the last zoom or when the pointer
   leaves it.
 - Renaming a space (menu or F2) commits on Enter or a click away and cancels
-  on Escape. A typed title on a lens is a nickname that stops the title
-  following the folder. An empty one follows again, as the Lenses page's
+  on Escape. While it is open, the title icon is a button: a click opens the
+  icon picker (D16), the picked icon applies at once, and the rename stays open
+  behind the picker. A typed title on a lens is a nickname that stops the title
+  following the folder. An empty one follows again, as the New lenses page's
   "Show as" says (Folder name when that is Custom), as one undo entry; on a
   normal space, or on a lens that already follows its folder, it is ignored.
 

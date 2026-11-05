@@ -167,6 +167,9 @@ pub fn apply_field(
         apply_global_theme(config, session, &look);
         return FieldEffect::Look;
     }
+    if let Some(effect) = fonts::apply_font_field(config, id, &value, &session.fonts) {
+        return effect;
+    }
     let mut look = SpaceLook::from_global(&config.theme, &config.desktop.layout);
     let effect = match apply_look_field(&mut look, id, &value, system_dark) {
         Some(effect) => {

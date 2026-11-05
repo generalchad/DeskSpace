@@ -1,10 +1,10 @@
 //! A space's view: how its items are laid out and ordered, apart from its
 //! look (D17).
 
-use serde::de::IgnoredAny;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::item::SortKey;
+use crate::lenient::{Lenient, known_or_default};
 use crate::sort::SortRule;
 
 /// Whether a space's labels show filename extensions (D18, W28).
@@ -134,14 +134,6 @@ fn columns_are_default(columns: &[ColumnSpec]) -> bool {
     columns == default_columns()
 }
 
-/// A value of `T`, or whatever else the file holds there.
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum Lenient<T> {
-    Valid(T),
-    Invalid(IgnoredAny),
-}
-
 /// Reads a hand-editable column list so that no value in it can fail the
 /// config load: an entry that makes no sense is dropped, and a field that is
 /// no list at all means the default columns.
@@ -173,6 +165,7 @@ fn saturating_width<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option
 #[serde(default)]
 pub struct SpaceView {
     /// The layout the space uses.
+    #[serde(deserialize_with = "known_or_default")]
     pub mode: ViewMode,
     /// How the space orders its items. A lens is always kept in this order;
     /// a normal space keeps the rule and sorts when asked.
@@ -185,7 +178,10 @@ pub struct SpaceView {
     /// with the item counts and view buttons (W19).
     pub status_bar: bool,
     /// Whether the space's labels show filename extensions (W28).
-    #[serde(skip_serializing_if = "Extensions::is_default")]
+    #[serde(
+        skip_serializing_if = "Extensions::is_default",
+        deserialize_with = "known_or_default"
+    )]
     pub extensions: Extensions,
     /// Whether the views that place items by order use Explorer's tighter
     /// rows. The icon views keep the Layout page's spacing (D18).

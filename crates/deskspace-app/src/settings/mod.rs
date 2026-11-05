@@ -8,7 +8,9 @@
 //! `Command`s the app dispatches, so `Desktop` is only changed through them.
 
 mod apply;
+mod fonts;
 mod ids;
+mod nav_groups;
 mod pages;
 mod session;
 mod tables;
@@ -18,7 +20,9 @@ pub use apply::{
     apply_animation_edit, apply_field, apply_global_theme, apply_shadow_edit, apply_space_theme,
     customize_space, look_to_save, match_global, reset_appearance, space_edit,
 };
+pub use fonts::reset_fonts;
 pub use ids::{field, page};
+pub use nav_groups::listed_pages;
 pub use session::{Session, SpaceSnapshot, needs_relayout, needs_restyle};
 pub use tables::{
     AnimationPage, DETAILS_COLUMNS, EDGES, GROUP_NONE, HOTKEY_BINDINGS, HotkeyAction,
@@ -47,9 +51,9 @@ use deskspace_core::{
     ViewMode,
 };
 use deskspace_platform::{
-    ColumnAlign, Field, FieldValue, SettingsButton, SettingsForm, SettingsHeader, SettingsNav,
-    SettingsNavEntry, SettingsNavGroup, SettingsPage, SettingsScope, SettingsSwitch, SliderMark,
-    SpacePreview,
+    ColumnAlign, Field, FieldValue, HeaderIcon, SettingsButton, SettingsForm, SettingsHeader,
+    SettingsNav, SettingsNavEntry, SettingsNavGroup, SettingsPage, SettingsScope, SettingsSwitch,
+    SliderMark, SpacePreview,
 };
 
 use pages::{
@@ -138,25 +142,6 @@ impl ScopeKind {
     }
 }
 
-/// The pages the categories pane lists for `scope`, in order: every Global
-/// page for Global, the animation pages last, or a space's look pages, its
-/// View page, and its Shortcuts page; a lens also lists its Lens page.
-pub fn listed_pages(scope: ScopeKind) -> Vec<usize> {
-    match scope {
-        ScopeKind::Global => (0..=6)
-            .chain([page::LENSES])
-            .chain(7..=page::ABOUT)
-            .chain(page::ANIMATIONS..page::ANIMATIONS + tables::ANIMATION_PAGES.len())
-            .collect(),
-        ScopeKind::Space => (0..LOOK_PAGE_COUNT)
-            .chain([page::VIEW, page::SHORTCUTS])
-            .collect(),
-        ScopeKind::Lens => (0..LOOK_PAGE_COUNT)
-            .chain([page::VIEW, page::SHORTCUTS, page::LENS])
-            .collect(),
-    }
-}
-
 /// The opaque colors a settings preview draws a space with: the tint over a
 /// stand-in for the backdrop (Windows 11's dark or light base), and the title
 /// shading over that. The blur cannot be shown, so this is an approximation.
@@ -236,6 +221,8 @@ pub fn build_form(
     pages.push(view_page(space));
     debug_assert_eq!(pages.len(), page::LENSES);
     pages.push(lenses_page(config));
+    debug_assert_eq!(pages.len(), page::SPACE_FONTS);
+    pages.extend(fonts::font_pages(config, &session.fonts));
 
     let listed = listed_pages(kind);
     let selected = listed
@@ -247,32 +234,26 @@ pub fn build_form(
         page: index,
         marked: false,
     };
-    // The animation pages get a group of their own, after the rest, so the
-    // flattened entries keep `listed`'s order and `selected` stays valid.
-    let animations = page::ANIMATIONS..page::ANIMATIONS + tables::ANIMATION_PAGES.len();
-    let (settings_pages, animation_pages): (Vec<usize>, Vec<usize>) = listed
-        .iter()
-        .partition(|&&index| !animations.contains(&index));
-    let mut groups = vec![SettingsNavGroup {
-        title: String::new(),
-        entries: settings_pages.iter().map(entry).collect(),
-    }];
-    if !animation_pages.is_empty() {
-        groups.push(SettingsNavGroup {
-            title: "Animations".into(),
-            entries: animation_pages.iter().map(entry).collect(),
-        });
-    }
+    // `listed` is the groups flattened, so `selected` indexes their entries.
+    let groups = nav_groups::nav_groups(kind)
+        .into_iter()
+        .map(|group| SettingsNavGroup {
+            title: group.title.into(),
+            entries: group.pages.iter().map(entry).collect(),
+        })
+        .collect();
 
     let mut scopes = vec![SettingsScope {
         label: "Global".into(),
         glyph: Some(ScopeKind::Global.glyph()),
+        icon: None,
         indent: false,
         dimmed: false,
     }];
     scopes.extend(config.desktop.spaces().iter().map(|space| SettingsScope {
         label: space.title().to_owned(),
         glyph: Some(ScopeKind::of(Some(space)).glyph()),
+        icon: session.glyphs.get(&space.id).cloned(),
         indent: true,
         dimmed: !space.custom(),
     }));
@@ -281,8 +262,18 @@ pub fn build_form(
             title: "Global settings".into(),
             switch: None,
             button: None,
+            icon: None,
+            renamable: false,
         },
         Some(space) => SettingsHeader {
+            icon: Some(
+                session
+                    .glyphs
+                    .get(&space.id)
+                    .cloned()
+                    .map_or(HeaderIcon::Placeholder, HeaderIcon::Glyph),
+            ),
+            renamable: true,
             title: space.title().to_owned(),
             switch: Some(SettingsSwitch {
                 label: "Customize this space".into(),
@@ -337,6 +328,8 @@ pub enum ButtonAction {
     /// An animation page's "Open Windows animation settings", which opens
     /// the page holding Windows' "Animation effects" switch.
     OpenWindowsAnimationSettings,
+    /// A font page's "Reset to defaults", by its field id (`reset_fonts`).
+    ResetFonts(u32),
 }
 
 /// The action of the button with field id `id`, or `None` for any other id.
@@ -349,6 +342,7 @@ pub fn button_action(id: u32) -> Option<ButtonAction> {
         field::CHECK_UPDATES_NOW => Some(ButtonAction::CheckForUpdates),
         field::LENS_OPEN => Some(ButtonAction::OpenLensFolder),
         field::LENS_CHANGE => Some(ButtonAction::ChangeLensFolder),
+        id if fonts::is_font_reset(id) => Some(ButtonAction::ResetFonts(id)),
         id if tables::ANIMATION_PAGES
             .iter()
             .any(|page| page.open_settings == id) =>
@@ -374,6 +368,8 @@ pub enum FieldEffect {
     Lens,
     /// Only pending (unapplied) settings changed.
     Pending,
+    /// The type scale changed; hand it to the platform.
+    Fonts,
 }
 
 #[cfg(test)]
@@ -608,6 +604,63 @@ mod tests {
         }
     }
 
+    /// `page` of `form`, found by its title.
+    fn page_named<'a>(form: &'a SettingsForm, title: &str) -> &'a SettingsPage {
+        form.pages
+            .iter()
+            .find(|page| page.title == title)
+            .unwrap_or_else(|| panic!("no {title} page"))
+    }
+
+    /// The labels of `page`'s headings, in order.
+    fn headings(page: &SettingsPage) -> Vec<&str> {
+        page.fields
+            .iter()
+            .filter(|field| matches!(field.kind, FieldKind::Heading))
+            .map(|field| field.label.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn each_regrouped_page_lists_its_groups_in_order() {
+        let (config, session) = setup();
+        let built = form(&config, &session);
+        assert_eq!(
+            headings(page_named(&built, "Appearance")),
+            ["Material", "Border", "Shadow", "Items"]
+        );
+        assert_eq!(
+            headings(page_named(&built, "Colors")),
+            ["Colors", "Border", "Selection", "Themes"]
+        );
+        assert_eq!(
+            headings(page_named(&built, "General")),
+            ["Startup", "Desktop", "Look", "Space icons", "Updates"]
+        );
+        assert_eq!(
+            headings(page_named(&built, "New spaces")),
+            ["Defaults for new spaces", "View", "Sort"]
+        );
+    }
+
+    #[test]
+    fn the_moved_notes_describe_the_row_above_them() {
+        let (config, session) = setup();
+        let built = form(&config, &session);
+        let after = |page: &SettingsPage, id: u32| {
+            let index = page.fields.iter().position(|field| field.id == id).unwrap();
+            page.fields[index + 1].id
+        };
+        assert_eq!(
+            after(page_named(&built, "Appearance"), field::BACKDROP),
+            field::COMPATIBILITY_NOTE
+        );
+        assert_eq!(
+            after(page_named(&built, "New spaces"), field::NEW_SPACE_LOCKED),
+            field::NEW_SPACES_NOTE
+        );
+    }
+
     #[test]
     fn new_spaces_page_shows_the_configured_defaults() {
         let (mut config, session) = setup();
@@ -818,8 +871,29 @@ mod tests {
         assert_eq!(nav.selected_scope, 0);
         assert_eq!(
             nav.entries().count(),
-            page::ABOUT + 2 + tables::ANIMATION_PAGES.len(),
-            "every Global page, the Lenses page included"
+            page::ABOUT + 4 + tables::ANIMATION_PAGES.len(),
+            "every Global page, the Lenses and font pages included"
+        );
+        let groups: Vec<(&str, Vec<&str>)> = nav
+            .groups
+            .iter()
+            .map(|group| {
+                let labels = group.entries.iter().map(|entry| entry.label.as_str());
+                (group.title.as_str(), labels.collect())
+            })
+            .collect();
+        assert_eq!(
+            groups,
+            [
+                (
+                    "Look",
+                    vec!["Appearance", "Labels", "Layout", "Colors", "Advanced"]
+                ),
+                ("Fonts", vec!["Spaces", "Windows"]),
+                ("New items", vec!["New spaces", "New lenses"]),
+                ("DeskSpace", vec!["General", "Hotkeys", "About"]),
+                ("Animations", vec!["Startup", "Delete", "Fold"]),
+            ]
         );
         let header = nav.header.as_ref().unwrap();
         assert_eq!(header.title, "Global settings");
@@ -975,7 +1049,7 @@ mod tests {
         let mut session = Session::new(&config);
         session.page = page::ABOUT;
         session.select_scope(Some(id), ScopeKind::Space);
-        assert_eq!(session.page, page::APPEARANCE, "About is Global only");
+        assert_eq!(session.page, page::VIEW, "About is Global only");
         let form = build_form(
             &config,
             &session,
@@ -990,13 +1064,13 @@ mod tests {
         assert_eq!(
             labels,
             [
+                "View",
+                "Shortcuts",
                 "Appearance",
                 "Labels",
                 "Layout",
                 "Colors",
-                "Advanced",
-                "View",
-                "Shortcuts"
+                "Advanced"
             ]
         );
         let switch = nav.header.as_ref().unwrap().switch.as_ref().unwrap();
@@ -1005,7 +1079,7 @@ mod tests {
         let button = nav.header.as_ref().unwrap().button.as_ref().unwrap();
         assert_eq!(button.label, "Delete space");
         // The page shape never changes: General and About are still built.
-        assert_eq!(form.pages.len(), page::LENSES + 1);
+        assert_eq!(form.pages.len(), page::WINDOW_FONTS + 1);
     }
 
     fn animation_form(config: &Config, system_on: bool) -> SettingsForm {
@@ -1028,15 +1102,67 @@ mod tests {
         let (config, session) = setup();
         let form = form(&config, &session);
         let groups = &nav(&form).groups;
-        assert_eq!(groups.len(), 2);
-        assert_eq!(groups[1].title, "Animations");
-        let titles: Vec<&str> = groups[1]
+        let animations = groups.last().expect("groups");
+        assert_eq!(animations.title, "Animations");
+        let titles: Vec<&str> = animations
             .entries
             .iter()
             .map(|entry| entry.label.as_str())
             .collect();
         assert_eq!(titles, ["Startup", "Delete", "Fold"]);
-        assert_eq!(groups[1].entries[0].page, page::ANIMATIONS);
+        assert_eq!(animations.entries[0].page, page::ANIMATIONS);
+    }
+
+    #[test]
+    fn the_form_shows_each_space_icon_and_a_placeholder_without_one() {
+        let (mut config, work) = config_with_space("Work");
+        let games = create_space(&mut config.desktop, "Games", Rect::new(300, 0, 200, 200));
+        let glyph = deskspace_core::Glyph {
+            key: "fluent:briefcase".into(),
+            body: "<path/>".into(),
+            width: 24,
+            height: 24,
+        };
+        let mut session = Session::new(&config);
+        session.glyphs.insert(work, glyph.clone());
+
+        let global = form(&config, &session);
+        let shown = nav(&global);
+        assert_eq!(
+            shown.header.as_ref().unwrap().icon,
+            None,
+            "Global has no slot"
+        );
+        assert_eq!(shown.scopes[0].icon, None);
+        assert_eq!(shown.scopes[1].icon, Some(glyph.clone()), "Work");
+        assert_eq!(shown.scopes[2].icon, None, "Games has no icon");
+
+        session.select_scope(Some(work), ScopeKind::Space);
+        let form_work = form(&config, &session);
+        assert_eq!(
+            nav(&form_work).header.as_ref().unwrap().icon,
+            Some(HeaderIcon::Glyph(glyph))
+        );
+        session.select_scope(Some(games), ScopeKind::Space);
+        let form_games = form(&config, &session);
+        assert_eq!(
+            nav(&form_games).header.as_ref().unwrap().icon,
+            Some(HeaderIcon::Placeholder)
+        );
+    }
+
+    #[test]
+    fn a_space_groups_its_look_pages_apart_from_its_own() {
+        let (config, id) = config_with_space("A");
+        let mut session = Session::new(&config);
+        session.select_scope(Some(id), ScopeKind::Space);
+        let form = form(&config, &session);
+        let titles: Vec<&str> = nav(&form)
+            .groups
+            .iter()
+            .map(|group| group.title.as_str())
+            .collect();
+        assert_eq!(titles, ["This space", "Look"]);
     }
 
     #[test]
@@ -1126,13 +1252,13 @@ mod tests {
         assert!(listed_pages(ScopeKind::Space).contains(&page::SHORTCUTS));
         assert!(!listed_pages(ScopeKind::Space).contains(&page::LENS));
 
-        // The sixth entry of a space is its View page and the seventh its
+        // A space's first entry is its View page and its second its
         // Shortcuts page, which stays selected while the space is, is always
         // enabled, and is left for Appearance when the scope returns to Global.
         session.select_scope(Some(id), ScopeKind::Space);
-        session.select_entry(5);
+        session.select_entry(0);
         assert_eq!(session.page, page::VIEW);
-        session.select_entry(6);
+        session.select_entry(1);
         assert_eq!(session.page, page::SHORTCUTS);
         let form = build_form(
             &config,
@@ -1142,8 +1268,8 @@ mod tests {
             Path::new("x"),
             SpacePreview::default(),
         );
-        assert_eq!(form.nav.selected, 6);
-        assert_eq!(form.nav.page_of(6), Some(page::SHORTCUTS));
+        assert_eq!(form.nav.selected, 1);
+        assert_eq!(form.nav.page_of(1), Some(page::SHORTCUTS));
         assert!(form.field(field::SPACE_PREVIEW).unwrap().enabled);
         session.select_scope(None, ScopeKind::Global);
         assert_eq!(session.page, page::APPEARANCE);
