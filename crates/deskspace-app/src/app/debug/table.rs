@@ -15,10 +15,12 @@ pub(crate) enum DebugSectionId {
     Animations,
     Takeover,
     Simulate,
+    /// The type scale and the language seam (G12).
+    Typography,
 }
 
 impl DebugSectionId {
-    pub(crate) const ALL: [Self; 9] = [
+    pub(crate) const ALL: [Self; 10] = [
         Self::Spaces,
         Self::Config,
         Self::Diagnostics,
@@ -28,6 +30,7 @@ impl DebugSectionId {
         Self::Animations,
         Self::Takeover,
         Self::Simulate,
+        Self::Typography,
     ];
 
     pub(crate) fn title(self) -> &'static str {
@@ -41,6 +44,7 @@ impl DebugSectionId {
             Self::Animations => "Animations",
             Self::Takeover => "Takeover",
             Self::Simulate => "Simulate",
+            Self::Typography => "Typography",
         }
     }
 }

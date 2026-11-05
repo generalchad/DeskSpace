@@ -10,9 +10,9 @@ use crate::settings_cards::{
     CARD_GAP, CARD_PADDING_X, CARD_PADDING_Y, DESCRIPTION_GAP, ROW_SEPARATOR_GAP, Role, card_plan,
 };
 use crate::win32::dialog::{self, ControlSpec};
-use crate::win32::system::{draw_text, message_logfont};
+use crate::win32::system::draw_text;
 use deskspace_core::geometry::Rect;
-use windows::Win32::Graphics::Gdi::CreateFontIndirectW;
+use deskspace_core::typography::Role as FontRole;
 
 /// Converts 96-DPI layout units to pixels at `dpi`.
 pub(super) fn scaled(value: i32, dpi: u32) -> i32 {
@@ -63,19 +63,14 @@ struct Fonts {
 }
 
 unsafe fn create_fonts(dpi: u32) -> Fonts {
-    let body = message_logfont(dpi);
-    let mut strong = body;
-    strong.lfWeight = 600;
-    let mut heading = strong;
-    heading.lfHeight = body.lfHeight * 4 / 3;
-    // SAFETY: the LOGFONTs are fully initialised locals.
-    unsafe {
-        Fonts {
-            body: CreateFontIndirectW(&body),
-            heading: CreateFontIndirectW(&heading),
-            strong: CreateFontIndirectW(&strong),
-            glyph: crate::win32::system::glyph_font(dpi),
-        }
+    let body = crate::win32::system::font_for(FontRole::Body, dpi);
+    let strong = crate::win32::system::font_for(FontRole::Heading3, dpi);
+    let heading = crate::win32::system::font_for(FontRole::Heading1, dpi);
+    Fonts {
+        body,
+        heading,
+        strong,
+        glyph: crate::win32::system::glyph_font(dpi),
     }
 }
 

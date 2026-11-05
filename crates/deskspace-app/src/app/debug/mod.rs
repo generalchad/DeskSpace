@@ -20,6 +20,7 @@ mod system;
 mod table;
 mod takeover;
 mod test_spaces;
+mod typography;
 mod windows;
 
 use std::path::Path;
@@ -72,6 +73,12 @@ pub(crate) struct DebugTools {
     marks: u32,
     /// Whether every shadow is hidden for this session (ROADMAP D15).
     pub(crate) hide_shadows: bool,
+    /// The type scale the Debug window edits (G12), session only.
+    pub(crate) typography: deskspace_core::typography::Typography,
+    /// The interface language for the samples (G12), session only.
+    pub(crate) language: deskspace_core::text::Language,
+    /// The installed families, read once when the window opens.
+    pub(crate) fonts: Option<Vec<String>>,
 }
 
 impl DebugTools {
@@ -90,6 +97,9 @@ impl DebugTools {
             log_events: false,
             marks: 0,
             hide_shadows: false,
+            typography: deskspace_core::typography::Typography::default(),
+            language: deskspace_core::text::Language::default(),
+            fonts: None,
         }
     }
 }
@@ -343,6 +353,9 @@ impl App {
     /// log feed and the panel refresh. A reopened window gets the whole ring
     /// again; one already open keeps what it has.
     pub(super) fn open_debug(&mut self, ui: &mut Ui) {
+        if let Some(tools) = self.debug.as_mut() {
+            tools.fonts.get_or_insert_with(|| ui.font_families());
+        }
         let panel = self.debug_panel(ui);
         let Some(tools) = self.debug.as_mut() else {
             return;
@@ -386,6 +399,9 @@ impl App {
                 }
                 if section == DebugSectionId::Animations {
                     controls.extend(self.animation_setting_controls());
+                }
+                if section == DebugSectionId::Typography {
+                    controls.extend(typography::controls(self, ui));
                 }
                 (!controls.is_empty()).then(|| DebugSection {
                     title: section.title().to_string(),
@@ -486,6 +502,10 @@ impl App {
                 self.on_animation_setting(ui, id, index);
             }
             self.on_shadow_setting(ui, id, input);
+            if self.on_typography_setting(ui, id, input) {
+                ui.close_debug();
+                self.open_debug(ui);
+            }
         }
         self.undo.set_suppressed(false);
         self.push_debug_panel(ui);

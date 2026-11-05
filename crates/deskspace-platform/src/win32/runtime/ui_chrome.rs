@@ -49,6 +49,22 @@ impl Ui {
         pick_color(owner, initial, dark)
     }
 
+    /// Sets the type scale every new font is built from (the Debug window's
+    /// typography box). The spaces repaint at once with new DirectWrite
+    /// formats; a settings or debug window already open keeps the fonts it
+    /// was built with until it is reopened.
+    pub fn set_typography(&mut self, typography: &deskspace_core::typography::Typography) {
+        crate::win32::typography::set(typography.clone());
+        crate::render::d2d::release_graphics();
+        super::invalidate_spaces();
+    }
+
+    /// Every installed font family, sorted, for the Debug window's family
+    /// choice.
+    pub fn font_families(&self) -> Vec<String> {
+        crate::win32::typography::installed_families()
+    }
+
     /// Sets the color picker's recent colors, most recent first, such as the
     /// ones saved last session. Picks update them and raise
     /// `Event::RecentColors`.

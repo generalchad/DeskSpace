@@ -964,63 +964,6 @@ otherwise, a name in `code` that does not exist yet is one the task creates.
     behind; switching pages starts the next page at the top; a short page has
     no scrollbar; the OK/Cancel/Apply bar is always visible.
 
-- [ ] **G11. Apply the typography table everywhere (platform).** Written after
-  the type scale landed as `deskspace_core::typography` (2026-11-04). The
-  platform keeps the current `Typography` and every font comes from it.
-  - `win32/typography.rs`: the current table, set through
-    `Ui::set_typography`, which also drops the cached `render::d2d` graphics
-    so DirectWrite formats are made again, and repaints every space.
-  - GDI: `system::message_logfont` takes a `Role`; `dialog::DialogChrome`,
-    `settings_window::build::create_fonts`, and the debug window build their
-    fonts per role (Body, Heading 1, Heading 3, Caption).
-  - DirectWrite: `Graphics::new` builds every format from its role
-    (`SpaceTitle`, `ItemLabel`, `Details`, `Placeholder`, `Zoom`, `Body`), and
-    the label-size percentage still scales `ItemLabel`.
-  - `Ui::font_families()` lists installed families through DirectWrite once,
-    sorted and deduplicated.
-  - An open settings or debug window takes the new fonts on its next open; a
-    settings window is not rebuilt under a preview (a rebuild would discard
-    unapplied edits), so the Debug box says "reopen Settings to see this".
-  - **[needs human]** check: change Body and Heading 1, then reopen Settings,
-    the Debug window, and a dialog: each follows; a space's title, labels, and
-    Details cells follow theirs live; a size at either end of the range clamps.
-
-- [ ] **G12. The Debug window's typography box and language choice (app).**
-  After G11.
-  - A "Typography" section: one row per `Role` with a family `Choice`, a size
-    `Choice` (the `FONT_SIZE_STEP` series inside `FONT_SIZE_RANGE`), and a
-    weight `Choice` (`FONT_WEIGHTS`); a "Reset fonts" button; and two
-    `Readout`s showing `text::lookup` for `Key::FontSample` and
-    `Key::LanguageSample`.
-  - A `Language` `Choice` (`Language::ALL`), which the samples and the panel's
-    next push use. Session-only, as every debug tool is (D14).
-  - Rows use the shadow-settings pattern (a id base, `DebugControl::group`).
-
-
-  **[needs human]** Written after G5 (decided 2026-11-04, maintainer): keep
-  D26's card spacing, and let a long page scroll. Cards make Appearance and
-  Colors about 850 px tall at 96 DPI, more than a 1080p work area at 150 %.
-  - `place_window` clamps the client height to the monitor's work area, so
-    the command bar stays on screen; the page area takes what is left.
-  - Each page container gets `WS_VSCROLL`, shown only while its content is
-    taller than the page area. `PageBuild` keeps each page's content height,
-    and `SettingsState` its scroll offset.
-  - Scrolling is `ScrollWindowEx(page, 0, -delta, None, None, None, None,
-    SW_SCROLLCHILDREN | SW_INVALIDATE | SW_ERASE)`, then a repaint, so the
-    controls, the cards, and the hairlines move together. `cards::erase_page`
-    subtracts the page's scroll offset when it draws.
-  - A wheel notch over a page hit-tests to the page's offset; `WM_VSCROLL`
-    on the page serves the scrollbar. PageUp, PageDown, Home, and End while a
-    control on the page has focus do the same.
-  - The window's own `WM_MOUSEWHEEL` keeps going to the window procedure it
-    has today; only the page area scrolls.
-  - **[needs human]** check at 100 % and 150 %, in light and dark, on
-    Appearance, Colors, and New spaces: a scrollbar shows while the page does
-    not fit; dragging it, the wheel, and PageUp/PageDown reach every group;
-    the cards and hairlines scroll with the controls, with no card left
-    behind; switching pages starts the next page at the top; a short page has
-    no scrollbar; the OK/Cancel/Apply bar is always visible.
-
 ## T. Animations (ROADMAP D12, D13, F-33)
 
 Read D12 first; it is the spec. T1 is a spike only a human can judge, and
@@ -2591,6 +2534,7 @@ for a machine that has it.
 | G1-G3 (D26) | With `--on-top` at 100 % and 150 %: open Settings on a space, then click other spaces in the scopes pane. Each outline fades in quickly, holds about a second, and fades out, with no flash and no outline left behind. Click a second space mid-fade: the first fades out while the second fades in. Fold and unfold a space while it is highlighted, and hide all spaces mid-fade; nothing sticks. With Windows' "Animation effects" off, it switches as before. With no highlight showing, idle CPU is as before. |
 | G4, G5 (D26) | In light and dark at 100 % and 150 %, on every page of Global, a space, and a lens: each heading's fields sit on one rounded card with hairlines between rows. Labels, check boxes, sliders and their marks, swatches, text boxes, and drop-downs show the card's color behind them, with no body-colored boxes. Notes under a field are grey and sit close under it. Disabled rows still grey out. Switching dark mode while the window is open repaints the cards. Tab order is as before. |
 | G6 (D26) | Appearance shows Material, Border, Shadow, and Items in that order; Colors shows Colors, Border, Selection, and Themes; General shows Startup, Desktop, Look, Space icons, and Updates; New spaces opens with "Everything not set here follows the Global appearance and layout." and its locked-space note sits under "Start new spaces locked". The materials note sits under "Background material". Every setting still previews, applies, and cancels as before. |
+| G11, G12 (F-68) | With `--debug`, the Typography section lists every role. Change Body to another family and size, then reopen Settings, the Debug window, and a picker: each follows the new font. Give Space title another family: every space's title bar follows at once, and so do item labels, Details cells, and placeholders when their roles change; the label-size setting still scales item labels. Choose a size at either end of the list; text stays inside its row and window. "Reset fonts" returns every role to its default. Switch Language to the pseudo one: both sample lines gain accents and brackets, and Settings and the Debug window still lay out. |
 | S9, S10 (D16) | On the desktop at 100 % and 150 %: outside a rename, the icon shows no hand and a click does what the title bar does. F2 on a space, then hover the icon: hand and hover fill. A click opens the picker in front, with the rename still showing behind it. Search "pho", pick an icon, then OK: the icon changes at once, and you can type more of the name and press Enter. Esc in the picker changes nothing. "Automatic" and "No icon" work; a space without an icon shows the placeholder. Clicking in the picker never ends the rename. With downloads declined, the picker opens with the note and its two buttons. |
 | Flames follow | With Startup and Delete set to Burn at 1000 ms (or `--debug` at ¼×), change a space's rect while it burns: move or resize it in Settings and Apply mid-hide, and change the display layout mid-show. The flames stay on the space's burning edge at its new place, never left where it was; a resized space's flames stand on its new edge. No flame window is left after the burn ends. |
 | Frame clock | On a 60 Hz and a 144 Hz display, and on a space moved to a second monitor with another refresh: Roll, Fade, Fly, Bounce, CRT, and Burn on hide and show at 1000 ms are smooth, with no hitch or jump; `--debug` at ⅒× speed is smooth too; hiding during the startup stagger, and the hotkey twice mid-animation, behave as before. With no animation running, Task Manager shows no "frame clock" thread busy and idle CPU is as before. Lock the session mid-animation: it finishes, and the app stays responsive after unlocking. |

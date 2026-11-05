@@ -50,6 +50,7 @@ mod space_animation;
 mod space_window;
 pub(crate) mod system;
 mod tray;
+pub(crate) mod typography;
 pub(crate) mod watchdog;
 mod window_class;
 mod window_state;

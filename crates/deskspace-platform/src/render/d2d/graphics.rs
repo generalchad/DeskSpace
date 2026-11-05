@@ -15,6 +15,9 @@ use windows::core::Interface;
 
 use super::*;
 use crate::render::ItemLayout;
+use crate::win32::system::wide;
+use crate::win32::typography;
+use deskspace_core::typography::Role;
 
 /// Device-independent resources shared by every painter on the UI thread.
 pub(super) struct Graphics {
@@ -83,27 +86,28 @@ impl Graphics {
             let mut fonts = None;
             dwrite.GetSystemFontCollection(&mut fonts, false)?;
             let fonts = fonts.ok_or(PlatformError::InvalidFormat("system font collection"))?;
-            let text_family =
-                first_installed(&fonts, &[w!("Segoe UI Variable Text"), w!("Segoe UI")])
-                    .unwrap_or(w!("Segoe UI"));
+            let (text_family, default_family) =
+                if typography::is_installed(&fonts, w!("Segoe UI Variable Text")) {
+                    (w!("Segoe UI Variable Text"), "Segoe UI Variable Text")
+                } else {
+                    (w!("Segoe UI"), "Segoe UI")
+                };
             let glyph_family =
                 first_installed(&fonts, &[w!("Segoe Fluent Icons"), w!("Segoe MDL2 Assets")]);
 
-            let title_format =
-                make_format(&dwrite, text_family, DWRITE_FONT_WEIGHT_SEMI_BOLD, 13.0)?;
+            let title_format = role_format(&dwrite, Role::SpaceTitle, 1.0, default_family)?;
             title_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
             title_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING)?;
             title_format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
             let title_sign = dwrite.CreateEllipsisTrimmingSign(&title_format)?;
             title_format.SetTrimming(&character_trimming(), &title_sign)?;
 
-            let edit_format =
-                make_format(&dwrite, text_family, DWRITE_FONT_WEIGHT_SEMI_BOLD, 13.0)?;
+            let edit_format = role_format(&dwrite, Role::SpaceTitle, 1.0, default_family)?;
             edit_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
             edit_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING)?;
             edit_format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
 
-            let label_format = make_format(&dwrite, text_family, DWRITE_FONT_WEIGHT_NORMAL, 12.0)?;
+            let label_format = role_format(&dwrite, Role::ItemLabel, 1.0, default_family)?;
             label_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR)?;
             label_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER)?;
             label_format.SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP)?;
@@ -130,8 +134,7 @@ impl Graphics {
 
             // An inline cell (Small icons) has one left-aligned line beside its
             // icon, ellipsized when it runs past the cell (W16).
-            let inline_label_format =
-                make_format(&dwrite, text_family, DWRITE_FONT_WEIGHT_NORMAL, 12.0)?;
+            let inline_label_format = role_format(&dwrite, Role::ItemLabel, 1.0, default_family)?;
             inline_label_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR)?;
             inline_label_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING)?;
             inline_label_format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
@@ -139,11 +142,11 @@ impl Graphics {
             inline_label_format.SetTrimming(&character_trimming(), &inline_sign)?;
             let mut inline_label_formats = HashMap::new();
             for scale in (LABEL_SIZE_RANGE.0..=LABEL_SIZE_RANGE.1).step_by(10) {
-                let format = make_format(
+                let format = role_format(
                     &dwrite,
-                    text_family,
-                    DWRITE_FONT_WEIGHT_NORMAL,
-                    12.0 * scale as f32 / 100.0,
+                    Role::ItemLabel,
+                    scale as f32 / 100.0,
+                    default_family,
                 )?;
                 format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR)?;
                 format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING)?;
@@ -155,15 +158,15 @@ impl Graphics {
 
             // A Details row and header are single, vertically centered lines;
             // values can be left or right aligned (W18).
-            let details_format =
-                make_format(&dwrite, text_family, DWRITE_FONT_WEIGHT_NORMAL, 12.0)?;
+            let details_format = role_format(&dwrite, Role::Details, 1.0, default_family)?;
+
             details_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
             details_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING)?;
             details_format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
             let details_sign = dwrite.CreateEllipsisTrimmingSign(&details_format)?;
             details_format.SetTrimming(&character_trimming(), &details_sign)?;
-            let details_right_format =
-                make_format(&dwrite, text_family, DWRITE_FONT_WEIGHT_NORMAL, 12.0)?;
+            let details_right_format = role_format(&dwrite, Role::Details, 1.0, default_family)?;
+
             details_right_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
             details_right_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING)?;
             details_right_format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
@@ -180,13 +183,11 @@ impl Graphics {
                 None => None,
             };
 
-            let zoom_percent_format =
-                centered_format(&dwrite, text_family, DWRITE_FONT_WEIGHT_SEMI_BOLD, 14.0)?;
-            let zoom_label_format =
-                centered_format(&dwrite, text_family, DWRITE_FONT_WEIGHT_NORMAL, 12.0)?;
+            let zoom_percent_format = centered_role_format(&dwrite, Role::Zoom, default_family)?;
 
-            let placeholder_format =
-                make_format(&dwrite, text_family, DWRITE_FONT_WEIGHT_NORMAL, 12.0)?;
+            let zoom_label_format = centered_role_format(&dwrite, Role::Body, default_family)?;
+
+            let placeholder_format = role_format(&dwrite, Role::Placeholder, 1.0, default_family)?;
             placeholder_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
             placeholder_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER)?;
             placeholder_format.SetWordWrapping(DWRITE_WORD_WRAPPING_EMERGENCY_BREAK)?;
@@ -279,6 +280,32 @@ fn character_trimming() -> DWRITE_TRIMMING {
     }
 }
 
+/// `role`'s format at `scale` times its configured size. The family is the
+/// role's own, or `default_family` when it names none.
+fn role_format(
+    dwrite: &IDWriteFactory,
+    role: Role,
+    scale: f32,
+    default_family: &str,
+) -> Result<IDWriteTextFormat, PlatformError> {
+    let typography = typography::current();
+    let font = typography.font(role);
+    let family = wide(if font.family.is_empty() {
+        default_family
+    } else {
+        font.family.as_str()
+    });
+    // SAFETY: `family` outlives the call, which copies what it needs.
+    unsafe {
+        make_format(
+            dwrite,
+            PCWSTR(family.as_ptr()),
+            DWRITE_FONT_WEIGHT(i32::from(font.weight)),
+            font.size * scale,
+        )
+    }
+}
+
 pub(super) unsafe fn make_format(
     dwrite: &IDWriteFactory,
     family: PCWSTR,
@@ -313,6 +340,30 @@ unsafe fn centered_format(
         format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER)?;
         format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
         Ok(format)
+    }
+}
+
+/// `role`'s format, centered both ways.
+fn centered_role_format(
+    dwrite: &IDWriteFactory,
+    role: Role,
+    default_family: &str,
+) -> Result<IDWriteTextFormat, PlatformError> {
+    let typography = typography::current();
+    let font = typography.font(role);
+    let family = wide(if font.family.is_empty() {
+        default_family
+    } else {
+        font.family.as_str()
+    });
+    // SAFETY: `family` outlives the call.
+    unsafe {
+        centered_format(
+            dwrite,
+            PCWSTR(family.as_ptr()),
+            DWRITE_FONT_WEIGHT(i32::from(font.weight)),
+            font.size,
+        )
     }
 }
 

@@ -12,8 +12,7 @@ use std::path::PathBuf;
 use deskspace_core::geometry::Point;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    CreateFontIndirectW, CreateSolidBrush, DeleteObject, HBRUSH, HDC, HFONT, HGDIOBJ, SetBkColor,
-    SetTextColor,
+    CreateSolidBrush, DeleteObject, HBRUSH, HDC, HFONT, HGDIOBJ, SetBkColor, SetTextColor,
 };
 use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -38,7 +37,7 @@ use windows::core::{BOOL, PCWSTR};
 use crate::win32::dark_mode::{self, ControlTheme, UiColors};
 use crate::win32::settings_window::colorref;
 use crate::win32::shortcuts::display_name;
-use crate::win32::system::{message_logfont, wide, work_area_at};
+use crate::win32::system::{font_for, wide, work_area_at};
 
 /// The dialog-manager ids `IsDialogMessageW` sends for Enter and Escape, so
 /// the dialogs give their OK and Cancel buttons these ids.
@@ -65,7 +64,7 @@ impl DialogChrome {
         unsafe {
             Self {
                 dpi,
-                font: CreateFontIndirectW(&message_logfont(dpi)),
+                font: font_for(deskspace_core::typography::Role::Body, dpi),
                 colors,
                 body_brush: CreateSolidBrush(colorref(colors.body)),
                 field_brush: CreateSolidBrush(colorref(colors.command_bar)),

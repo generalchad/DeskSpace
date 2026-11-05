@@ -269,6 +269,27 @@ pub(crate) fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
+/// The message font at `dpi` for `role`, from the type scale: the role's
+/// family (or Windows' message family when it is empty), size in 96-DPI
+/// pixels, and weight. Callers delete the returned font.
+pub(crate) fn font_for(role: deskspace_core::typography::Role, dpi: u32) -> HFONT {
+    let typography = super::typography::current();
+    let font = typography.font(role);
+    let mut logfont = message_logfont(dpi);
+    let scale = dpi as f32 / 96.0;
+    logfont.lfHeight = -((font.size * scale).round().max(1.0) as i32);
+    logfont.lfWeight = i32::from(font.weight);
+    if !font.family.is_empty() {
+        let mut face = [0u16; 32];
+        for (slot, ch) in face.iter_mut().zip(font.family.encode_utf16()) {
+            *slot = ch;
+        }
+        logfont.lfFaceName = face;
+    }
+    // SAFETY: the LOGFONT is a fully initialised local.
+    unsafe { CreateFontIndirectW(&logfont) }
+}
+
 /// The system message font (`Segoe UI 9pt` on Windows 11) at `dpi`, from
 /// `SPI_GETNONCLIENTMETRICS`. The settings window and the color picker build
 /// their fonts from it, so both match native windows.
