@@ -13,7 +13,8 @@ its section.
 
 **Pick a task:** these are ready for any contributor, now that human checks
 are collected in section V instead of blocking:
-- section P's "Juniors and interns" list, the best place for a first task;
+- section P's "Juniors and interns" list, the best place for a first task,
+  ranked most severe first, so take one from the top;
 - section K (K9-K16), each a pure move with rules that leave nothing to
   design;
 - O4, which needs no code;
@@ -242,11 +243,13 @@ behavior-preserving refactor: the test count only grows, and no user-visible
 change is expected. The recent exceptions were B32-B36 (performance and
 correctness) and B39-B43 (the lens-performance costs left by B33/B37).
 
-Not listed here on purpose: `settings/pages.rs` `look_pages` (about 205
-lines), `settings/apply.rs` `apply_look_field` (about 110), and
-`settings/mod.rs` `build_form` (about 105). They are long because a field is
-wired in three places, and R14 (table-driven settings fields) removes that
-cause; splitting them first would be undone by R14.
+Not listed here on purpose: `settings/pages.rs` `look_pages` (278 lines),
+`settings/apply.rs` `apply_field` (197) and `apply_look_field` (136), and
+`settings/mod.rs` `build_form` (130), measured 2026-11-04. They are long
+because a field is wired in three places, and R14 (table-driven settings
+fields) removes that cause; splitting them first would be undone by R14. They
+grow with every new option (`look_pages` was about 205 lines in October), so
+R14a's decision is what stops the growth.
 
 ## L. Adding items to spaces (ROADMAP F-50, F-53..F-55)
 
@@ -310,7 +313,9 @@ Rules for every N task:
    runs, or a URL DeskSpace fetches. Images in packs wait for a decision.
 2. **A pack file is untrusted.** Check its size before parsing, clamp every
    value, cap every string and list, ignore unknown keys, and load a newer
-   `format` with a warning. One bad value never fails the whole file. Each
+   `format` with a warning. An enum word this build does not know falls back
+   to that field's default (P34). A value of the wrong type still fails the
+   file, as N1's `wrong-type` reference pins (maintainer, 2026-11-04). Each
    kind gets a hostile-file test.
 3. **Packs reach the network only through `deskspace_update::fetch_signed`**,
    as icon sets do (section S, rule 2).
@@ -1720,9 +1725,11 @@ Rules for every Q task:
 
 ## P. Pay down what we found while working
 
-The **Found while working** list, triaged on 2026-11-02 against the code. "How
-to work a task" applies. Each task says whether it changes behavior; a bug fix
-that does gets a section V row (rule 8).
+The **Found while working** list, triaged on 2026-11-02 against the code,
+P28-P39 from the code review of 2026-11-04, and P40-P45 from SonarCloud's
+analysis of the same day. "How to work a task" applies. Each
+task says whether it changes behavior; a bug fix that does gets a section V
+row (rule 8).
 
 Who takes what:
 
@@ -1742,47 +1749,66 @@ and the parts after it wait too.
 
 ### Juniors and interns
 
-Small first. Each lands alone unless it says "After".
+Most severe first (ranked 2026-11-04), so start at the top. Take the first task
+you can start: one marked "After" waits for the task it names, and a **[needs
+human]** step waits for a person. Each lands alone unless it says "After". A new
+task goes into its tier, not at the end.
 
-- [ ] **P12a. See whether a swallowed Alt shows anything (no code).**
-  **[needs human]** The first step of P12. With an item selected, press
-  Alt+Enter, Alt+Left, and Alt+Up, and watch for focus cues or any change on the
-  desktop, on Windows 11 and on Windows 10. If nothing shows on either, delete P12
-  in a commit saying so. Otherwise record what shows under P12.
+#### High
 
-- [ ] **P26a. See whether content still trails its edge (no code).**
-  **[needs human]** The first step of P26. On a space with a title and items,
-  play Roll, Fly, and Bounce from the debug window at 100 % and 150 %. Watch the
-  edge for content lagging or a frame with no title. If nothing shows, delete P26
-  in a commit saying so. Otherwise record which effect shows it under P26.
+A user can lose their layout, an attacker could reach every install, or the next release waits on it.
 
-- [ ] **P24. Let the icon cache forget a window (fix).** After: K9. Nothing ever
-  removes an entry from `IconCache::demand`, so the limit only rises. A previewed
-  space adds at most 60 for good, and a deleted space's scene stays counted, which
-  for a large lens is much more.
-  - `IconCache::forget_user(user)`: remove it from `demand`, and when a worker exists
-    call `queue.set_wanted(&user, &[])`, so it stops loading icons nobody will draw.
-  - `store` evicts once per insert, so a lower limit would never shrink the cache.
-    Turn its eviction into a `while` that runs until the entries are under the limit.
-    A replaced key still evicts nothing.
-  - Call it for `IconUser::SettingsPreview` in `app/settings_session.rs`, with the
-    old scope, read before `select_scope` in `ScopeChanged`, and on Ok and Cancel.
-    Call it for `IconUser::Space` beside both `view_cache.forget(id)` calls
-    (`app/files.rs`, `app/undo.rs`). Undoing that delete makes a new scene, which
-    registers again.
-  - Tests in the cache, which can set `demand` directly: the limit falls after a
-    forget, and the next store evicts down to it, oldest first. No shell calls.
+- [ ] **P30. Keep the signing key out of the release build (ci).** `release.yml`
+  puts `secrets.DESKSPACE_MINISIGN_KEY` in the job's `env`, so every step can read
+  it. That includes `cargo test`, `cargo build`, and `cargo install cargo-packager`,
+  which run third-party build scripts. A compromised crate could read the key and
+  sign an update that every installed DeskSpace accepts. `icons.yml` already gives
+  the key to its signing step alone.
+  - Delete the job-level `MINISIGN_KEY`. Add a step, before the signing step, that
+    reads the secret in its own `env` and writes only `present=true` or
+    `present=false` to `$env:GITHUB_OUTPUT`. Gate the signing step on
+    `steps.<id>.outputs.present == 'true'`, and leave that step's own `env` as it is.
+  - Keep the comment that says why the gate exists (`secrets` cannot be used in an
+    `if`), reworded to fit.
+  - Run `actionlint` (`TOOLS.md` section 1).
+  - A senior reviews, because this guards the update key. Until R12's dry run, the
+    diff and `actionlint` are the check.
 
-- [ ] **P18b. Make a failed capture explain itself (scripts).** Part of P18. In
-  `scripts/onscreen/OnScreen.psm1`, add `Get-CaptureState`: each DeskSpace window's
-  cloak state (`DwmGetWindowAttribute`, `DWMWA_CLOAKED`), the session
-  (`IsWorkstationLocked` is there already; add the session id and whether it is the
-  console's), and the input desktop's name. `smoke.ps1` and `shadows.ps1 -Pixels`
-  print it, and `Assert-Check` a window is not cloaked, before they read pixels.
-  - Never run these while the maintainer has a build running: `Start-DeskSpace`
-    calls `dev.ps1`, which stops one.
-  - Done when: a run prints the state, and with a space on another virtual desktop
-    the check fails and names the cloak.
+- [ ] **P34. Let an older build read a newer config or theme file (fix).** **Land
+  before the next release**, so the version people may go back to can read what
+  later versions write. One enum word this build does not know fails the whole file.
+  A config with `backdrop = "mica_alt"`, written by a later DeskSpace or by hand,
+  fails to parse, and `load_or_default` backs it up and starts with no spaces
+  (checked 2026-11-04). A shared theme file from a later version fails the same way.
+  `view.rs` already guards `Column` (`#[serde(other)]`) and `GroupBy` (`Lenient`);
+  the other persisted enums have no guard. Decided (maintainer, 2026-11-04): an
+  unknown word falls back to that field's default, and a wrong type still fails the
+  file, as N1's `wrong-type` reference pins.
+  - Add `deskspace-core/src/lenient.rs` (`pub mod lenient`), and move `Lenient`
+    there from `view.rs`, so lenient reading has one home. Add `pub fn
+    known_or_default`, for `#[serde(deserialize_with = ...)]`. It reads an untagged
+    `enum Word<T> { Known(T), Unknown(String) }`. A known value is kept, any other
+    string becomes `T::default()`, and a value of another type is still an error.
+  - The guard, written first: a test in `deskspace-config` that builds a config
+    through `Command`s (a space with an item, a lens, and a customized look), saves
+    it, and walks the TOML. It replaces each string value, one at a time, with a
+    word no build knows, and the config must still load with all its spaces. A
+    second test does the same to N1's `full` theme file. Free text (titles, paths,
+    hotkeys) passes as it is, so the failures are the enum fields to fix.
+  - Fix each failure by putting `known_or_default` on that field. On 2026-11-04 the
+    unguarded enums were `ThemeMode`, `Backdrop`, `LabelShadow`, `BorderSource`,
+    `Preset`, `Edge`, `StartupOrder`, `SortKey`, `ItemKind`, `LensTitle`,
+    `Extensions`, `ViewMode`, `IconDownloads`, and `NewSpaceIcon`. Let the test
+    decide, not this list. `EffectChoice` and `SpaceIcon` already read any string
+    (`from = "String"`).
+  - `preset` already has its own reader (`preset_or_legacy`, `theme.rs`); give it
+    the same fallback for an unknown word. If a field fails that is not an enum (a
+    string with a format of its own), stop and ask.
+  - N1's reference files stay untouched, and `wrong-type` must still fail.
+  - The next save writes the default over the newer value. That is the price of
+    loading at all, and the "newer" backup still holds the original.
+  - Done when: both guard tests pass, and `CONTEXT.md` section 5 says what an
+    unknown word does, beside `ThemeFile`'s rules.
 
 - [ ] **P14b. Measure Explorer's fixed-view cells (no code).** **[needs human]** Part
   of P14. In Explorer, at 100 % and 150 %, measure one cell's width and height, gap
@@ -1803,14 +1829,163 @@ Small first. Each lands alone unless it says "After".
   - **[needs human]** check: three Extra large columns fit where Explorer's do.
     Update W12's row.
 
-- [ ] **P16c. "Size all columns to fit" (feature).** After: P16a, P16b. Part of P16. In
-  the Details header menu, by the menu recipe. It records one undo entry, like Choose
-  columns. Take the widths from plain data in a function, and test it. **[needs
-  human]** check: on a space and a 50,000-file lens, no column clips and no stall.
+#### Medium
 
-- [ ] **P16d. Measure Explorer's List column (no code).** **[needs human]** Part of
-  P16. Measure Explorer's limit on a List column's width, and whether a change
-  re-flows. Record it in P16e, with the date.
+A rare loss of a user's file, memory that only grows, a broken install's shell entries, or groundwork a senior's fix needs.
+
+- [ ] **P28. Delete the `deskspace.ico` cleanup (fix).** `App::sync_desktop_verbs`
+  (`app/visibility.rs`) deletes `deskspace.ico` beside the storage folder on every
+  show and hide. Under `--config` that is the config's own folder, wherever the user
+  put it, so a file of theirs with that name is deleted without asking. Only builds
+  from before 2026-10-11 wrote the file. The cleanup came in `325f079`, two days
+  before the first tag (`v0.2.0-alpha.1`), so no release ever wrote it.
+  - Delete the `leftover` lines and the comment above them. Change nothing else.
+  - Done when: the gates pass, and `rg -n "deskspace.ico" crates` finds only
+    `deskspace-app/build.rs` and `deskspace-app/Cargo.toml`.
+
+- [ ] **P24. Let the icon cache forget a window (fix).** After: K9. Nothing ever
+  removes an entry from `IconCache::demand`, so the limit only rises. A previewed
+  space adds at most 60 for good, and a deleted space's scene stays counted, which
+  for a large lens is much more.
+  - `IconCache::forget_user(user)`: remove it from `demand`, and when a worker exists
+    call `queue.set_wanted(&user, &[])`, so it stops loading icons nobody will draw.
+  - `store` evicts once per insert, so a lower limit would never shrink the cache.
+    Turn its eviction into a `while` that runs until the entries are under the limit.
+    A replaced key still evicts nothing.
+  - Call it for `IconUser::SettingsPreview` in `app/settings_session.rs`, with the
+    old scope, read before `select_scope` in `ScopeChanged`, and on Ok and Cancel.
+    Call it for `IconUser::Space` beside both `view_cache.forget(id)` calls
+    (`app/files.rs`, `app/undo.rs`). Undoing that delete makes a new scene, which
+    registers again.
+  - Tests in the cache, which can set `demand` directly: the limit falls after a
+    forget, and the next store evicts down to it, oldest first. No shell calls.
+
+- [ ] **P32a. A debug button that blocks the UI thread (debug tool).** Part of P32,
+  which needs it to reproduce the bug. Add "Block the UI thread 2 s" to the debug
+  window, built the way `DebugId::ThemeChanged` is: a `DebugId` (next free value) and
+  its `ALL` entry in `app/debug/ids.rs`, a row in `table.rs`, an arm in `mod.rs`, and
+  the method in `simulate.rs`. The method logs at `info`, calls
+  `std::thread::sleep`, and logs again.
+  - It exists only under the hidden `--debug` flag, so no user can press it.
+  - Done when: the gates pass, and `debug_ids_are_unique` and
+    `debug_ids_round_trip` (`ids.rs`) cover the new id.
+
+- [ ] **P31. Leave the per-user registry alone under `--config` (fix).** A scratch
+  run (`dev.ps1` uses one by default) still writes the desktop menu entries and the
+  Run value, so both point at `target\debug\deskspace.exe`. Its clean exit then
+  deletes the installed build's desktop entries. `CONTEXT.md` section 5 says a
+  scratch config never touches real storage, and the registry should be no
+  different. Decided (maintainer, 2026-11-04): under `--config` the app writes
+  neither.
+  - `App` gets `shell_entries: bool`, with a `///` doc, `false` in `App::new`.
+    `bootstrap::run` sets it to `cli.config.is_none()`, beside `app.layer`.
+  - `sync_desktop_verbs`, `remove_desktop_verbs`, and `sync_start_with_windows`
+    (`app/visibility.rs`) return early unless it is set. Tests build `App` with it
+    off, so their `cfg!(test)` checks no longer do anything; delete them.
+  - Under `--config`, the "Start with Windows" switch still saves to the scratch
+    file. That is fine.
+  - Docs: `CONTEXT.md` section 5 (beside the storage sentence), and `TOOLS.md`
+    section 3's `--config` line. In section V, the C9 row and the E1/E2 row's
+    desktop verb check say to run `./scripts/dev.ps1 -RealConfig`.
+  - **[needs human]** check: with the installed DeskSpace running, run
+    `./scripts/dev.ps1` and exit it. The desktop menu still shows the installed
+    build's entries, and they still work.
+
+#### Low
+
+Logs, tooling, readability, docs, and checks that may close a task.
+
+- [ ] **P29. Let the hook's `stop` clear `WATCH_BACK` too (fix).** In
+  `win32/keyboard.rs`, the comment on `WATCH_BACK` says `stop` clears it, but `stop`
+  clears only the other three flags. `flags()`, which the debug window reads, leaves
+  it out too. No key reads it without another flag set, so nothing misbehaves today,
+  but the next reader will trust the comment.
+  - `stop` clears it. `flags()` returns it as a fourth value, `HookState`
+    (`win32/debug_info.rs`) gains `watch_back`, and the debug window shows it beside
+    `watch_paste` (`app/debug/system.rs`).
+  - Test in `keyboard.rs`: set every flag directly, call `stop`, and check all are
+    clear. The test installs no hook, so `stop` makes no Win32 call.
+  - This is in the hook's module, which juniors otherwise leave alone. It changes no
+    hook call, so any senior can review it.
+
+- [ ] **P41. Rename script variables that shadow PowerShell's own (scripts).**
+  PowerShell sets `$switch` inside a `switch` statement and keeps its error list in
+  `$Error`; names are not case sensitive. `scripts/dev.ps1` assigns `$switch` in its
+  argument loop, and `Get-ScreenPixels` in `scripts/onscreen/OnScreen.psm1` assigns
+  `$error` after `GetDIBits`. Neither breaks
+  today, but the next edit nearby could. SonarCloud reports both (`S8626`).
+  - Rename `$switch` to `$scriptSwitch`, and `$error` to `$win32Error`, everywhere
+    each is used. Change nothing else.
+  - Test `dev.ps1`'s argument handling on a copy with its build, launch, and
+    `Remove-Item` steps stubbed, as `TOOLS.md` section 2 says. Never run the real
+    script with `-Fresh`.
+  - Done when: the stubbed copy maps `--ontop` and `--on-top` to `-OnTop` as before,
+    and `OnScreen.psm1` still imports (`Import-Module` it in a fresh `pwsh`).
+
+- [ ] **P18b. Make a failed capture explain itself (scripts).** Part of P18. In
+  `scripts/onscreen/OnScreen.psm1`, add `Get-CaptureState`: each DeskSpace window's
+  cloak state (`DwmGetWindowAttribute`, `DWMWA_CLOAKED`), the session
+  (`IsWorkstationLocked` is there already; add the session id and whether it is the
+  console's), and the input desktop's name. `smoke.ps1` and `shadows.ps1 -Pixels`
+  print it, and `Assert-Check` a window is not cloaked, before they read pixels.
+  - Never run these while the maintainer has a build running: `Start-DeskSpace`
+    calls `dev.ps1`, which stops one.
+  - Done when: a run prints the state, and with a space on another virtual desktop
+    the check fails and names the cloak.
+
+- [ ] **P44. Turn the press targets in `begin_interaction` into a table
+  (refactor).** `App::begin_interaction` (`app/pointer.rs`) first asks five chrome
+  targets in turn whether a press is theirs: `back_button_clicked`,
+  `status_button_clicked`, `begin_column_resize`, `begin_header_press`, and
+  `group_header_clicked`. Each check is its own `if let Surface::Space(id) = surface`
+  with the same shape. A new target is a sixth copy, and SonarCloud rates the
+  function's cognitive complexity 37, over its limit of 30 (`rust:S3776`).
+  - All five take `(&mut self, &mut Ui, SpaceId, Point) -> bool`. Put them, in today's
+    order, in a `const SPACE_PRESS_TARGETS: [fn(&mut App, &mut Ui, SpaceId, Point) ->
+    bool; 5]` in `pointer.rs`. Each row keeps its comment. The order matters, since a
+    divider is checked before the header, and the table's doc says so.
+  - `begin_interaction` asks them in one place: `if let Surface::Space(id) = surface
+    && SPACE_PRESS_TARGETS.iter().any(|claim| claim(self, ui, id, point))`.
+  - Move the check-box branch, unchanged, into a method that returns whether it took
+    the press, called next.
+  - Collides with: P15f, which may add a press target. Then it is one more row.
+  - Done when: the gates pass with the same test count, and the function is clearly
+    under 30 on SonarCloud's next analysis. It changes no behavior, so it needs no
+    section V row.
+
+- [ ] **P33. Let the compiler find `draw_item` when a layout is added (refactor).**
+  `draw_item` (`render/d2d/item.rs`, 191 lines) turns `scene.item_layout` into three
+  booleans (`details`, `tiles`, and `content`) and draws each layout's extras under
+  its own `if`. A new `ItemLayout` compiles without touching it and draws nothing
+  extra (`ENGINEERING.md` section 2, "No special cases").
+  - Move each `if` block, unchanged, into its own function beside `draw_item`:
+    `draw_details_cells`, `draw_tile_lines`, and `draw_content_meta`. Call them from
+    one exhaustive `match scene.item_layout`, with an empty arm for each layout that
+    draws no extras. No wildcard arm.
+  - Name the fades those blocks use (`150`, `170`, `40`) as constants at the top of
+    `item.rs`, shaped like `CUT_ALPHA` in `d2d/mod.rs`.
+  - This moves code inside `unsafe` blocks, which juniors otherwise leave alone.
+    Every moved block keeps its `// SAFETY:` comment, and a senior reviews.
+  - Collides with: P15f (paint clipping at the content's edge).
+  - Done when: `draw_item` is under about 100 lines and the gates pass. It is a pure
+    move, so it needs no section V row.
+
+- [ ] **P43. Let clippy keep closures that only call a method out (lint).**
+  `.and_then(|name| name.to_str())` says what `.and_then(OsStr::to_str)` says, with
+  more to read. SonarCloud reports 21 of these (`rust:S1612`), and clippy's
+  `redundant_closure_for_method_calls` found 36 (2026-11-04); the two lists overlap
+  only in part. A lint keeps them out for good, as `ENGINEERING.md` section 2 rule 4
+  wants.
+  - Add `redundant_closure_for_method_calls = "warn"` to `[workspace.lints.clippy]`
+    in the root `Cargo.toml`, with a one-line comment. Every crate inherits it, and
+    CI's `-D warnings` makes it fail.
+  - Fix what clippy reports. `cargo clippy --fix --workspace --all-targets
+    --allow-dirty` applies most of them; read the diff before you commit.
+  - Then open the SonarCloud list (project `generalchad_DeskSpace`, rule
+    `rust:S1612`). Fix each hit that clippy did not, if the method reference
+    compiles. List any that do not compile in the commit body, so the maintainer can
+    mark them in SonarCloud.
+  - Done when: the gates pass, and nothing but closures changed.
 
 - [ ] **P27. Archive section W's finished-phase notes (docs).** Every W task is
   done, yet section W still carries guidance for running them side by side.
@@ -1831,9 +2006,143 @@ Small first. Each lands alone unless it says "After".
   - Change no other section. Commit as `docs: archive section W's phase notes
     (P27)`.
 
+- [ ] **P12a. See whether a swallowed Alt shows anything (no code).**
+  **[needs human]** The first step of P12. With an item selected, press
+  Alt+Enter, Alt+Left, and Alt+Up, and watch for focus cues or any change on the
+  desktop, on Windows 11 and on Windows 10. If nothing shows on either, delete P12
+  in a commit saying so. Otherwise record what shows under P12.
+
+- [ ] **P26a. See whether content still trails its edge (no code).**
+  **[needs human]** The first step of P26. On a space with a title and items,
+  play Roll, Fly, and Bounce from the debug window at 100 % and 150 %. Watch the
+  edge for content lagging or a frame with no title. If nothing shows, delete P26
+  in a commit saying so. Otherwise record which effect shows it under P26.
+
+- [ ] **P16d. Measure Explorer's List column (no code).** **[needs human]** Part of
+  P16. Measure Explorer's limit on a List column's width, and whether a change
+  re-flows. Record it in P16e, with the date.
+
+- [ ] **P16c. "Size all columns to fit" (feature).** After: P16a, P16b. Part of P16. In
+  the Details header menu, by the menu recipe. It records one undo entry, like Choose
+  columns. Take the widths from plain data in a function, and test it. **[needs
+  human]** check: on a space and a 50,000-file lens, no column clips and no stall.
+
 ### Seniors only
 
 These are in the order we would take them. Each lands alone.
+
+- [ ] **P35. Never start on defaults over a config that could not be read (fix;
+  user file).** `ConfigStore::load_or_default` (`deskspace-config/src/store.rs`)
+  treats every failure alike: it tries a backup and starts on defaults. Suppose the
+  file exists but cannot be read, because another program holds it open or a
+  roaming profile has not synced it yet. Then the copy fails too, and only a log line
+  says so. The app seeds a "Desktop" space, and the next autosave replaces the
+  user's layout with no backup left. `--reset` already refuses to start when its
+  backup fails (`bootstrap::run`), and a load should be as careful.
+  - Proposed, which a senior may amend: `load_or_default` returns
+    `Result<Config, ConfigError>`.
+    - No file: defaults, as now.
+    - It parses: as now, including the "newer" backup.
+    - It exists but cannot be read: try again a few times over about a second. If it
+      still fails, return `Err` and never touch the file.
+    - It is read but does not parse: back it up as now. If the backup fails, `Err`.
+  - `bootstrap::run`: on `Err`, show `deskspace_platform::alert`, which works before
+    the runtime starts. Say which file, why, and that DeskSpace left it unchanged,
+    then return the error. A release build has no console, so the alert is the only
+    way the user learns why nothing started.
+  - Tests in `store.rs`: a file held open with `share_mode(0)`
+    (`std::os::windows::fs::OpenOptionsExt`) gives `Err` with its bytes unchanged.
+    An unparsable file whose backup fails gives `Err`; find a seam for the failing
+    backup and name it in the commit. The existing tests still pass.
+  - `CONTEXT.md` section 7, step 2: a load refuses to start rather than replace a
+    file it could not read or back up.
+  - **[needs human]** check: run `./scripts/dev.ps1` once, exit, then hold the
+    scratch config open from PowerShell
+    (`[IO.File]::Open($path, 'Open', 'Read', 'None')`) and run it again. An alert
+    names the file and nothing starts. Close the handle and run again: every space
+    is there.
+
+- [ ] **P36. One DeskSpace per config (fix; platform).** Starting `deskspace.exe`
+  with no flag while it runs starts a second full instance. That means a second set
+  of spaces over the first, a second keyboard hook, and two writers of one config,
+  where the last save wins. Only `--show`, `--new-space`, and `--settings` look for a
+  running instance (`bootstrap::run`). Opening the Start-menu shortcut after the Run
+  value has started DeskSpace is enough to cause it. Decided (maintainer,
+  2026-11-04): a second launch with the same config behaves as `--show`, so the
+  running instance shows its spaces and the new process exits.
+  - A new `win32/instance.rs`: `claim(config: &Path) -> Option<InstanceGuard>`, a
+    `Local\` named mutex made the way `claim_single_instance` (`watchdog.rs`) makes
+    one. Its name comes from a pure `instance_key(path)`: the absolute path's text,
+    uppercase with `\` separators (`upper_name`), with no filesystem lookup, so a
+    config that does not exist yet keys the same as one that does.
+  - Hash the key with a fixed function such as FNV-1a, written out, never
+    `DefaultHasher`. That one can change between Rust versions, and so between an
+    installed build and its update. Tests: two spellings of one path give one key,
+    and two paths give two.
+  - A scratch `--config` gets its own key, so it runs beside the real one, as
+    `dev.ps1` needs.
+  - The controller window's title is the key. `signal` (`win32/desktop_entry.rs`)
+    looks for class and title, then falls back to the class alone, so it still finds
+    an older running build. This also stops `--show` from reaching a dev build
+    instead of the real one.
+  - When the claim fails, `bootstrap::run` signals `SHOW_SPACES` and exits. The first
+    instance may not have made its controller yet, so keep trying for about 5
+    seconds, then exit anyway. Never start a second instance while the mutex says
+    one runs.
+  - Drop the guard as soon as `deskspace_platform::run` returns, before
+    `install_on_exit.install()`. Otherwise the installer's relaunch could find the
+    old guard and exit, leaving no DeskSpace running.
+  - `CONTEXT.md` section 7, step 2: a plain launch hands off too.
+  - **[needs human]** check: start DeskSpace, hide its spaces, and start it again
+    from the Start menu. The spaces show and no second tray icon appears. A scratch
+    `./scripts/dev.ps1` still runs beside it. Installing an update over a running
+    instance still relaunches it (with R12).
+
+- [ ] **P37. Never replace a file when moving into or out of storage (fix; user
+  files).** `ItemStore::adopt`, `release`, and `move_between` (`storage.rs`) pick a
+  free name and then call `std::fs::rename`. On Windows that replaces a file already
+  at the target (checked 2026-11-04), so a file that appears between the check and
+  the move is overwritten without a word. Undo's `move_between` trusts a check made
+  even earlier. The module's own rule is that names are never overwritten.
+  - Platform: `pub fn move_no_replace(from, to) -> io::Result<()>` over
+    `MoveFileExW` with no flags, with Microsoft Learn's page linked beside it. Without
+    `MOVEFILE_REPLACE_EXISTING` it fails when `to` exists. Without
+    `MOVEFILE_COPY_ALLOWED` it fails across volumes, which `io::Error` reports as
+    `CrossesDevices`, so `StoreError::OtherVolume` keeps working.
+  - `move_into`: on `AlreadyExists`, take the next free name and try again, a
+    bounded number of times, then `StoreError::Io`. `move_between`: on
+    `AlreadyExists`, fail. The undo entry is then stale and changes nothing, as D11
+    wants.
+  - Tests: in the platform, a move onto an existing file fails and both files keep
+    their bytes. In `storage.rs`, `move_between` onto an existing file fails and
+    changes nothing. The existing tests pass.
+  - Ask a second senior to review: every dropped file takes this path.
+
+- [ ] **P32. Keep the keyboard hook alive through a stall (fix; key hook).** Windows
+  removes a low-level hook, and does not tell it, when the hook's thread does not
+  answer within `LowLevelHooksTimeout` (about a second). The hook runs on the UI
+  thread (`win32/keyboard.rs`). It stays installed while any space is current, and
+  `App::on_event` sets the flags after every event, so that is most of the time.
+  `HOOK` still holds the dead handle, so `refresh` never installs it again. After one
+  stall of a second or more, Delete, F2, Ctrl+C, the arrows, and type-to-select stop
+  working on spaces until every flag clears. A slow network lens, a save to a
+  redirected profile (P38), or a debug build at startup can each cause such a stall.
+  `outside_click.rs`'s mouse hook has the same weakness.
+  - P32a, in the junior list, adds the button that reproduces it: select an item,
+    press the button, then press F2.
+  - Design, then bring it to the maintainer:
+    - (a) Recommended: run both hooks on a thread of their own that only pumps
+      messages, so a stall on the UI thread can never time them out. The flags
+      become atomics that the UI thread sets. The hook already posts to the
+      controller, which works from any thread. Check that `typeahead_char` reads the
+      foreground thread's keyboard layout, not the hook thread's.
+    - (b) Cheaper: unhook and hook again on every press on a space, so the next
+      click mends it. Keys are still lost between the stall and that click.
+  - Tests for whatever becomes pure. `ENGINEERING.md` section 6, Keys, gets a line
+    saying which thread the hook runs on.
+  - **[needs human]** check, with P32a's button: after a stall, F2 and Delete still
+    work, at once with (a) or after one click with (b). The Keys-table rows in
+    section V still pass.
 
 - [ ] **P12. Mask a swallowed Alt combination, if it matters (fix; key hook).**
   Swallowing Alt+Enter, Alt+Left, or Alt+Up leaves the foreground window a lone
@@ -1955,6 +2264,54 @@ These are in the order we would take them. Each lands alone.
   would avoid it, but a window that leaves its monitor can get `WM_DPICHANGED`, which
   the app answers by reflowing the model. So that answer must tell an animation's
   move from a real one. Design first, and bring it to the maintainer.
+
+- [ ] **P38. Write the config off the UI thread (perf; thread).** `App::save`
+  serializes and writes the whole config on the UI thread 700 ms after the last
+  change, and `write_atomic` waits for `sync_all`. That is quick on a local SSD. Many
+  companies redirect roaming AppData to a network share, though. There, each save can
+  stall the spaces for longer than the keyboard hook's timeout (P32).
+  - Measure first: log each save's duration at `debug`, and `warn` above 250 ms. If
+    no report or measurement shows a slow save, record that here and stop.
+  - If it is needed: serialize on the UI thread, which is cheap, and hand the text to
+    one writer thread that keeps only the newest. `flush_save_on_close` waits for it,
+    bounded (`ENGINEERING.md` section 6), so the last save still lands before exit.
+    A failed write comes back as an event, so `save`'s one alert still shows.
+  - Tests: the newest-wins hand-off, as a pure type.
+
+- [ ] **P39. Catch a re-entrant `with_state` borrow at run time (fix; unsafe).**
+  `window_state::with_state` hands out a `&mut T` made from a raw pointer. Only its
+  `# Safety` contract stops a second borrow of the same window while the first is
+  live, and a slip there is undefined behavior rather than a logged bug.
+  `with_runtime` catches the same mistake for the runtime with a `RefCell` and logs
+  it, but window state has no such net. R19 designs the lasting fix (a handle); this
+  is the cheap net until then, and R19 can keep it.
+  - A thread-local list of the windows borrowed now. `with_state` on a window already
+    borrowed logs at `error` and returns `None`, as `with_runtime` does. `free` on a
+    borrowed window logs and leaks the box instead of freeing it, so a slip leaks
+    memory rather than use it after it is freed.
+  - No allocation per call on the paint path: a list that stops growing after its
+    first use, or a small fixed array.
+  - Tests need a real window: create a message-only one (`HWND_MESSAGE`) in the test,
+    or stop and ask. A nested `with_state` on one window returns `None` and leaves
+    the outer borrow working. Nested borrows of two different windows both work.
+
+- [ ] **P45. Split the color picker's window procedure (refactor; unsafe).**
+  `wndproc` in `win32/color_picker/mod.rs` (198 lines) handles its 17 messages inline
+  in one `unsafe` block. SonarCloud rates it the most complex function in the code
+  (cognitive complexity 46; `rust:S3776`).
+  - A pure move: each arm's body becomes a function named for its message
+    (`on_mouse_move`, `on_key_down`, and so on), and `wndproc` keeps the `match`
+    with one call per arm. Copy how `space_window/mod.rs` hands mouse messages to
+    `space_window/mouse.rs`. If the handlers pass about 300 lines, put them in a new
+    `color_picker/input.rs`.
+  - The picker's state is borrowed, not owned (`window_state.rs`): every handler
+    keeps its `with_state` borrows exactly as short as they are now, and
+    `WM_NCDESTROY` still only detaches. Every moved `unsafe` block keeps its
+    `// SAFETY:` comment, reworded only where its context changed.
+  - Done when: the gates pass with the same test count, and `wndproc` is under about
+    60 lines. **[needs human]** check: open the picker from Colors, drag in the
+    field, type a hex value, use the arrows and Esc, and sample from the screen with
+    a right-click. All behave as before.
 
 ## D. Reserved (strong model or maintainer; do not start)
 

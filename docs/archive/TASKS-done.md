@@ -5896,3 +5896,26 @@ until I5-I6 all land, so no partial build hides the desktop.
     `show*` functions, `paint`, `with_state`, and the window procedure.
   - Done when: `mod.rs` is under about 800 lines of non-test code and the
     K rules above hold.
+
+- [x] **P40. Log why a hotkey could not be registered (fix).** In
+  `Hotkeys::register_all` (`app/hotkeys.rs`), `tracing::warn!(message, "hotkey
+  unavailable")` names its field `message`. That is the name `tracing` gives the
+  event's own text, so the two collide and the reason can be lost from the log.
+  SonarCloud reports it as rule `rust:S6677`.
+  - Name the field `reason` instead: `tracing::warn!(reason = %message, "hotkey
+    unavailable")`. `register` returns its reason as a `String`, so `%` shows it as
+    text.
+  - Done when: the gates pass. Under `-v`, a binding another app already holds
+    logs the reason beside "hotkey unavailable".
+
+- [x] **P42. Pin CI's third-party actions to commit SHAs (ci).** `ci.yml` uses
+  `Swatinem/rust-cache@v2` twice and `EmbarkStudios/cargo-deny-action@v2` once. A tag
+  can be moved to other code at any time, so a hijacked tag would run in CI.
+  SonarCloud reports all three (`githubactions:S7637`).
+  - For each, find the full commit SHA of the newest release on that major version
+    (`gh api repos/<owner>/<repo>/releases/latest`, then the tag's commit), and write
+    `uses: <owner>/<repo>@<sha> # v2.x.y`. The comment says which version the SHA is.
+  - Leave `actions/checkout` as it is; GitHub owns it, and SonarCloud does not flag
+    it.
+  - Run `actionlint` (`TOOLS.md` section 1). Done when it passes and CI is green on
+    the commit.

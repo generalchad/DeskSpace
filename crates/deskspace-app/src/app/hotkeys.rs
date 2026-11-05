@@ -18,7 +18,7 @@ impl Hotkeys {
     pub(super) fn register_all(&mut self, ui: &mut Ui, window: &WindowSettings) {
         for (slot, binding) in HOTKEY_BINDINGS.iter().enumerate() {
             if let Err(message) = self.register(ui, slot, binding.text(window)) {
-                tracing::warn!(message, "hotkey unavailable");
+                tracing::warn!(reason = %message, "hotkey unavailable");
             }
         }
     }
