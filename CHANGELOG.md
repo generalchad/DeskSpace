@@ -21,6 +21,8 @@ not yet been checked on screen, and the known issues below are fixed before
   your settings file first:
   `%APPDATA%\DeskSpace\DeskSpace\config\deskspace.toml`.
 - From this version on, the in-app updater can find and install new releases.
+  It looks only at full releases, so this pre-release finds no update until
+  0.3.0 is out.
 
 ### Known issues
 

@@ -337,6 +337,16 @@ ready in time. P32 does not; Z6 lists it as a known issue.
   `0.3.0-alpha.2`. It is the first release with an update feed, so the
   alpha.1 to alpha.2 update is the check that matters most. Record the
   findings as R12 says; a failure is a fix task here.
+  - **[needs decision]** Found 2026-11-05, after alpha.1 shipped: the
+    updater reads `releases/latest/download/latest.json` (`UPDATE_ENDPOINT`
+    constant in `deskspace-update/src/lib.rs`), and GitHub's "latest" never
+    names a pre-release, so no alpha can update to another alpha. Options:
+    (a) publish alpha.2 as a full release for the test, then mark it a
+    pre-release again (simple, but every v0.3 install sees it meanwhile);
+    (b) test the feed with the final v0.3.0 itself, and keep a v0.3.0
+    install updating to a v0.3.1 as the first real check; (c) a pre-release
+    channel the updater can opt into (a setting and a second feed: new work,
+    after v0.3.0). Recommended: (b) now, (c) as an idea in section Y.
 
 - [ ] **Z8. Cut v0.3.0 (maintainer).** After: Z7. Follow `RELEASING.md`'s
   checklist, version `0.3.0`. Then, in one `docs:` commit: ROADMAP section 4
