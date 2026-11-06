@@ -253,6 +253,12 @@ tagged, take these first**, and land only them, the gate's fixes, docs, and
 log-only tasks; every other task waits. When the tag is out, archive this
 section and lift the freeze in the same commit (Z8).
 
+v0.3.0-alpha.1 went out first, as a pre-release (maintainer, 2026-11-05),
+with the gate still open. Its `CHANGELOG.md` section already has the upgrade
+note, the known issues, and the entries Z2 found missing, so Z2 and Z6 now
+check that section against what lands after it. It is also R12's first
+install (Z7). The 0.3.0 section gathers the alpha sections into one.
+
 The gate's fixes are in section P, marked **[urgent] (v0.3.0)**: P14b and
 P14c, P35, P36, P37, and P46. B45, B47, and B48 (section B) join if they are
 ready in time. P32 does not; Z6 lists it as a known issue.

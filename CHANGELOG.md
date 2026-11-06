@@ -7,8 +7,55 @@ Notable changes to DeskSpace, newest first. The format follows
 
 ## [Unreleased]
 
+## [0.3.0-alpha.1] - 2026-11-05
+
+The first pre-release of 0.3, "Lenses". It is for testing: much of it has
+not yet been checked on screen, and the known issues below are fixed before
+0.3.0.
+
+### Upgrading from 0.2.x
+
+- 0.2.x cannot update itself to this version (its update channel was never
+  configured), so install it by hand, from the installer or the zip. Your
+  spaces and settings carry over. Because this is a pre-release, keep a copy of
+  your settings file first:
+  `%APPDATA%\DeskSpace\DeskSpace\config\deskspace.toml`.
+- From this version on, the in-app updater can find and install new releases.
+
+### Known issues
+
+- Starting DeskSpace again while it runs, for example from the Start menu,
+  starts a second copy over the first. Exit one from its tray icon.
+- If the settings file exists but cannot be read when DeskSpace starts (another
+  program holds it open, or a roaming profile has not synced yet), DeskSpace
+  starts with a new layout and can later save it over your old one. Keep the
+  copy suggested above.
+- A Replace or Skip window, or a copy's progress window, can open behind other
+  windows, so DeskSpace looks stuck. Alt+Tab finds it.
+- After DeskSpace stalls for a second or more, keys such as Delete, F2, and the
+  arrows can stop working on spaces. Restarting DeskSpace brings them back.
+- Large and Extra large icons use cells bigger than Explorer's; their size
+  changes in 0.3.0.
+- In a rare race, a file moved into DeskSpace's storage can replace one that
+  appears there with the same name at the same moment.
+- The builds are not code-signed yet, so Windows SmartScreen warns before the
+  first run.
+
 ### Added
 
+- A redesigned settings window: each page lays its fields out on cards under
+  headings; the categories pane groups its pages under titles that fold; a
+  space lists its own pages before its look; a page taller than the window
+  scrolls; and the highlight fades in and out. A space's page shows its icon
+  and name in the header, where a double-click changes the icon or renames
+  the space, and a long name scrolls to show the rest.
+- Fonts: Settings chooses a font for each kind of text (titles, labels, and
+  the rest), and the choice is saved.
+- An icon picker: while a space's title is renamed, its icon becomes a button
+  that opens a searchable grid of the icon set.
+- Details scrolls sideways when its columns are wider than the space:
+  Shift+wheel or a tilt wheel scroll it, the header follows, and a bar shows
+  where you are.
 - A redesigned color picker: a color square with hue and opacity sliders,
   hex, RGB, or HSL text, copy and paste, an eyedropper that samples any pixel
   on screen, and recent colors that survive a restart and a settings Cancel.
@@ -94,6 +141,10 @@ Notable changes to DeskSpace, newest first. The format follows
   cells: Details and Content snap to rows only.
 - Fit to contents never makes a space larger than its monitor's work area; a
   space that is capped scrolls.
+- Bounce plays slower, with fewer and softer rebounds.
+- Settings pages switch in one paint, without a flicker.
+- An older DeskSpace reads a settings or theme file written by a newer one,
+  keeping the defaults for anything it does not know, instead of refusing it.
 
 ### Fixed
 
@@ -112,6 +163,22 @@ Notable changes to DeskSpace, newest first. The format follows
   entry in the right-drop menu is greyed when the source cannot do it.
 - The settings window's selection follows a change to the Windows accent
   color.
+- DeskSpace no longer deletes a file named `deskspace.ico` beside its
+  settings file.
+- The settings file is written durably, so a crash or power cut right after a
+  save cannot leave it empty.
+- Animations step once per display refresh, so they no longer stutter; Burn's
+  flames stay behind the windows in front of the space and follow a space that
+  moves while it burns; Pixelate's last row and column are no longer pale; and
+  an animation leaves no ghost of the window's shadow behind.
+- Every scroll bar is dark in dark mode, and the settings highlight follows
+  the window's rounded corners.
+- The settings window no longer crashes on an empty text field.
+- The settings and debug windows show DeskSpace's icon on the taskbar.
+- Spaces follow an accent color change at once.
+- Commands from an item's shell menu run where it was clicked.
+- `--new-space` starts DeskSpace when it is not running, and `--config`
+  leaves the per-user registry entries alone.
 
 ## [0.2.4] - 2026-10-18
 
@@ -239,7 +306,8 @@ The first public release (preceded by `0.2.0-alpha.1` the same day).
   settings window with live preview.
 - A portable zip and an NSIS installer.
 
-[Unreleased]: https://github.com/generalchad/DeskSpace/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/generalchad/DeskSpace/compare/v0.3.0-alpha.1...HEAD
+[0.3.0-alpha.1]: https://github.com/generalchad/DeskSpace/compare/v0.2.4...v0.3.0-alpha.1
 [0.2.4]: https://github.com/generalchad/DeskSpace/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/generalchad/DeskSpace/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/generalchad/DeskSpace/compare/v0.2.1...v0.2.2

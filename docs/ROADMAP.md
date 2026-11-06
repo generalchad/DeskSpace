@@ -927,7 +927,9 @@ A native, lightweight, offline Windows desktop organizer that:
 update checking, F-45), v0.2.2 (adding shortcuts to spaces, F-50/F-53), v0.2.3
 (the space menu's Add files, F-55, and the right-button drag, F-36), and
 v0.2.4 (animations, F-33, and the debug window, F-61). Takeover ships opt-in
-(D8, D9).
+(D8, D9). Pre-release: v0.3.0-alpha.1 (2026-11-05, decided by the
+maintainer ahead of the v0.3.0 gate in item 3 below), everything built since
+v0.2.4, with the gate's open issues listed as known issues.
 
 **Done:** M0 (foundations), M1 (renderer and Windows 11 look), and M4
 (lenses, phases 0-5).
