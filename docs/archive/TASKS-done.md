@@ -6673,3 +6673,22 @@ until I5-I6 all land, so no partial build hides the desktop.
     - Amend D12's effect list and its overlay paragraph to say both.
   - The alternatives: Burn's smoke as a visible setting, or no smoke.
   - Done when: D12 is amended, and T44 and T45 are rewritten to match.
+
+- [x] **Z1. Pin a config written by v0.2.4 (config; test).** **(junior)**
+  "Never break users" (`ENGINEERING.md` section 2, rule 3), and no test
+  loads a file the released v0.2.4 wrote.
+  - Make a scratch worktree at the tag (`git worktree add <scratch dir>
+    v0.2.4`). In it, write a throwaway test that builds a `Config` with every
+    field off its default that v0.2.4 has: several spaces with items, a folded
+    and a locked one, a per-space look, hotkeys, and each animation kind, and
+    saves it with v0.2.4's own `ConfigStore`. Save the default `Config` too.
+    Remove the worktree when done; it is yours.
+  - Copy the two files into `crates/deskspace-config/tests/configs/` as
+    `v0.2.4-full.toml` and `v0.2.4-default.toml`, with a `README.md` there
+    saying where they came from and that they are never edited or deleted (as
+    N1's reference themes are); a later release adds its own.
+  - `crates/deskspace-config/tests/configs.rs`: each file loads with no
+    error and no backup made; every space keeps its id, title, rect, items,
+    and flags; and a save then load gives the same `Config`.
+  - If a file does not load, stop and ask: that is a release blocker, not a
+    test to loosen.

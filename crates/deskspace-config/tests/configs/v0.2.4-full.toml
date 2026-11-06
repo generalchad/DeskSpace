@@ -1,0 +1,227 @@
+version = 2
+
+[[desktop.spaces]]
+id = 7
+title = "Work"
+locked = true
+rolled_up = false
+custom = true
+title_height = 32
+user_sized = true
+
+[desktop.spaces.rect]
+x = 100
+y = 120
+width = 420
+height = 300
+
+[[desktop.spaces.items]]
+id = 1
+path = "C:/Users/me/Documents/report.docx"
+label = "Quarterly report"
+kind = "File"
+size = 12345
+modified = 1700000000
+compressed = true
+encrypted = false
+
+[desktop.spaces.items.position]
+x = 12
+y = 16
+
+[[desktop.spaces.items]]
+id = 2
+path = "C:/Users/me/Pictures"
+label = "Pictures"
+kind = "Folder"
+size = 4096
+modified = 1700000100
+compressed = false
+encrypted = true
+
+[desktop.spaces.items.position]
+x = 120
+y = 16
+
+[desktop.spaces.look]
+gap = 14
+padding = 6
+
+[desktop.spaces.look.theme]
+mode = "dark"
+ui_mode = "light"
+backdrop = "solid"
+corner_radius = 12
+tint_opacity = 65
+title_shading = 55
+show_border = false
+label_lines = 1
+label_size = 120
+icon_size = 150
+overlay_size = 100
+label_shadow = "on"
+custom_colors = true
+show_marquee_border = false
+preset = "custom"
+use_accent = true
+
+[desktop.spaces.look.theme.tint]
+r = 40
+g = 50
+b = 60
+a = 255
+
+[desktop.spaces.look.theme.text]
+r = 240
+g = 230
+b = 220
+a = 255
+
+[desktop.spaces.look.theme.marquee_color]
+r = 51
+g = 102
+b = 153
+a = 255
+
+[[desktop.spaces]]
+id = 11
+title = "Folded"
+locked = false
+rolled_up = true
+custom = false
+title_height = 28
+user_sized = false
+
+[desktop.spaces.rect]
+x = 600
+y = 120
+width = 260
+height = 140
+
+[[desktop.spaces.items]]
+id = 3
+path = "C:/Users/me/notes.lnk"
+label = "notes"
+kind = "Shortcut"
+size = 7
+modified = 1700000200
+compressed = false
+encrypted = true
+
+[desktop.spaces.items.position]
+x = 0
+y = 0
+
+[[desktop.spaces]]
+id = 12
+title = "Loose"
+items = []
+locked = false
+rolled_up = false
+custom = false
+title_height = 28
+user_sized = false
+
+[desktop.spaces.rect]
+x = 900
+y = 120
+width = 320
+height = 200
+
+[[desktop.layer.items]]
+id = 20
+path = "C:/"
+label = "System"
+kind = "Drive"
+size = 1024
+modified = 1700000300
+compressed = true
+encrypted = false
+
+[desktop.layer.items.position]
+x = 40
+y = 60
+
+[desktop.layout]
+cell_width = 100
+cell_height = 110
+gap = 12
+padding = 14
+title_height = 30
+columns = 5
+snap = 8
+fit_to_grid = false
+
+[theme]
+mode = "dark"
+ui_mode = "light"
+backdrop = "solid"
+corner_radius = 12
+tint_opacity = 65
+title_shading = 55
+show_border = false
+label_lines = 1
+label_size = 120
+icon_size = 150
+overlay_size = 100
+label_shadow = "on"
+custom_colors = true
+show_marquee_border = false
+preset = "custom"
+use_accent = true
+
+[theme.tint]
+r = 40
+g = 50
+b = 60
+a = 255
+
+[theme.text]
+r = 240
+g = 230
+b = 220
+a = 255
+
+[theme.marquee_color]
+r = 51
+g = 102
+b = 153
+a = 255
+
+[window]
+toggle_hotkey = "Ctrl+Alt+Space"
+new_space_hotkey = "Ctrl+Alt+N"
+settings_hotkey = "Ctrl+Alt+S"
+start_hidden = true
+start_with_windows = true
+take_over_desktop = true
+new_space_title = "Inbox"
+new_space_width = 300
+new_space_height = 200
+new_space_locked = true
+check_for_updates = true
+install_updates = true
+last_update_check = 42
+skipped_version = "0.3.0"
+
+[window.animations]
+startup = "all_at_once"
+stagger_ms = 120
+
+[window.animations.startup_exit]
+effect = "burn"
+duration_ms = 700
+detail = 8
+direction = "left"
+
+[window.animations.delete]
+effect = "fly"
+duration_ms = 500
+detail = 2
+direction = "bottom"
+
+[window.animations.fold]
+effect = "none"
+duration_ms = 300
+detail = 9
+direction = "right"

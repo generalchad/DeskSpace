@@ -1,0 +1,89 @@
+version = 2
+
+[desktop]
+spaces = []
+
+[desktop.layer]
+items = []
+
+[desktop.layout]
+cell_width = 96
+cell_height = 104
+gap = 10
+padding = 12
+title_height = 28
+columns = 4
+snap = 16
+fit_to_grid = true
+
+[theme]
+mode = "system"
+ui_mode = "system"
+backdrop = "acrylic"
+corner_radius = 8
+tint_opacity = 40
+title_shading = 30
+show_border = true
+label_lines = 2
+label_size = 100
+icon_size = 100
+overlay_size = 80
+label_shadow = "auto"
+custom_colors = false
+show_marquee_border = true
+preset = "match_explorer"
+use_accent = false
+
+[theme.tint]
+r = 32
+g = 32
+b = 32
+a = 255
+
+[theme.text]
+r = 255
+g = 255
+b = 255
+a = 255
+
+[theme.marquee_color]
+r = 0
+g = 120
+b = 212
+a = 255
+
+[window]
+toggle_hotkey = "Ctrl+Alt+D"
+new_space_hotkey = ""
+settings_hotkey = ""
+start_hidden = false
+start_with_windows = false
+take_over_desktop = false
+new_space_title = "New space"
+new_space_width = 240
+new_space_height = 120
+new_space_locked = false
+check_for_updates = false
+install_updates = false
+
+[window.animations]
+startup = "one_after_another"
+stagger_ms = 50
+
+[window.animations.startup_exit]
+effect = "roll"
+duration_ms = 250
+detail = 5
+direction = "auto"
+
+[window.animations.delete]
+effect = "same_as_startup"
+duration_ms = 250
+detail = 5
+direction = "auto"
+
+[window.animations.fold]
+effect = "roll"
+duration_ms = 250
+detail = 5
+direction = "auto"
