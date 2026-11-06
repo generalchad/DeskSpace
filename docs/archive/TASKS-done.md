@@ -6653,3 +6653,23 @@ until I5-I6 all land, so no partial build hides the desktop.
     one that searches one index twice with different queries.
   - Done when: the gates pass, and the commit body has the release time of
     `""`, `"a"`, and `"arrow l"` on the real set, before and after.
+
+- [x] **T43. Bring smoke back to D12 (design).** **[needs decision]**
+  - The branch's two smokes: Burn's plume (`render/burn_smoke.rs`, a toggle
+    left off by default and reachable only from the debug window, `22f5a64`),
+    and a Smoke effect (`render/smoke.rs`, `render/contents.rs`, and
+    `render/snapshot.rs`: the space sublimates into tinted plumes that carry
+    its title and icons as sprites), offered only in the debug window until
+    tuned (`c1ad0f3`). Its section V rows were T22 and T23 on that branch;
+    those ids now name other tasks here.
+  - Recommended:
+    - Burn's smoke is part of Burn, always on, with no toggle: a setting
+      that only one effect has, and that no page shows, is a special case.
+      It lands after T29-T31, so it is tuned against the finished fire.
+    - Smoke becomes its own effect later (T45), offered only in the debug
+      window until the maintainer approves its look on screen. That needs a
+      way for an `EFFECTS` row to stay out of the Effect lists; settle it
+      here (the branch's mechanism, or a field on the row).
+    - Amend D12's effect list and its overlay paragraph to say both.
+  - The alternatives: Burn's smoke as a visible setting, or no smoke.
+  - Done when: D12 is amended, and T44 and T45 are rewritten to match.

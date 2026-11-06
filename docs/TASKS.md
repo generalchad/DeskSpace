@@ -21,7 +21,7 @@ are collected in section V instead of blocking:
 - section K (K10-K13, K15, K16, K18), each a pure move with rules that
   leave nothing to design; K18 first, since `undo.rs` is at the limit;
 - section T: T24 (needs nothing now), T41a, and then T42;
-- O4, which needs no code, and O5;
+- O4, which needs no code, and O5; Q8a-Q8c, comments only;
 - anything else not marked **[needs decision]**, "still to design", or in
   section D.
 
@@ -1347,8 +1347,10 @@ was built on `feat/color-picker-redesign`, 330 commits behind `main`, and
 never ported. The same branch built two kinds of smoke, Burn's plume and a
 Smoke effect of its own, and left both tuned only for the debug window;
 `main` has neither, and D12 does not list them. T41 ports the groundwork,
-T42 lets anyone, an agent included, judge a frame without a screen, and
-T43 asks how smoke comes back.
+T42 lets anyone, an agent included, judge a frame without a screen. How
+smoke comes back was decided on 2026-11-05 (T43, archived; D12 amended):
+Burn's plume is part of Burn, always on, and Smoke is its own effect,
+shown only in the debug window until its look is approved.
 
 Rules for these, on top of section T's:
 
@@ -1408,28 +1410,8 @@ Rules for these, on top of section T's:
   - Done when: the sheets are written, and the commit body describes them.
     Commit no PNG.
 
-- [ ] **T43. Bring smoke back to D12 (design).** **[needs decision]**
-  - The branch's two smokes: Burn's plume (`render/burn_smoke.rs`, a toggle
-    left off by default and reachable only from the debug window, `22f5a64`),
-    and a Smoke effect (`render/smoke.rs`, `render/contents.rs`, and
-    `render/snapshot.rs`: the space sublimates into tinted plumes that carry
-    its title and icons as sprites), offered only in the debug window until
-    tuned (`c1ad0f3`). Its section V rows were T22 and T23 on that branch;
-    those ids now name other tasks here.
-  - Recommended:
-    - Burn's smoke is part of Burn, always on, with no toggle: a setting
-      that only one effect has, and that no page shows, is a special case.
-      It lands after T29-T31, so it is tuned against the finished fire.
-    - Smoke becomes its own effect later (T45), offered only in the debug
-      window until the maintainer approves its look on screen. That needs a
-      way for an `EFFECTS` row to stay out of the Effect lists; settle it
-      here (the branch's mechanism, or a field on the row).
-    - Amend D12's effect list and its overlay paragraph to say both.
-  - The alternatives: Burn's smoke as a visible setting, or no smoke.
-  - Done when: D12 is amended, and T44 and T45 are rewritten to match.
-
 - [ ] **T44. Burn's smoke (platform).** **[needs human]** After: T41, T42,
-  T43 (as recommended), and T31.
+  and T31.
   - Pure, in `render/burn_smoke.rs`; read the branch's version first and
     keep what worked (its emission ramp, so no smoke is left when a burn
     ends; its columns rather than a fog).
@@ -1458,7 +1440,11 @@ Rules for these, on top of section T's:
     tint over the space, and nothing left after the burn ends or reverses.
 
 - [ ] **T45. Smoke, the effect (core, app, platform).** **Seniors only.**
-  **[needs human]** After: T44 and T43's decision on hidden rows. Port the
+  **[needs human]** After: T44. Still to design, and to bring to the
+  maintainer first: how an `EFFECTS` row stays out of the settings
+  window's Effect lists while the debug window still offers it (the
+  branch's `c1ad0f3` mechanism, or a field on the row; D12, amended
+  2026-11-05). Then port the
   branch's Smoke as `effect(Effect::Smoke, "smoke", &[Detail])`, by section
   T's recipe, with an `Overlay` variant on T41b's `LayeredOverlay`. Port the
   branch's later fixes too (`b86c153`, `1e80a85`, `7729dc1`, `11bcc83`): the
@@ -2163,15 +2149,13 @@ Rules for every Q task:
    before, and `rg -n "<a distinctive phrase from each moved sentence>"
    crates` finds it in the code.
 
-- [ ] **Q8. Decode the task ids left in comments.** **[needs decision]**
-  `ENGINEERING.md` section 4 rule 10 keeps task ids out of new comments and
-  lets the old ones go "when their code is next touched". About 180 comment
+- [ ] **Q8. Decode the task ids left in comments.** Decided (maintainer,
+  2026-11-05): sweep them, then guard (`ENGINEERING.md` section 4 rule 10).
+  About 180 comment
   lines still carry one (2026-11-05: core 22, config 5, app 96, platform 56,
   ROADMAP `Dn` ids not counted). Each sends a reader to the archive to learn
   why the code is so, and nothing stops a new one.
-  - Recommended: sweep them now, then guard. The alternative is to keep the
-    rule as it is, and only add the guard with an allowlist of today's files.
-  - The parts, if approved, each its own commit, any order before Q8d:
+  - The parts, each its own commit, any order before Q8d:
     - [ ] **Q8a (junior).** Core, config, and update.
     - [ ] **Q8b (junior).** The app.
     - [ ] **Q8c (junior).** The platform. Every edited `unsafe` block keeps its

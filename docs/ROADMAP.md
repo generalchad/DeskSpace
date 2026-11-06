@@ -347,7 +347,14 @@ A native, lightweight, offline Windows desktop organizer that:
     and a few spots, climbing faster than it spreads, with embers
     smouldering in the char, warm light ahead of the edge, turbulent
     flames, and ash lifting off; it looks the same at every DPI and
-    differs from play to play; `TASKS.md` T24-T33). Black hole (the space swallowed by a hole that
+    differs from play to play; `TASKS.md` T24-T33; amended 2026-11-05,
+    maintainer: the fire gives off smoke, always, with no setting, a plume
+    rising from the fresh char behind the edge and leaning as it climbs;
+    `TASKS.md` T44). Smoke is also its own effect, planned after Burn's
+    (`TASKS.md` T45; amended 2026-11-05, maintainer): the space sublimates
+    into tinted plumes that carry its title and icons. It is offered only
+    in the debug window until the maintainer approves its look on screen.
+    Black hole (the space swallowed by a hole that
     opens at its own center) is planned after composition (T14). It
     needs the composition path; on Windows 10 and the accent path it
     plays Fade instead (amended 2026-10-29, maintainer). Also in
@@ -419,7 +426,9 @@ A native, lightweight, offline Windows desktop organizer that:
     Scroll's strips (T20) are a new variant. An effect that draws beyond
     the space's own window does it on an `Overlay`, chosen per effect
     with a match that holds every effect to an answer: Burn's flames
-    today, the magic lamp (T21) and the black hole's disk (T14) later.
+    today, with its smoke drawn under them on the same overlay (T44), and
+    the magic lamp (T21), the black hole's disk (T14), and Smoke (T45)
+    later.
     Each is an extension point the compiler points at, so a new effect
     never adds a branch on one effect's name.
   - *The blur:* the Acrylic and Blur material is drawn by DWM behind the
