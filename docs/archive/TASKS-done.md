@@ -6692,3 +6692,13 @@ until I5-I6 all land, so no partial build hides the desktop.
     and flags; and a save then load gives the same `Config`.
   - If a file does not load, stop and ask: that is a release blocker, not a
     test to loosen.
+
+- [x] **Z4. Mark the rows the release waits for (no code).** **(junior)**
+  - In section V, add `(v0.3)` after the id in the first column of every row
+    the gate names: every W row, every row about files (drops, deletes,
+    moves, paste, storage), undo, installing, or updating, and the gate
+    fixes' rows once they land. If a row is only partly about those, mark it
+    and say which part in the commit body.
+  - Do this before O4, or with it; O4's `(script)` marks sit beside these.
+  - Done when: every row is marked or left on purpose, and the commit body
+    gives the count of marked rows.
