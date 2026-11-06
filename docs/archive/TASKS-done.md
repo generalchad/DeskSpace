@@ -6702,3 +6702,24 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Do this before O4, or with it; O4's `(script)` marks sit beside these.
   - Done when: every row is marked or left on purpose, and the commit body
     gives the count of marked rows.
+
+- [x] **O4. Sort section V into what a script can judge (no code).**
+  **(junior)** Section V holds about 160 rows, and v0.3 waits on the ones it
+  covers. A person's time goes further if the scriptable rows are taken off
+  their list first.
+  - Read each row. Mark it `(script)` after its id in the first column if
+    everything it asks could be judged from what the harness already reads:
+    - window rects, styles, z-order, and cloak state;
+    - what a click at a point reaches;
+    - the config file after an action;
+    - a pixel's colour over `Show-Backdrop`.
+
+    Mark it `(part script)` if only some of it could. Leave taste, motion,
+    Windows 10, and other DPIs unmarked.
+  - Do the lens rows (W ids) first; v0.3 ships them.
+  - Then write one O task per group of marked rows that need the same new
+    harness ability (for example "send a key with `SendInput`" or "drop a file
+    with OLE"), naming the rows. Each task copies O1-O3's shape in the archive.
+  - Change nothing else in a row, and run no check (O tasks run them).
+  - Done when: every row is marked or left unmarked on purpose, and the
+    groups are written as tasks.
