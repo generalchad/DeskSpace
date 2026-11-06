@@ -933,9 +933,8 @@ v0.2.4 (animations, F-33, and the debug window, F-61). Takeover ships opt-in
 (lenses, phases 0-5).
 
 **In progress:** M2 (only the stored-file watch remains), M3 (entries that
-wait on later milestones or design), and M5's space icons (the title icon and
-the download consent are built; the picker may run alongside the human test
-compendium).
+wait on later milestones or design), and M5's space icons (built, the picker
+and the settings header included; their checks are pending).
 Undo (D11), drawn shadows (D15), and lenses (M4 phases 1-5) have landed since
 v0.2.4 and ship in the next release. Section 5 lists what each has done.
 
@@ -946,22 +945,35 @@ checks collect in `TASKS.md` section V and no longer block work):
 
 1. **[done] Lens performance** (`TASKS.md` B37, archived): a big lens's list
    is built off the UI thread, and swapping in 50,000 items takes about 0.3 ms.
-2. **The signing key and the icon set.** The maintainer's minisign key
-   (`RELEASING.md`), then the "Publish icon set" workflow (S5). The key turns
-   on the update feed (D6), and the set makes the automatic title icons of
-   new spaces work, which a keyed build otherwise offers and fails to fetch.
-3. **Human test compendium** (`TASKS.md` section V, R7), lens rows first,
-   starting with the checks a script can make (`TASKS.md` section O). Work
-   continues while rows await a person; a release still waits for the rows it
-   covers. L1's findings (`TASKS.md` section L) join the compendium.
-4. **Release dry run on clean machines** (R12), then **v0.3.0**.
-5. **The icon picker** (M5 item 7, F-62, `TASKS.md` S9-S12), which may run
-   alongside the compendium, and **code signing** (R10), when SignPath
-   approves it.
-6. **Animations beyond the effects that landed** (M5 item 5, D12, D13;
-   `TASKS.md` section T): Bounce is built and awaits its check (T19); Scroll
-   and Magic lamp (T20-T21) are ready. The composition spike (T1) runs
-   alongside.
+2. **[done] The signing key and the icon set** (2026-11-02): the minisign key
+   is an Actions secret and its public half is compiled in (D6), and the
+   Fluent set is published (`icons-fluent-r1`, S5).
+3. **v0.3.0** (decided 2026-11-05, maintainer: release before starting more
+   work; `TASKS.md` section Z is the plan). Until it is tagged, only section
+   Z's tasks, the fixes it names, docs, and log-only tasks land; new features,
+   effects, and refactors wait. The gate:
+   - *Fixes:* the fixed views' cell (P14b, P14c, before a saved space needs a
+     migration), a config that cannot be read is never replaced (P35), one
+     DeskSpace per config (P36), no file replaced when moving into storage
+     (P37), and the shell's dialogs in front (P46). The icon picker's
+     remaining freezes (B45, B47, B48) land if they are ready. The keyboard
+     hook's stall (P32) waits for its design and ships as a known issue.
+   - *Checks:* the lens rows of `TASKS.md` section V, every row about files,
+     undo, install, or update, and the gate fixes' own rows. The rest ship
+     as "check pending" in section 7, as v0.2.x did.
+   - *Users:* a config written by v0.2.4 loads unchanged. v0.2.4 has no
+     update feed (its key was empty), so its users install v0.3.0 by hand;
+     v0.3.0 is the first release the in-app updater can reach, and the dry
+     run (R12) checks that feed before the tag.
+4. **The human test compendium** (`TASKS.md` section V, R7) for the rows the
+   release did not need, starting with the checks a script can make
+   (section O). L1's findings (section L) join it.
+5. **Code signing** (R10), when SignPath approves it.
+6. **After v0.3.0, the planned work** (`TASKS.md`, 2026-11-05): the UI
+   thread's measurements and trims (B51-B55), the file splits (K10-K18) and
+   the comment sweep (Q8), and the animations (section T, with Burn's
+   groundwork T41 first). Section Y holds brainstormed ideas awaiting a
+   decision.
 
 Not next: mapping Explorer's desktop view mode. The desktop offers only the
 three icon views, and its Small icons keep labels below, so F-40 closes with
@@ -1348,7 +1360,10 @@ catalog.
   of M2 and M3, with takeover opt-in (D8, D9). The rest of M2 and M3 (the
   stored-file watch, the desktop verbs) ships in a v0.2.x release or with
   v0.3, as the maintainer decides. Undo (D11) landed after v0.2.4.
-- **v0.3 "Lenses"**: M4, phases 0-5 (D18, amended 2026-10-31).
+- **v0.3 "Lenses"**: M4, phases 0-5 (D18, amended 2026-10-31). It also
+  ships everything else built since v0.2.4: undo (D11), drawn shadows
+  (D15), theme files (F-58), space icons (D16), the settings window's
+  polish (D26), and the first update feed (D6).
 - **v0.4 "Flow"**: M5.
 - **v0.5 "Rooms"**: M6, M7.
 - **v1.0**: M8.

@@ -11,6 +11,11 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 **Urgent first:** a task marked **[urgent]** goes ahead of everything else in
 its section.
 
+**Release first:** until v0.3.0 is tagged, take section Z's tasks and the
+fixes it names, and land nothing else but docs and log-only tasks
+(decided 2026-11-05; ROADMAP section 4). The list below is for after the
+tag, or for log-only work meanwhile.
+
 **Pick a task:** these are ready for any contributor, now that human checks
 are collected in section V instead of blocking:
 - section P's "Juniors and interns" list, the best place for a first task,
@@ -239,6 +244,99 @@ in `app/hit.rs`. If one is missing, add it there for both variants rather than
 matching on `Surface` at the call site.
 
 ---
+
+## Z. Release v0.3.0 (ROADMAP section 4, decided 2026-11-05)
+
+The maintainer chose to release before starting more work. ROADMAP section
+4, item 3, holds the gate; this section is the plan. **Until v0.3.0 is
+tagged, take these first**, and land only them, the gate's fixes, docs, and
+log-only tasks; every other task waits. When the tag is out, archive this
+section and lift the freeze in the same commit (Z8).
+
+The gate's fixes are in section P, marked **[urgent] (v0.3.0)**: P14b and
+P14c, P35, P36, P37, and P46. B45, B47, and B48 (section B) join if they are
+ready in time. P32 does not; Z6 lists it as a known issue.
+
+- [ ] **Z1. Pin a config written by v0.2.4 (config; test).** **(junior)**
+  "Never break users" (`ENGINEERING.md` section 2, rule 3), and no test
+  loads a file the released v0.2.4 wrote.
+  - Make a scratch worktree at the tag (`git worktree add <scratch dir>
+    v0.2.4`). In it, write a throwaway test that builds a `Config` with every
+    field off its default that v0.2.4 has: several spaces with items, a folded
+    and a locked one, a per-space look, hotkeys, and each animation kind, and
+    saves it with v0.2.4's own `ConfigStore`. Save the default `Config` too.
+    Remove the worktree when done; it is yours.
+  - Copy the two files into `crates/deskspace-config/tests/configs/` as
+    `v0.2.4-full.toml` and `v0.2.4-default.toml`, with a `README.md` there
+    saying where they came from and that they are never edited or deleted (as
+    N1's reference themes are); a later release adds its own.
+  - `crates/deskspace-config/tests/configs.rs`: each file loads with no
+    error and no backup made; every space keeps its id, title, rect, items,
+    and flags; and a save then load gives the same `Config`.
+  - If a file does not load, stop and ask: that is a release blocker, not a
+    test to loosen.
+
+- [ ] **Z2. Bring the changelog up to date (docs).** **(junior)**
+  - Read `git log v0.2.4..HEAD --format=%s` and, for each `feat:`, `fix:`,
+    or `perf:` a user could notice, check that the "Unreleased" section of
+    `CHANGELOG.md` says it. Missing on 2026-11-05, at least: the settings
+    window's cards, groups, collapsing groups, page scroll, a font per text
+    role, and the scrolling long name; the icon picker, and changing a
+    space's icon and name from its settings header; Details scrolling
+    sideways.
+  - Write in the file's own style: what a user sees, no task ids, no
+    internals. The debug window is a hidden flag, so it stays out.
+  - Done when: every user-visible change since v0.2.4 has a line, and the
+    commit body lists the subjects you judged invisible.
+
+- [ ] **Z3. Check the README against v0.3.0 (docs).** **(junior)** After: Z2.
+  - Every user-visible line Z2 added has its place in `README.md` where it
+    belongs (Controls, the views, lenses, Settings); every control in
+    README still works as it says (compare with `CONTEXT.md` section 8 and
+    the `ENGINEERING.md` Keys table, which are the sources).
+  - `SECURITY.md` says "the in-app updater offers" a fix: true from v0.3.0 on,
+    not for v0.2.x. Say so in a few words.
+  - Change only these two files.
+
+- [ ] **Z4. Mark the rows the release waits for (no code).** **(junior)**
+  - In section V, add `(v0.3)` after the id in the first column of every row
+    the gate names: every W row, every row about files (drops, deletes,
+    moves, paste, storage), undo, installing, or updating, and the gate
+    fixes' rows once they land. If a row is only partly about those, mark it
+    and say which part in the commit body.
+  - Do this before O4, or with it; O4's `(script)` marks sit beside these.
+  - Done when: every row is marked or left on purpose, and the commit body
+    gives the count of marked rows.
+
+- [ ] **Z5. Pass the marked rows (maintainer).** **[needs human]** After: Z4
+  and the gate's fixes. R7, limited to the `(v0.3)` rows, scripted ones
+  first (section O). Rule 8 and section V's rules hold: a passing row is
+  deleted, a failing one becomes a fix task here that joins the gate, unless
+  the maintainer ships it as a known issue (then Z6 lists it).
+
+- [ ] **Z6. Release notes and known issues (docs).** **(junior)** After: Z2.
+  - At the top of the "Unreleased" section of `CHANGELOG.md`, two short
+    parts above "Added":
+    - **Upgrading from 0.2.x.** v0.2.4 has no update feed, so install
+      v0.3.0 by hand, from the installer or the zip; the spaces and settings
+      carry over (Z1 proves it). From v0.3.0 on, the app updates itself.
+    - **Known issues.** After a stall of a second or more, keys on spaces can
+      stop working until every space is left (P32); unsigned builds trigger
+      SmartScreen (R10); and any row Z5 ships as a known issue.
+  - These become the release page's notes (`RELEASING.md` checklist, step 9).
+
+- [ ] **Z7. The dry run on clean machines (maintainer).** After: Z1-Z6 and
+  the gate's fixes. R12 (section D) is the checklist, with
+  `0.3.0-alpha.1` (the version in `Cargo.toml` today) and then
+  `0.3.0-alpha.2`. It is the first release with an update feed, so the
+  alpha.1 to alpha.2 update is the check that matters most. Record the
+  findings as R12 says; a failure is a fix task here.
+
+- [ ] **Z8. Cut v0.3.0 (maintainer).** After: Z7. Follow `RELEASING.md`'s
+  checklist, version `0.3.0`. Then, in one `docs:` commit: ROADMAP section 4
+  lists v0.3.0 as released and drops item 3 from "Next"; section 7's feature
+  statuses say what shipped; this section is archived, ticked, to
+  `archive/TASKS-done.md`, and the freeze sentence in "Pick a task" goes.
 
 ## B. Code health (any contributor)
 
@@ -2208,12 +2306,12 @@ task goes into its tier, not at the end.
 
 A user can lose their layout, an attacker could reach every install, or the next release waits on it.
 
-- [ ] **P14b. Measure Explorer's fixed-view cells (no code).** **[needs human]** Part
+- [ ] **P14b. Measure Explorer's fixed-view cells (no code).** **[urgent] (v0.3.0)** **[needs human]** Part
   of P14. In Explorer, at 100 % and 150 %, measure one cell's width and height, gap
   included, in Medium, Large, and Extra large icons. Record the numbers in P14c,
   with the date.
 
-- [ ] **P14c. Give the fixed icon views their own cell (fix).** After: P14b. Part of
+- [ ] **P14c. Give the fixed icon views their own cell (fix).** **[urgent] (v0.3.0)** After: P14b. Part of
   P14. In `view_layout.rs`, beside `NORMAL_CELLS`, `pub fn fixed_view_cell(mode) ->
   Option<Size>`, measured in 96-DPI pixels with a comment saying so and when. If the
   150 % numbers are not 1.5 times the 100 % ones, stop and ask. `Cells::FixedView`
@@ -2321,7 +2419,7 @@ Logs, tooling, readability, docs, and checks that may close a task.
 These are in the order we would take them. Each lands alone.
 
 - [ ] **P35. Never start on defaults over a config that could not be read (fix;
-  user file).** `ConfigStore::load_or_default` (`deskspace-config/src/store.rs`)
+  user file).** **[urgent] (v0.3.0)** `ConfigStore::load_or_default` (`deskspace-config/src/store.rs`)
   treats every failure alike: it tries a backup and starts on defaults. Suppose the
   file exists but cannot be read, because another program holds it open or a
   roaming profile has not synced it yet. Then the copy fails too, and only a log line
@@ -2351,7 +2449,7 @@ These are in the order we would take them. Each lands alone.
     names the file and nothing starts. Close the handle and run again: every space
     is there.
 
-- [ ] **P36. One DeskSpace per config (fix; platform).** Starting `deskspace.exe`
+- [ ] **P36. One DeskSpace per config (fix; platform).** **[urgent] (v0.3.0)** Starting `deskspace.exe`
   with no flag while it runs starts a second full instance. That means a second set
   of spaces over the first, a second keyboard hook, and two writers of one config,
   where the last save wins. Only `--show`, `--new-space`, and `--settings` look for a
@@ -2388,7 +2486,7 @@ These are in the order we would take them. Each lands alone.
     instance still relaunches it (with R12).
 
 - [ ] **P37. Never replace a file when moving into or out of storage (fix; user
-  files).** `ItemStore::adopt`, `release`, and `move_between` (`storage.rs`) pick a
+  files).** **[urgent] (v0.3.0)** `ItemStore::adopt`, `release`, and `move_between` (`storage.rs`) pick a
   free name and then call `std::fs::rename`. On Windows that replaces a file already
   at the target (checked 2026-11-04), so a file that appears between the check and
   the move is overwritten without a word. Undo's `move_between` trusts a check made
@@ -2407,7 +2505,7 @@ These are in the order we would take them. Each lands alone.
     changes nothing. The existing tests pass.
   - Ask a second senior to review: every dropped file takes this path.
 
-- [ ] **P46. Bring the shell's file-operation windows to the front (fix; Win32).**
+- [ ] **P46. Bring the shell's file-operation windows to the front (fix; Win32).** **[urgent] (v0.3.0)**
   A shell file operation that needs an answer can put its window behind the
   foreground app, and DeskSpace then looks frozen: nothing answers, the user
   force-quits, and the operation is lost. `Ui::transfer_files`
