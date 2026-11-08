@@ -70,11 +70,38 @@ pub(super) fn graphics() -> Result<Rc<Graphics>, PlatformError> {
     Ok(created)
 }
 
+/// Builds every text format again from the type scale in force, keeping this
+/// thread's factories.
+///
+/// The factories must outlive a type-scale change. The composition device,
+/// and each window's render target, were made from this thread's Direct2D
+/// factory when they were first needed. A stroke style from a new factory
+/// made every draw of a focused item fail with `D2DERR_WRONG_FACTORY`, and a
+/// composition surface reports nothing, so the window went on showing an old
+/// frame, another space's, or nothing. Every startup sets the type scale
+/// after composition has made its device, so it happened on every run.
+pub(crate) fn rebuild_text_formats() {
+    GRAPHICS.with(|cell| {
+        // DirectWrite sends no window messages, so nothing re-enters this
+        // borrow.
+        let mut kept = cell.borrow_mut();
+        let Some(current) = kept.as_ref() else {
+            return;
+        };
+        match current.with_formats_rebuilt() {
+            Ok(rebuilt) => *kept = Some(Rc::new(rebuilt)),
+            Err(error) => {
+                tracing::warn!(%error, "could not rebuild the text formats; keeping the old ones");
+            }
+        }
+    });
+}
+
 impl Graphics {
     pub(super) fn new() -> Result<Self, PlatformError> {
         // SAFETY: plain factory creation; COM is initialised on this thread by
         // `runtime::run` before any window paints.
-        unsafe {
+        let (d2d, dwrite, wic) = unsafe {
             let d2d: ID2D1Factory = D2D1CreateFactory(
                 D2D1_FACTORY_TYPE_SINGLE_THREADED,
                 Some(&D2D1_FACTORY_OPTIONS::default()),
@@ -82,7 +109,27 @@ impl Graphics {
             let dwrite: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
             let wic: IWICImagingFactory =
                 CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER)?;
+            (d2d, dwrite, wic)
+        };
+        Self::with_factories(d2d, dwrite, wic)
+    }
 
+    /// These factories, with every format made again from the type scale in
+    /// force (`rebuild_text_formats`).
+    fn with_formats_rebuilt(&self) -> Result<Self, PlatformError> {
+        Self::with_factories(self.d2d.clone(), self.dwrite.clone(), self.wic.clone())
+    }
+
+    /// The formats and stroke styles made from `d2d` and `dwrite`, from the
+    /// type scale in force.
+    fn with_factories(
+        d2d: ID2D1Factory,
+        dwrite: IDWriteFactory,
+        wic: IWICImagingFactory,
+    ) -> Result<Self, PlatformError> {
+        // SAFETY: plain DirectWrite and Direct2D resource creation on live
+        // factories.
+        unsafe {
             let mut fonts = None;
             dwrite.GetSystemFontCollection(&mut fonts, false)?;
             let fonts = fonts.ok_or(PlatformError::InvalidFormat("system font collection"))?;
@@ -375,4 +422,72 @@ unsafe fn first_installed(fonts: &IDWriteFontCollection, families: &[PCWSTR]) ->
         unsafe { fonts.FindFamilyName(*family, &mut index, &mut exists) }.is_ok()
             && exists.as_bool()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use windows::Win32::Graphics::Direct2D::{
+        D2D1_BITMAP_OPTIONS_TARGET, D2D1_BITMAP_PROPERTIES1, D2D1_DEVICE_CONTEXT_OPTIONS_NONE,
+        ID2D1Image,
+    };
+    use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
+
+    use super::*;
+    use crate::render::d2d::geometry::{PIXEL_DPI, PREMULTIPLIED_BGRA};
+
+    #[test]
+    fn a_type_scale_change_keeps_drawing_on_a_device_made_before_it() {
+        // SAFETY: initialises COM on the test thread; a repeat call is
+        // harmless.
+        let _ = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+        // Made first, as composition makes its device at startup.
+        let device = create_device().expect("a device");
+        let before = graphics().expect("graphics");
+
+        rebuild_text_formats();
+        let after = graphics().expect("graphics");
+        assert!(!Rc::ptr_eq(&before, &after), "the formats are new");
+
+        // SAFETY: drawing on a live context and bitmap made here, between
+        // its own BeginDraw and EndDraw.
+        let drawn = unsafe {
+            let context = device
+                .CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE)
+                .expect("a context");
+            let target = context
+                .CreateBitmap(
+                    D2D_SIZE_U {
+                        width: 16,
+                        height: 16,
+                    },
+                    None,
+                    0,
+                    &D2D1_BITMAP_PROPERTIES1 {
+                        pixelFormat: PREMULTIPLIED_BGRA,
+                        dpiX: PIXEL_DPI,
+                        dpiY: PIXEL_DPI,
+                        bitmapOptions: D2D1_BITMAP_OPTIONS_TARGET,
+                        ..Default::default()
+                    },
+                )
+                .expect("a target");
+            context.SetTarget(Some(&target.cast::<ID2D1Image>().expect("an image")));
+            let brush = context
+                .CreateSolidColorBrush(&color_f(Color::rgb(255, 0, 0)), None)
+                .expect("a brush");
+            context.BeginDraw();
+            // The focus rectangle, the one draw that needs the factory.
+            context.DrawRectangle(
+                &rect_f(1.0, 1.0, 15.0, 15.0),
+                &brush,
+                1.0,
+                Some(&after.focus_stroke),
+            );
+            let drawn = context.EndDraw(None, None);
+            context.SetTarget(None::<&ID2D1Image>);
+            drawn
+        };
+        release_graphics();
+        assert_eq!(drawn, Ok(()), "the focus stroke draws on the old device");
+    }
 }

@@ -489,9 +489,10 @@ defaults in `Font::default_for` and clamping in `Font::clamped`. A family of
 `""` means Windows' message font. The platform turns a role into an `HFONT`
 for GDI and an `IDWriteTextFormat` for Direct2D, so one table drives the
 settings window, the debug window, dialogs, and space text. The current table
-lives in `win32/typography.rs`; `Ui::set_typography` replaces it, drops the
-cached DirectWrite formats, repaints the spaces, and restyles an open debug
-window in place. A settings window open at the time keeps the fonts it was
+lives in `win32/typography.rs`; `Ui::set_typography` replaces it, rebuilds
+the cached DirectWrite formats while keeping the Direct2D factory
+(`d2d::rebuild_text_formats` says why), repaints the spaces, and restyles an
+open debug window in place. A settings window open at the time keeps the fonts it was
 built with until it is reopened.
 
 The saved scale is `Config::typography`. The Debug window's typography box

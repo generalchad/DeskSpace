@@ -92,6 +92,7 @@ use geometry::{
     PIXEL_DPI, PREMULTIPLIED_BGRA, bitmap_properties, color_f, draw_text, fill_rounded, inset,
     notice_rect, rect_f, render_target_properties, to_rect_f, upload_icon,
 };
+pub(crate) use graphics::rebuild_text_formats;
 use graphics::{GRAPHICS, Graphics, graphics};
 use item::{draw_item, draw_marquee};
 

@@ -56,7 +56,7 @@ impl Ui {
     /// the controls a user is editing.
     pub fn set_typography(&mut self, typography: &deskspace_core::typography::Typography) {
         crate::win32::typography::set(typography.clone());
-        crate::render::d2d::release_graphics();
+        crate::render::d2d::rebuild_text_formats();
         super::invalidate_spaces();
         if let Some(hwnd) = debug_hwnd() {
             debug_window::follow_typography(hwnd);

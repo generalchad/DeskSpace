@@ -22,6 +22,9 @@ Notable changes to DeskSpace, newest first. The format follows
 
 ### Fixed
 
+- On Windows 11 with transparency effects on, clicking an item no longer
+  leaves a space showing an old picture of itself, another space's items, or
+  nothing. Selected items now show as selected again.
 - If the settings file exists but cannot be read when DeskSpace starts
   (another program holds it open, or a roaming profile has not synced yet),
   DeskSpace waits a moment, then shows a message naming the file and does
