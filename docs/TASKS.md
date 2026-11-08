@@ -327,17 +327,6 @@ the gate):
     Update install failure) need an installed build, so they go with Z7a and
     Z7c.
 
-- [ ] **Z6. Release notes and known issues (docs).** **(junior)** After: Z2.
-  - At the top of the "Unreleased" section of `CHANGELOG.md`, two short
-    parts above "Added":
-    - **Upgrading from 0.2.x.** v0.2.4 has no update feed, so install
-      v0.3.0 by hand, from the installer or the zip; the spaces and settings
-      carry over (Z1 proves it). From v0.3.0 on, the app updates itself.
-    - **Known issues.** After a stall of a second or more, keys on spaces can
-      stop working until every space is left (P32); unsigned builds trigger
-      SmartScreen (R10); and any row Z5 ships as a known issue.
-  - These become the release page's notes (`RELEASING.md` checklist, step 9).
-
 - [ ] **Z7. The dry run on clean machines (maintainer).** After: Z1-Z6 and
   the gate's fixes. R12 (section D) is the checklist, with
   `0.3.0-alpha.1` (the version in `Cargo.toml` today) and then

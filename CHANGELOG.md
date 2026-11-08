@@ -7,6 +7,19 @@ Notable changes to DeskSpace, newest first. The format follows
 
 ## [Unreleased]
 
+### Upgrading from 0.2.x
+
+- v0.2.4 has no update feed, so install v0.3.0 by hand, from the installer
+  or the zip. Your spaces and settings carry over. From v0.3.0 on, the
+  in-app updater can find and install new releases.
+
+### Known issues
+
+- After a stall of a second or more, keys on spaces can stop working until
+  every space is left.
+- The builds are not code-signed yet, so Windows SmartScreen warns before
+  the first run.
+
 ### Fixed
 
 - If the settings file exists but cannot be read when DeskSpace starts

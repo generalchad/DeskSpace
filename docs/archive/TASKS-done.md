@@ -6787,3 +6787,14 @@ until I5-I6 all land, so no partial build hides the desktop.
     internals. The debug window is a hidden flag, so it stays out.
   - Done when: every user-visible change since v0.2.4 has a line, and the
     commit body lists the subjects you judged invisible.
+
+- [x] **Z6. Release notes and known issues (docs).** **(junior)** After: Z2.
+  - At the top of the "Unreleased" section of `CHANGELOG.md`, two short
+    parts above "Added":
+    - **Upgrading from 0.2.x.** v0.2.4 has no update feed, so install
+      v0.3.0 by hand, from the installer or the zip; the spaces and settings
+      carry over (Z1 proves it). From v0.3.0 on, the app updates itself.
+    - **Known issues.** After a stall of a second or more, keys on spaces can
+      stop working until every space is left (P32); unsigned builds trigger
+      SmartScreen (R10); and any row Z5 ships as a known issue.
+  - These become the release page's notes (`RELEASING.md` checklist, step 9).
