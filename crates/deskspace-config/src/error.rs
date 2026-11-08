@@ -25,6 +25,12 @@ pub enum ConfigError {
     },
     #[error("failed to parse configuration: {0}")]
     Parse(#[from] toml::de::Error),
+    #[error("{path} could not be used ({reason}), and keeping a copy of it failed ({backup})")]
+    NotBackedUp {
+        path: std::path::PathBuf,
+        reason: Box<ConfigError>,
+        backup: Box<ConfigError>,
+    },
     #[error("icon set at {path} is not usable: {reason}")]
     IconSet {
         path: std::path::PathBuf,

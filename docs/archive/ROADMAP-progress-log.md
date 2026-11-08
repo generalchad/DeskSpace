@@ -606,3 +606,13 @@ hovering shows the full name; a short name neither moves nor tips;
 renaming, a DPI move, and minimize/restore stop or restart it as asked;
 with "Animation effects" off it ellipsizes and still tips; and the frame
 clock is idle during the pauses.
+
+### 2026-11-07: P35, an unreadable config, scripted part
+
+An agent ran a debug build on a scratch config it held open with no
+sharing, without `dev.ps1` and with no other DeskSpace running. A visible
+dialog titled "DeskSpace did not start" was the process's only window
+besides its console; closing it ended the process with exit code 1, and
+the config's bytes were unchanged with no `.bak` beside it. Its wording,
+whether it opens in front, and the normal start once the handle closes
+stay in section V's row.

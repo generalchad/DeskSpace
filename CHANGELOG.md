@@ -7,6 +7,14 @@ Notable changes to DeskSpace, newest first. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- If the settings file exists but cannot be read when DeskSpace starts
+  (another program holds it open, or a roaming profile has not synced yet),
+  DeskSpace waits a moment, then shows a message naming the file and does
+  not start, rather than start with a new layout that could later be saved
+  over yours. The file is left unchanged.
+
 ## [0.3.0-alpha.1] - 2026-11-05
 
 The first pre-release of 0.3, "Lenses". It is for testing: much of it has

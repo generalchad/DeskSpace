@@ -6723,3 +6723,34 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Change nothing else in a row, and run no check (O tasks run them).
   - Done when: every row is marked or left unmarked on purpose, and the
     groups are written as tasks.
+
+- [x] **P35. Never start on defaults over a config that could not be read (fix;
+  user file).** **[urgent] (v0.3.0)** `ConfigStore::load_or_default` (`deskspace-config/src/store.rs`)
+  treats every failure alike: it tries a backup and starts on defaults. Suppose the
+  file exists but cannot be read, because another program holds it open or a
+  roaming profile has not synced it yet. Then the copy fails too, and only a log line
+  says so. The app seeds a "Desktop" space, and the next autosave replaces the
+  user's layout with no backup left. `--reset` already refuses to start when its
+  backup fails (`bootstrap::run`), and a load should be as careful.
+  - Proposed, which a senior may amend: `load_or_default` returns
+    `Result<Config, ConfigError>`.
+    - No file: defaults, as now.
+    - It parses: as now, including the "newer" backup.
+    - It exists but cannot be read: try again a few times over about a second. If it
+      still fails, return `Err` and never touch the file.
+    - It is read but does not parse: back it up as now. If the backup fails, `Err`.
+  - `bootstrap::run`: on `Err`, show `deskspace_platform::alert`, which works before
+    the runtime starts. Say which file, why, and that DeskSpace left it unchanged,
+    then return the error. A release build has no console, so the alert is the only
+    way the user learns why nothing started.
+  - Tests in `store.rs`: a file held open with `share_mode(0)`
+    (`std::os::windows::fs::OpenOptionsExt`) gives `Err` with its bytes unchanged.
+    An unparsable file whose backup fails gives `Err`; find a seam for the failing
+    backup and name it in the commit. The existing tests still pass.
+  - `CONTEXT.md` section 7, step 2: a load refuses to start rather than replace a
+    file it could not read or back up.
+  - **[needs human]** check: run `./scripts/dev.ps1` once, exit, then hold the
+    scratch config open from PowerShell
+    (`[IO.File]::Open($path, 'Open', 'Read', 'None')`) and run it again. An alert
+    names the file and nothing starts. Close the handle and run again: every space
+    is there.

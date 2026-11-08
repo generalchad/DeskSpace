@@ -50,7 +50,7 @@ fn every_reference_config_loads_without_a_backup() {
         assert!(!config.is_from_newer_version(), "{name}");
 
         // The app's own load path, which backs the file up on a failure.
-        assert_eq!(store.load_or_default(), config, "{name}");
+        assert_eq!(store.load_or_default().unwrap(), config, "{name}");
         assert!(
             backups_in(dir.path()).is_empty(),
             "{name} made a backup, so something treated it as broken"

@@ -1,7 +1,7 @@
 use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use directories::ProjectDirs;
 
@@ -79,8 +79,18 @@ impl ConfigStore {
     }
 
     pub fn load(&self) -> Result<Config, ConfigError> {
-        let text = std::fs::read_to_string(&self.path)
+        let bytes = std::fs::read(&self.path)
             .map_err(|source| ConfigError::io(self.path.clone(), source))?;
+        self.parse(bytes)
+    }
+
+    fn parse(&self, bytes: Vec<u8>) -> Result<Config, ConfigError> {
+        let text = String::from_utf8(bytes).map_err(|error| {
+            ConfigError::io(
+                self.path.clone(),
+                std::io::Error::new(std::io::ErrorKind::InvalidData, error),
+            )
+        })?;
         let mut config: Config = toml::from_str(&text)?;
         config.migrate();
         Ok(config)
@@ -91,12 +101,16 @@ impl ConfigStore {
     /// A file that cannot be parsed, or that was written by a newer version, is
     /// copied aside first: the app saves on exit, and without the copy that save
     /// would silently replace the user's layout with defaults or drop unknown
-    /// fields.
-    pub fn load_or_default(&self) -> Config {
+    /// fields. A file that exists but cannot be read, or an unparsable one whose
+    /// copy fails, is an error: starting on defaults would let the next save
+    /// replace the only copy of the user's layout.
+    pub fn load_or_default(&self) -> Result<Config, ConfigError> {
         if !self.exists() {
-            return Config::new();
+            return Ok(Config::new());
         }
-        match self.load() {
+        let bytes = read_with_retry(&self.path)
+            .map_err(|source| ConfigError::io(self.path.clone(), source))?;
+        match self.parse(bytes) {
             Ok(config) => {
                 if config.is_from_newer_version() {
                     tracing::warn!(
@@ -106,13 +120,23 @@ impl ConfigStore {
                     );
                     self.backup_logged("newer");
                 }
-                config
+                Ok(config)
             }
-            Err(error) => {
-                tracing::warn!(%error, path = %self.path.display(), "using default configuration");
-                self.backup_logged("unreadable");
-                Config::new()
-            }
+            Err(reason) => match self.backup("unreadable") {
+                Ok(backup) => {
+                    tracing::warn!(
+                        %reason,
+                        backup = %backup.display(),
+                        "configuration could not be parsed; backed it up and using defaults"
+                    );
+                    Ok(Config::new())
+                }
+                Err(backup) => Err(ConfigError::NotBackedUp {
+                    path: self.path.clone(),
+                    reason: Box::new(reason),
+                    backup: Box::new(backup),
+                }),
+            },
         }
     }
 
@@ -152,6 +176,27 @@ impl ConfigStore {
     pub fn save(&self, config: &Config) -> Result<(), ConfigError> {
         let text = Self::serialize(config)?;
         write_atomic(&self.path, &text)
+    }
+}
+
+/// How many times a load reads a file that exists, and how long it waits
+/// between tries. Another program holding the file open, or a roaming profile
+/// still syncing it, usually lets go within about a second.
+const READ_ATTEMPTS: u32 = 5;
+const READ_RETRY_DELAY: Duration = Duration::from_millis(250);
+
+fn read_with_retry(path: &Path) -> std::io::Result<Vec<u8>> {
+    let mut attempt = 1;
+    loop {
+        match std::fs::read(path) {
+            Ok(bytes) => return Ok(bytes),
+            Err(error) if attempt >= READ_ATTEMPTS => return Err(error),
+            Err(error) => {
+                tracing::debug!(%error, attempt, path = %path.display(), "configuration not readable yet");
+                attempt += 1;
+                std::thread::sleep(READ_RETRY_DELAY);
+            }
+        }
     }
 }
 
@@ -260,8 +305,65 @@ mod tests {
     fn missing_file_loads_defaults_without_backup() {
         let dir = tempfile::tempdir().unwrap();
         let store = ConfigStore::with_path(dir.path().join("deskspace.toml"));
-        assert_eq!(store.load_or_default(), Config::new());
+        assert_eq!(store.load_or_default().unwrap(), Config::new());
         assert!(backups_in(dir.path()).is_empty());
+    }
+
+    /// Another program holding the file open with no sharing, as a sync
+    /// client or an editor can, must not start DeskSpace on defaults.
+    #[test]
+    fn a_file_held_open_is_an_error_and_stays_unchanged() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("deskspace.toml");
+        let store = ConfigStore::with_path(&path);
+        store.save(&Config::new()).unwrap();
+        let before = std::fs::read(&path).unwrap();
+
+        let held = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&path)
+            .unwrap();
+        let error = store.load_or_default().unwrap_err();
+        drop(held);
+
+        assert!(matches!(error, ConfigError::Io { ref path, .. } if path == store.path()));
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert!(backups_in(dir.path()).is_empty());
+    }
+
+    /// The seam for a failing backup: a file name long enough that the
+    /// backup's name, which adds `.unreadable-<millis>.bak`, passes the
+    /// 255-character limit on one path component, while the file itself
+    /// fits.
+    #[test]
+    fn an_unparsable_file_whose_backup_fails_is_an_error_and_stays_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(format!("{}.toml", "d".repeat(240)));
+        std::fs::write(&path, "this is = = not toml").unwrap();
+        let store = ConfigStore::with_path(&path);
+
+        let error = store.load_or_default().unwrap_err();
+
+        assert!(matches!(error, ConfigError::NotBackedUp { .. }), "{error}");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "this is = = not toml"
+        );
+        assert!(backups_in(dir.path()).is_empty());
+    }
+
+    #[test]
+    fn a_file_that_is_not_text_is_backed_up_before_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("deskspace.toml");
+        std::fs::write(&path, [0xFF, 0xFE, 0x00]).unwrap();
+        let store = ConfigStore::with_path(&path);
+
+        assert_eq!(store.load_or_default().unwrap(), Config::new());
+        assert_eq!(backups_in(dir.path()).len(), 1);
     }
 
     #[test]
@@ -271,7 +373,7 @@ mod tests {
         std::fs::write(&path, "this is = = not toml").unwrap();
         let store = ConfigStore::with_path(&path);
 
-        assert_eq!(store.load_or_default(), Config::new());
+        assert_eq!(store.load_or_default().unwrap(), Config::new());
 
         let backups = backups_in(dir.path());
         assert_eq!(backups.len(), 1);
@@ -288,7 +390,7 @@ mod tests {
         std::fs::write(&path, "version = 99\nfuture_field = true\n").unwrap();
         let store = ConfigStore::with_path(&path);
 
-        assert_eq!(store.load_or_default().version, 99);
+        assert_eq!(store.load_or_default().unwrap().version, 99);
         assert_eq!(backups_in(dir.path()).len(), 1);
     }
 }

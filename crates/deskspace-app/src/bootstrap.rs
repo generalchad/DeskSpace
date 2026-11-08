@@ -1,7 +1,7 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Context;
-use deskspace_config::{Config, ConfigStore};
+use deskspace_config::{Config, ConfigError, ConfigStore};
 use deskspace_core::{Command, Desktop, ItemFacts, Rect};
 use deskspace_platform::{
     Placement, RunOptions, enumerate_desktop_items, system_uses_dark_mode, work_area_at,
@@ -94,6 +94,20 @@ fn apply_seed(desktop: &mut Desktop, command: Command, bounds: Rect) -> bool {
     outcome.is_applied()
 }
 
+const LOAD_FAILED_TITLE: &str = "DeskSpace did not start";
+
+/// What the user is told when the configuration exists but could not be read,
+/// or could not be backed up before starting over.
+fn load_failed_text(path: &Path, error: &ConfigError) -> String {
+    format!(
+        "DeskSpace could not read its settings file, so it did not start.\n\n\
+         {}\n\n{error}\n\n\
+         The file was left unchanged. If another program has it open, or it is \
+         still syncing, close that program or wait, then start DeskSpace again.",
+        path.display()
+    )
+}
+
 pub fn run(cli: Cli, debug_log: Option<DebugLog>) -> anyhow::Result<()> {
     deskspace_platform::enable_per_monitor_awareness();
 
@@ -132,7 +146,20 @@ pub fn run(cli: Cli, debug_log: Option<DebugLog>) -> anyhow::Result<()> {
         }
         Config::new()
     } else {
-        store.load_or_default()
+        match store.load_or_default() {
+            Ok(config) => config,
+            Err(error) => {
+                // A release build has no console, so the box is the only way
+                // the user learns why nothing started.
+                deskspace_platform::alert(
+                    LOAD_FAILED_TITLE,
+                    &load_failed_text(store.path(), &error),
+                );
+                return Err(error).context(
+                    "refusing to start: the configuration could not be read or backed up",
+                );
+            }
+        }
     };
 
     if config.desktop.spaces().is_empty() {
@@ -185,6 +212,21 @@ mod tests {
     use super::*;
 
     const BOUNDS: Rect = Rect::new(0, 0, 1920, 1040);
+
+    #[test]
+    fn a_failed_load_names_the_file_and_says_it_was_left_alone() {
+        let path = Path::new(r"C:\Users\me\AppData\Roaming\DeskSpace\deskspace.toml");
+        let error = ConfigError::io(
+            path,
+            std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+        );
+
+        let text = load_failed_text(path, &error);
+
+        assert!(text.contains(&path.display().to_string()), "{text}");
+        assert!(text.contains(&error.to_string()), "{text}");
+        assert!(text.contains("left unchanged"), "{text}");
+    }
 
     fn entry(path: &str, label: &str, is_folder: bool) -> SeedEntry {
         SeedEntry {

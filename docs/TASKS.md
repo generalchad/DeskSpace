@@ -2405,37 +2405,6 @@ Logs, tooling, readability, docs, and checks that may close a task.
 
 These are in the order we would take them. Each lands alone.
 
-- [ ] **P35. Never start on defaults over a config that could not be read (fix;
-  user file).** **[urgent] (v0.3.0)** `ConfigStore::load_or_default` (`deskspace-config/src/store.rs`)
-  treats every failure alike: it tries a backup and starts on defaults. Suppose the
-  file exists but cannot be read, because another program holds it open or a
-  roaming profile has not synced it yet. Then the copy fails too, and only a log line
-  says so. The app seeds a "Desktop" space, and the next autosave replaces the
-  user's layout with no backup left. `--reset` already refuses to start when its
-  backup fails (`bootstrap::run`), and a load should be as careful.
-  - Proposed, which a senior may amend: `load_or_default` returns
-    `Result<Config, ConfigError>`.
-    - No file: defaults, as now.
-    - It parses: as now, including the "newer" backup.
-    - It exists but cannot be read: try again a few times over about a second. If it
-      still fails, return `Err` and never touch the file.
-    - It is read but does not parse: back it up as now. If the backup fails, `Err`.
-  - `bootstrap::run`: on `Err`, show `deskspace_platform::alert`, which works before
-    the runtime starts. Say which file, why, and that DeskSpace left it unchanged,
-    then return the error. A release build has no console, so the alert is the only
-    way the user learns why nothing started.
-  - Tests in `store.rs`: a file held open with `share_mode(0)`
-    (`std::os::windows::fs::OpenOptionsExt`) gives `Err` with its bytes unchanged.
-    An unparsable file whose backup fails gives `Err`; find a seam for the failing
-    backup and name it in the commit. The existing tests still pass.
-  - `CONTEXT.md` section 7, step 2: a load refuses to start rather than replace a
-    file it could not read or back up.
-  - **[needs human]** check: run `./scripts/dev.ps1` once, exit, then hold the
-    scratch config open from PowerShell
-    (`[IO.File]::Open($path, 'Open', 'Read', 'None')`) and run it again. An alert
-    names the file and nothing starts. Close the handle and run again: every space
-    is there.
-
 - [ ] **P36. One DeskSpace per config (fix; platform).** **[urgent] (v0.3.0)** Starting `deskspace.exe`
   with no flag while it runs starts a second full instance. That means a second set
   of spaces over the first, a second keyboard hook, and two writers of one config,
@@ -3171,6 +3140,7 @@ for a machine that has it.
 | P21 | In a debug build with `--debug` open, preview Bounce repeatedly on a space: the animation stays smooth (no hitch once a second), and the debug panel updates again once it stops. |
 | P10 (v0.3) (part script) | U5's and U7's rows still pass: undo and redo of deletes, pastes, moves, and renames behave as before. The rollback itself is test-carried, because the gap between the check and the failing step is too short to hit by hand. |
 | C10c (part script) (F-58) | With a scratch config, customize a space's look, then Colors > "Save theme…" and name the file (with or without the suffix). Load it on Global and on another space, once through "Load theme…" and once from the Themes list after closing and reopening Settings: the look, icon spacing, and padding change, and the Dark/Light setting does not. A load on a space that follows Global turns its "Customize this space" switch on. Cancel puts the old look back; Apply keeps it over a restart. With no theme files the Themes list is disabled and says so; a broken or oversized file is reported and changes nothing; saving over an existing theme asks before replacing it. |
+| P35 (v0.3) (part script) (unreadable config) | Run `./scripts/dev.ps1` once, make a space, and exit. Hold the scratch config open from PowerShell (`$h = [IO.File]::Open($path, 'Open', 'Read', 'None')`) and run it again: after about a second a "DeskSpace did not start" box opens in front of other windows, names the file, says it was left unchanged, and reads well; OK ends the process with no tray icon or space shown. Close the handle (`$h.Close()`) and run again: every space is there, and no `.bak` was made. |
 
 ## Found while working
 

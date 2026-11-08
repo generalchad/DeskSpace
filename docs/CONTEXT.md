@@ -577,12 +577,15 @@ default in `Default`.
   the title) or `None`, and is what the New space path passes to
   `CreateSpace`; the seeded first space is always `None`, so a first launch
   never asks.
-- `load_or_default` returns defaults when no file exists. An unparsable file
-  is copied to `deskspace.toml.unreadable-<millis>.bak` before falling back to
-  defaults; a file from a newer version is loaded but first copied to
-  `*.newer-<millis>.bak`, because saving would drop unknown fields. `--reset`
-  copies the file to `*.reset-<millis>.bak` and refuses to start if that copy
-  fails.
+- `load_or_default` returns defaults when no file exists. A file that exists
+  but cannot be read (another program holds it open, or a roaming profile has
+  not synced it) is tried for about a second, then is an error, and the file
+  is never touched. An unparsable file is copied to
+  `deskspace.toml.unreadable-<millis>.bak` before falling back to defaults,
+  and is an error if that copy fails; a file from a newer version is loaded but
+  first copied to `*.newer-<millis>.bak`, because saving would drop unknown
+  fields. `--reset` copies the file to `*.reset-<millis>.bak` and refuses to
+  start if that copy fails.
 - `window.start_with_windows` is applied through
   `deskspace_platform::set_start_with_windows` (`win32/autostart.rs`), which
   writes or deletes the value `DeskSpace` under
@@ -1012,7 +1015,9 @@ in `ui.rs`. What spans them:
 2. `bootstrap::run`: with `--show`, `--new-space`, or `--settings`, hands off
    to a running instance and exits before loading anything. Otherwise it enables
    DPI awareness, loads or creates `Config` (migrating older files; `--reset`
-   backs up the old file and refuses to start if the backup fails), merges
+   backs up the old file and refuses to start if the backup fails; a load
+   refuses to start, with an alert naming the file, rather than replace a
+   file it could not read or back up), merges
    legacy per-space overrides into looks (saving if anything changed), seeds a
    "Desktop" space if there are none (filled from the desktop folder unless
    `--no-icons`), and calls `deskspace_platform::run`. Placement is
