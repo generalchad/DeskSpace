@@ -23,7 +23,7 @@ use windows::core::{PCWSTR, w};
 
 use crate::error::PlatformError;
 use crate::input::{Event, TrayEvent};
-use crate::win32::system::{hiword, loword};
+use crate::win32::system::{hiword, loword, wide};
 use crate::win32::tray;
 use crate::win32::window_class::{self, WindowClass};
 use crate::win32::{desktop_icons, keyboard, messages, outside_click, runtime, shell_items};
@@ -45,8 +45,10 @@ pub(crate) fn taskbar_created_message() -> u32 {
     TASKBAR_CREATED.load(Ordering::SeqCst)
 }
 
-pub(crate) fn create() -> Result<HWND, PlatformError> {
-    // SAFETY: plain window class registration and creation on the UI thread.
+pub(crate) fn create(title: &str) -> Result<HWND, PlatformError> {
+    let title = wide(title);
+    // SAFETY: plain window class registration and creation on the UI thread,
+    // with a NUL-terminated title that outlives the call.
     unsafe {
         let instance = window_class::instance()?;
         window_class::register(WindowClass::new(CLASS_NAME, Some(wndproc)))?;
@@ -57,7 +59,7 @@ pub(crate) fn create() -> Result<HWND, PlatformError> {
         let window = CreateWindowExW(
             WS_EX_TOOLWINDOW,
             CLASS_NAME,
-            w!("DeskSpace"),
+            PCWSTR(title.as_ptr()),
             WS_POPUP,
             0,
             0,

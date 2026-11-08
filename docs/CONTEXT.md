@@ -1013,15 +1013,23 @@ in `ui.rs`. What spans them:
    `RUST_LOG` overrides both), then calls `bootstrap::run`. `--debug` adds a
    console layer (`debug_log.rs`) with its own level, and every build logs
    panics at error.
-2. `bootstrap::run`: with `--show`, `--new-space`, or `--settings`, hands off
-   to a running instance and exits before loading anything. Otherwise it enables
-   DPI awareness, loads or creates `Config` (migrating older files; `--reset`
-   backs up the old file and refuses to start if the backup fails; a load
-   refuses to start, with an alert naming the file, rather than replace a
-   file it could not read or back up), merges
+2. `bootstrap::run`: enables DPI awareness and resolves the settings store.
+   With `--show`, `--new-space`, or `--settings`, it hands off to the running
+   instance for that settings file and exits before loading anything. A plain
+   launch with the same settings file hands off too, as `--show`: it waits up
+   to about 5 seconds for the running instance's controller window, then
+   exits rather than start a second copy. Each settings file is one instance,
+   keyed by its path, so a scratch `--config` runs beside the real one; the
+   key titles the controller window, and a signal falls back to the class
+   alone so it still finds an older build. Otherwise it loads or creates
+   `Config` (migrating older files; `--reset` backs up the old file and refuses
+   to start if the backup fails; a load refuses to start, with an alert naming
+   the file, rather than replace a file it could not read or back up), merges
    legacy per-space overrides into looks (saving if anything changed), seeds a
    "Desktop" space if there are none (filled from the desktop folder unless
-   `--no-icons`), and calls `deskspace_platform::run`. Placement is
+   `--no-icons`), and calls `deskspace_platform::run`. The instance claim is
+   released as soon as that returns, before an update's installer relaunches
+   DeskSpace. Placement is
    `--placement` when given, else top-level. `--show` overrides `--hidden` and
    start-hidden.
 3. On `Started`, the app sets the menu and settings dark mode, registers every

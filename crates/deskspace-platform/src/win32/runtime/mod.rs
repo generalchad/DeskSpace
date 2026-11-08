@@ -69,6 +69,9 @@ pub struct RunOptions {
     /// inspected without uncovering the desktop.
     pub on_top: bool,
     pub tray_tooltip: String,
+    /// The settings file's instance key, which titles the controller window
+    /// so a second launch of the same settings file can find it.
+    pub instance_key: String,
 }
 
 struct Runtime {
@@ -428,7 +431,7 @@ pub fn run(options: RunOptions, handler: Box<dyn EventHandler>) -> Result<(), Pl
     }
 
     let composition = composition::start(host.is_some(), options.click_through);
-    let controller = controller::create()?;
+    let controller = controller::create(&options.instance_key)?;
     RUNTIME.with(|cell| {
         *cell.borrow_mut() = Some(Runtime {
             handler: Some(handler),

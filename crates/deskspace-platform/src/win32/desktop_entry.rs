@@ -95,12 +95,19 @@ unsafe fn write_verb(verb: &DesktopVerb) -> Result<(), PlatformError> {
     result
 }
 
-/// Posts `message` to a running DeskSpace instance, if one exists. Returns
-/// whether a running controller window was found.
-fn signal(message: u32) -> bool {
+/// Posts `message` to the running instance for `key`, if one exists. Returns
+/// whether a controller window was found.
+///
+/// The title is the settings file's key, so with two instances running a
+/// verb reaches the one for the same file. A window without that title is
+/// tried too, so the signal still finds an older build.
+fn signal(message: u32, key: &str) -> bool {
+    let title = wide(key);
     // SAFETY: plain window queries; the message id belongs to our controller.
     unsafe {
-        let Ok(controller) = FindWindowW(controller::CLASS_NAME, PCWSTR::null()) else {
+        let controller = FindWindowW(controller::CLASS_NAME, PCWSTR(title.as_ptr()))
+            .or_else(|_| FindWindowW(controller::CLASS_NAME, PCWSTR::null()));
+        let Ok(controller) = controller else {
             return false;
         };
         if controller.is_invalid() {
@@ -110,19 +117,19 @@ fn signal(message: u32) -> bool {
     }
 }
 
-/// Posts the show request to a running DeskSpace instance.
-pub fn signal_show_spaces() -> bool {
-    signal(messages::SHOW_SPACES)
+/// Posts the show request to the running instance for `key`.
+pub fn signal_show_spaces(key: &str) -> bool {
+    signal(messages::SHOW_SPACES, key)
 }
 
-/// Posts the new-space request to a running DeskSpace instance.
-pub fn signal_new_space() -> bool {
-    signal(messages::NEW_SPACE)
+/// Posts the new-space request to the running instance for `key`.
+pub fn signal_new_space(key: &str) -> bool {
+    signal(messages::NEW_SPACE, key)
 }
 
-/// Posts the open-settings request to a running DeskSpace instance.
-pub fn signal_open_settings() -> bool {
-    signal(messages::OPEN_SETTINGS)
+/// Posts the open-settings request to the running instance for `key`.
+pub fn signal_open_settings(key: &str) -> bool {
+    signal(messages::OPEN_SETTINGS, key)
 }
 
 /// Opens or creates `path` (NUL-terminated) under `parent`.

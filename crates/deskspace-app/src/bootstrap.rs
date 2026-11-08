@@ -1,10 +1,12 @@
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use deskspace_config::{Config, ConfigError, ConfigStore};
 use deskspace_core::{Command, Desktop, ItemFacts, Rect};
 use deskspace_platform::{
-    Placement, RunOptions, enumerate_desktop_items, system_uses_dark_mode, work_area_at,
+    Placement, RunOptions, claim_instance, enumerate_desktop_items, instance_key,
+    system_uses_dark_mode, work_area_at,
 };
 
 use crate::app::{App, DebugTools, LayerState, tray_tooltip};
@@ -108,27 +110,64 @@ fn load_failed_text(path: &Path, error: &ConfigError) -> String {
     )
 }
 
+/// How long a second launch waits for the running instance's controller
+/// window before it gives up and exits.
+const HAND_OFF_TIMEOUT: Duration = Duration::from_secs(5);
+const HAND_OFF_RETRY: Duration = Duration::from_millis(100);
+
+/// Asks the running instance for `key` to show its spaces, retrying while it
+/// makes its controller window. Exits anyway after `HAND_OFF_TIMEOUT`, so a
+/// launch that cannot reach it never starts a second copy.
+fn hand_off(key: &str) {
+    let deadline = Instant::now() + HAND_OFF_TIMEOUT;
+    loop {
+        if deskspace_platform::signal_show_spaces(key) {
+            return;
+        }
+        if Instant::now() >= deadline {
+            tracing::warn!(
+                key,
+                "another DeskSpace holds the settings file but did not answer"
+            );
+            return;
+        }
+        std::thread::sleep(HAND_OFF_RETRY);
+    }
+}
+
 pub fn run(cli: Cli, debug_log: Option<DebugLog>) -> anyhow::Result<()> {
     deskspace_platform::enable_per_monitor_awareness();
-
-    // `--show` from the desktop menu (or a shortcut): hand it to a running
-    // instance and exit, rather than starting a second copy.
-    if cli.show && deskspace_platform::signal_show_spaces() {
-        return Ok(());
-    }
-    // The other desktop verbs hand off the same way; with no instance running
-    // this process starts and opens the space or the window itself.
-    if cli.new_space && deskspace_platform::signal_new_space() {
-        return Ok(());
-    }
-    if cli.settings && deskspace_platform::signal_open_settings() {
-        return Ok(());
-    }
 
     let store = match &cli.config {
         Some(path) => ConfigStore::with_path(PathBuf::from(path)),
         None => ConfigStore::discover()
             .context("could not find the per-user configuration directory")?,
+    };
+    // One instance per settings file: the key names its mutex and titles its
+    // controller window.
+    let key = instance_key(store.path());
+
+    // `--show` from the desktop menu (or a shortcut): hand it to the running
+    // instance for this settings file and exit, rather than starting a second
+    // copy.
+    if cli.show && deskspace_platform::signal_show_spaces(&key) {
+        return Ok(());
+    }
+    // The other desktop verbs hand off the same way; with no instance running
+    // this process starts and opens the space or the window itself.
+    if cli.new_space && deskspace_platform::signal_new_space(&key) {
+        return Ok(());
+    }
+    if cli.settings && deskspace_platform::signal_open_settings(&key) {
+        return Ok(());
+    }
+
+    // A plain launch with the same settings file behaves as `--show`: the
+    // running instance shows its spaces and this process exits. The first
+    // instance may not have made its controller yet, so keep trying.
+    let Some(guard) = claim_instance(store.path()) else {
+        hand_off(&key);
+        return Ok(());
     };
 
     let mut config = if cli.reset {
@@ -185,6 +224,7 @@ pub fn run(cli: Cli, debug_log: Option<DebugLog>) -> anyhow::Result<()> {
         click_through: cli.click_through,
         on_top: cli.on_top,
         tray_tooltip: tray_tooltip(&config.desktop),
+        instance_key: key,
     };
 
     let mut app = App::new(config, store, hidden, cli.settings);
@@ -198,10 +238,15 @@ pub fn run(cli: Cli, debug_log: Option<DebugLog>) -> anyhow::Result<()> {
         "starting DeskSpace"
     );
     let install_on_exit = app.install_on_exit();
-    deskspace_platform::run(options, Box::new(app)).context("the DeskSpace UI runtime failed")?;
+    let result =
+        deskspace_platform::run(options, Box::new(app)).context("the DeskSpace UI runtime failed");
+    // Let go of the settings file before the installer relaunches DeskSpace,
+    // so the new process does not find the old claim and exit.
+    drop(guard);
     // An update queued by the app runs only now, after the teardown has
     // restored the desktop; the installer then relaunches DeskSpace.
     install_on_exit.install();
+    result?;
     Ok(())
 }
 

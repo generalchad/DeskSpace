@@ -29,6 +29,10 @@ Notable changes to DeskSpace, newest first. The format follows
   selection there, as clicking in another Explorer window does. Before, the
   first space's items stayed selected out of sight, and Delete, Copy, or Cut
   acted on them too. Check-box ticks also stay with their space.
+- Starting DeskSpace while it is already running, for example from the Start
+  menu, shows the running copy's spaces instead of starting a second copy over
+  it. Each settings file is one instance, so a scratch `--config` still runs
+  beside the real one.
 - If the settings file exists but cannot be read when DeskSpace starts
   (another program holds it open, or a roaming profile has not synced yet),
   DeskSpace waits a moment, then shows a message naming the file and does

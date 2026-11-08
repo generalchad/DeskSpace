@@ -2444,61 +2444,6 @@ Logs, tooling, readability, docs, and checks that may close a task.
 
 These are in the order we would take them. Each lands alone.
 
-- [ ] **P36. One DeskSpace per config (fix; platform).** **[urgent] (v0.3.0)** Starting `deskspace.exe`
-  with no flag while it runs starts a second full instance. That means a second set
-  of spaces over the first, a second keyboard hook, and two writers of one config,
-  where the last save wins. Only `--show`, `--new-space`, and `--settings` look for a
-  running instance (`bootstrap::run`). Opening the Start-menu shortcut after the Run
-  value has started DeskSpace is enough to cause it. Decided (maintainer,
-  2026-11-04): a second launch with the same config behaves as `--show`, so the
-  running instance shows its spaces and the new process exits.
-  - A new `win32/instance.rs`: `claim(config: &Path) -> Option<InstanceGuard>`, a
-    `Local\` named mutex made the way `claim_single_instance` (`watchdog.rs`) makes
-    one. Its name comes from a pure `instance_key(path)`: the absolute path's text,
-    uppercase with `\` separators (`upper_name`), with no filesystem lookup, so a
-    config that does not exist yet keys the same as one that does.
-  - Hash the key with a fixed function such as FNV-1a, written out, never
-    `DefaultHasher`. That one can change between Rust versions, and so between an
-    installed build and its update. Tests: two spellings of one path give one key,
-    and two paths give two.
-  - A scratch `--config` gets its own key, so it runs beside the real one, as
-    `dev.ps1` needs.
-  - The controller window's title is the key. `signal` (`win32/desktop_entry.rs`)
-    looks for class and title, then falls back to the class alone, so it still finds
-    an older running build. This also stops `--show` from reaching a dev build
-    instead of the real one.
-  - When the claim fails, `bootstrap::run` signals `SHOW_SPACES` and exits. The first
-    instance may not have made its controller yet, so keep trying for about 5
-    seconds, then exit anyway. Never start a second instance while the mutex says
-    one runs.
-  - Drop the guard as soon as `deskspace_platform::run` returns, before
-    `install_on_exit.install()`. Otherwise the installer's relaunch could find the
-    old guard and exit, leaving no DeskSpace running.
-  - `CONTEXT.md` section 7, step 2: a plain launch hands off too.
-  - **[needs human]** check: start DeskSpace, hide its spaces, and start it again
-    from the Start menu. The spaces show and no second tray icon appears. A scratch
-    `./scripts/dev.ps1` still runs beside it. Installing an update over a running
-    instance still relaunches it (with R12).
-  - Split by person, landed as one commit. The pure half has no caller until the
-    senior's half, and clippy refuses code nothing calls, so both halves go into
-    one commit on the branch `fix/p36-one-instance`, which the senior makes with a
-    `Co-authored-by:` line for the junior.
-  - [ ] **P36a (junior; hands over to P36b).** In `win32/instance.rs`:
-    `instance_key(path: &Path) -> String` as above, and a written-out 64-bit
-    FNV-1a (offset basis `0xcbf2_9ce4_8422_2325`, prime `0x0100_0000_01b3`, over
-    the bytes of the key's UTF-16 units, low byte first), citing
-    https://datatracker.ietf.org/doc/html/draft-eastlake-fnv beside it. The key
-    is `DeskSpace-` followed by the hash as 16 lowercase hex digits. Tests: two
-    spellings of one path give one key, two paths give two, a scratch `--config`
-    differs from the real one, and the hash of empty input is the offset basis.
-    Also the `CONTEXT.md` line, a `CHANGELOG.md` "Fixed" line, and the section V
-    row. Leave the work uncommitted on the branch, or send a patch, and hand it to
-    the senior. Touch nothing `unsafe`.
-  - [ ] **P36b (senior).** The `Local\` mutex in `claim`, made as
-    `claim_single_instance` makes one; the controller window's title and
-    `signal`'s fallback; the hand-off loop in `bootstrap::run`; and dropping the
-    guard before `install_on_exit.install()`. Review P36a's half, then commit both.
-
 - [ ] **P46. Bring the shell's file-operation windows to the front (fix; Win32).** **[urgent] (v0.3.0)**
   A shell file operation that needs an answer can put its window behind the
   foreground app, and DeskSpace then looks frozen: nothing answers, the user
@@ -3115,6 +3060,7 @@ for a machine that has it.
 | Desktop menu (v0.3) (part script) (F-14) | With takeover on, right-click an empty spot of the desktop: New space, DeskSpace settings…, and Hide/Show spaces sit above Explorer's desktop menu; each DeskSpace entry works; View, Sort by, Refresh, New › Text Document, Paste, Display settings, and Personalize work, and the layer shows the result; the Menu key and Shift+F10 with nothing selected open the same menu; a right-click on a loose icon still shows its item menu, and on a space the space menu. Run elevated once too: the menu still shows New, Display settings, and Personalize below the DeskSpace entries, with masked icons and no separator dangling under Hide spaces; with `-Verbosity 1` any fallback logs a warning naming the step that failed. |
 | C9 (part script) (F-52) | With the app running (not elevated; `./scripts/dev.ps1 -RealConfig` so the entries are real), right-click an empty spot of the desktop: "New space" and "DeskSpace Settings" sit above Explorer's entries. "New space" opens a space on the pointer's monitor; "DeskSpace Settings" opens the running instance's window instead of starting a second copy. With the spaces hidden, "Show DeskSpace spaces" appears, and hiding/showing updates the menu. After a clean exit all three are gone. |
 | P31 (part script) | With the installed DeskSpace running, run `./scripts/dev.ps1` and exit it. The desktop menu still shows the installed build's entries, and they still work. |
+| P36 (v0.3) (part script) (one instance) | Start DeskSpace, hide its spaces, and start it again from the Start menu: the spaces show and no second tray icon appears; Task Manager lists one DeskSpace process. With the installed build running, `./scripts/dev.ps1` still starts beside it, and each one's Show spaces reaches only its own spaces. Installing an update over a running instance still relaunches it (with R12). |
 | Menu at the click (v0.3) (part script) | With takeover on and "Auto arrange" off, right-click an empty spot far from other icons: Paste (after copying a file) and New › Text Document each put the new icon at the click, not in the next free slot; a space's item menu commands (Open, Properties, Delete) work as before. If Explorer ignores the point, record it here. |
 | New on the desktop (v0.3) (part script) | With takeover on, right-click an empty spot of the desktop: New › Folder, and New › Text Document with extensions shown and hidden, each make the item and open DeskSpace's rename box on it, with "New folder" (or the base name) selected; typing a name and Enter names it; Esc keeps "New folder"; a second New › Folder gives "New folder (2)" its own box. Paste and View › Refresh open no box. With takeover off (`--layer` only), Explorer's own box shows, as before. |
 | Layer rename (v0.3) (part script) | With takeover on, a loose desktop icon renames like a space item: F2, a slow second click, and "Rename" on its right-click menu each open the rename box on the icon (the base name selected when extensions show); Enter renames the file, which stays selected and in place; Esc and a click elsewhere behave as in a space; Ctrl+Z in Explorer undoes it. |
