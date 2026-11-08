@@ -6754,3 +6754,23 @@ until I5-I6 all land, so no partial build hides the desktop.
     (`[IO.File]::Open($path, 'Open', 'Read', 'None')`) and run it again. An alert
     names the file and nothing starts. Close the handle and run again: every space
     is there.
+
+- [x] **P37. Never replace a file when moving into or out of storage (fix; user
+  files).** **[urgent] (v0.3.0)** `ItemStore::adopt`, `release`, and `move_between` (`storage.rs`) pick a
+  free name and then call `std::fs::rename`. On Windows that replaces a file already
+  at the target (checked 2026-11-04), so a file that appears between the check and
+  the move is overwritten without a word. Undo's `move_between` trusts a check made
+  even earlier. The module's own rule is that names are never overwritten.
+  - Platform: `pub fn move_no_replace(from, to) -> io::Result<()>` over
+    `MoveFileExW` with no flags, with Microsoft Learn's page linked beside it. Without
+    `MOVEFILE_REPLACE_EXISTING` it fails when `to` exists. Without
+    `MOVEFILE_COPY_ALLOWED` it fails across volumes, which `io::Error` reports as
+    `CrossesDevices`, so `StoreError::OtherVolume` keeps working.
+  - `move_into`: on `AlreadyExists`, take the next free name and try again, a
+    bounded number of times, then `StoreError::Io`. `move_between`: on
+    `AlreadyExists`, fail. The undo entry is then stale and changes nothing, as D11
+    wants.
+  - Tests: in the platform, a move onto an existing file fails and both files keep
+    their bytes. In `storage.rs`, `move_between` onto an existing file fails and
+    changes nothing. The existing tests pass.
+  - Ask a second senior to review: every dropped file takes this path.

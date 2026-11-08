@@ -22,6 +22,7 @@ mod drag_ghost;
 pub(crate) mod drag_image;
 mod drop_target;
 mod dwm;
+pub(crate) mod file_move;
 pub(crate) mod file_op;
 mod flame_overlay;
 mod folder_list;

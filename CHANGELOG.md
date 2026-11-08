@@ -14,6 +14,10 @@ Notable changes to DeskSpace, newest first. The format follows
   DeskSpace waits a moment, then shows a message naming the file and does
   not start, rather than start with a new layout that could later be saved
   over yours. The file is left unchanged.
+- Moving a file into DeskSpace's storage, back out to the desktop, or back
+  again with Undo never replaces a file that appears at the same name at the
+  same moment. A drop picks the next free name instead, and Undo says it
+  cannot undo.
 
 ## [0.3.0-alpha.1] - 2026-11-05
 

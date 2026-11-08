@@ -2441,26 +2441,6 @@ These are in the order we would take them. Each lands alone.
     `./scripts/dev.ps1` still runs beside it. Installing an update over a running
     instance still relaunches it (with R12).
 
-- [ ] **P37. Never replace a file when moving into or out of storage (fix; user
-  files).** **[urgent] (v0.3.0)** `ItemStore::adopt`, `release`, and `move_between` (`storage.rs`) pick a
-  free name and then call `std::fs::rename`. On Windows that replaces a file already
-  at the target (checked 2026-11-04), so a file that appears between the check and
-  the move is overwritten without a word. Undo's `move_between` trusts a check made
-  even earlier. The module's own rule is that names are never overwritten.
-  - Platform: `pub fn move_no_replace(from, to) -> io::Result<()>` over
-    `MoveFileExW` with no flags, with Microsoft Learn's page linked beside it. Without
-    `MOVEFILE_REPLACE_EXISTING` it fails when `to` exists. Without
-    `MOVEFILE_COPY_ALLOWED` it fails across volumes, which `io::Error` reports as
-    `CrossesDevices`, so `StoreError::OtherVolume` keeps working.
-  - `move_into`: on `AlreadyExists`, take the next free name and try again, a
-    bounded number of times, then `StoreError::Io`. `move_between`: on
-    `AlreadyExists`, fail. The undo entry is then stale and changes nothing, as D11
-    wants.
-  - Tests: in the platform, a move onto an existing file fails and both files keep
-    their bytes. In `storage.rs`, `move_between` onto an existing file fails and
-    changes nothing. The existing tests pass.
-  - Ask a second senior to review: every dropped file takes this path.
-
 - [ ] **P46. Bring the shell's file-operation windows to the front (fix; Win32).** **[urgent] (v0.3.0)**
   A shell file operation that needs an answer can put its window behind the
   foreground app, and DeskSpace then looks frozen: nothing answers, the user
@@ -3141,6 +3121,7 @@ for a machine that has it.
 | P10 (v0.3) (part script) | U5's and U7's rows still pass: undo and redo of deletes, pastes, moves, and renames behave as before. The rollback itself is test-carried, because the gap between the check and the failing step is too short to hit by hand. |
 | C10c (part script) (F-58) | With a scratch config, customize a space's look, then Colors > "Save theme…" and name the file (with or without the suffix). Load it on Global and on another space, once through "Load theme…" and once from the Themes list after closing and reopening Settings: the look, icon spacing, and padding change, and the Dark/Light setting does not. A load on a space that follows Global turns its "Customize this space" switch on. Cancel puts the old look back; Apply keeps it over a restart. With no theme files the Themes list is disabled and says so; a broken or oversized file is reported and changes nothing; saving over an existing theme asks before replacing it. |
 | P35 (v0.3) (part script) (unreadable config) | Run `./scripts/dev.ps1` once, make a space, and exit. Hold the scratch config open from PowerShell (`$h = [IO.File]::Open($path, 'Open', 'Read', 'None')`) and run it again: after about a second a "DeskSpace did not start" box opens in front of other windows, names the file, says it was left unchanged, and reads well; OK ends the process with no tray icon or space shown. Close the handle (`$h.Close()`) and run again: every space is there, and no `.bak` was made. |
+| P37 (v0.3) (part script) (no replace on a move) | Every move into and out of storage now goes through `MoveFileExW`, so check the plain paths still work. Drop a file from the desktop onto a space: it leaves the desktop and opens from the space. Drop a second file with the same name from another folder: the space lists both, and both open with their own contents. Delete the space while the desktop already has a file of that name: the stored file comes back as "name (2)" and the desktop's own file is untouched. Ctrl+Z, then Ctrl+Y: each file goes back to where it was, then returns. Drop a file from a USB stick or a network share: it stays where it was and the space refers to it. With `-Verbosity 1`, no "could not move" line appears for any of these. |
 
 ## Found while working
 
@@ -3150,3 +3131,5 @@ Triaged 2026-11-05: the folder watch's subtree listing became P47, the page
 scroll's focus G13, and the settings header's keyboard path P48; the
 `locking_mode` question was answered in `TOOLS.md`, and "Pick a task" was
 refreshed.
+
+- `write_shortcut` (`app/files.rs`) picks a name with `unique_destination`, then `std::fs::copy` or the shell link's save writes it, and both replace a file that appears there meanwhile, as `storage.rs` did before P37; in a lens that is the user's own folder. Suggested task: write to a temp name beside it and claim the final name with `move_no_replace`, as `move_to_first_free` does.

@@ -624,7 +624,7 @@ Everything with `unsafe` is under `win32/`:
 | Input | `keyboard` (the low-level hook), `drop_target` |
 | Shell | `desktop_items`, `icons`, `glyphs`, `shell_items`, `shell_view`, `shell_selection`, `display_settings`, `clipboard`, `file_op`, `drag_image`, `folder_watch`, `shortcuts` |
 | Desktop takeover | `desktop_shell`, `desktop_icons`, `watchdog`, `desktop_entry` |
-| System | `system`, `dpi`, `autostart` |
+| System | `system`, `dpi`, `autostart`, `file_move` (a move that never replaces a file) |
 
 ### Message, timer, and id tables
 

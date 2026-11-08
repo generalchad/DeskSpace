@@ -5,13 +5,15 @@
 //! those files are left where they are and the space refers to them instead.
 //! Every space shares one folder, so moving an item between spaces never
 //! touches the file. Names are never overwritten: a clash gets " (2)", " (3)",
-//! and so on, like Explorer.
+//! and so on, like Explorer, and every move fails rather than replace a file
+//! that appears at its target after the name was picked
+//! (`deskspace_platform::move_no_replace`).
 
 use std::ffi::OsStr;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use deskspace_platform::is_inside;
+use deskspace_platform::{is_inside, move_no_replace};
 
 #[derive(Debug, Clone)]
 pub struct ItemStore {
@@ -29,6 +31,8 @@ pub enum StoreError {
     OtherVolume(PathBuf),
     #[error("{0} cannot be moved into the space storage")]
     NotMovable(PathBuf),
+    #[error("{0} already exists, so nothing was moved or replaced")]
+    Taken(PathBuf),
     #[error("could not move {path}: {source}")]
     Io {
         path: PathBuf,
@@ -100,10 +104,13 @@ impl ItemStore {
     pub fn release(&self, path: &Path, folder: &Path) -> Result<PathBuf, StoreError> {
         move_into(path, folder)
     }
+
     /// Moves `from` to the exact `to` path when either end is in the store.
     /// Used by undo and redo after `UndoEntry` has verified `from` exists and
     /// `to` is free, so the restored path matches the space snapshot even when
-    /// the original move added a " (n)" clash suffix.
+    /// the original move added a " (n)" clash suffix. A file that took `to`
+    /// since that check fails the move with `Taken`, which leaves the entry
+    /// stale rather than replace the file.
     pub fn move_between(&self, from: &Path, to: &Path) -> Result<(), StoreError> {
         if !self.contains(from) && !self.contains(to) {
             return Err(StoreError::NotMovable(from.to_path_buf()));
@@ -114,16 +121,7 @@ impl ItemStore {
                 source,
             })?;
         }
-        match std::fs::rename(from, to) {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == io::ErrorKind::CrossesDevices => {
-                Err(StoreError::OtherVolume(from.to_path_buf()))
-            }
-            Err(source) => Err(StoreError::Io {
-                path: from.to_path_buf(),
-                source,
-            }),
-        }
+        move_no_replace(from, to).map_err(|error| move_error(from, to, error))
     }
 }
 
@@ -166,39 +164,76 @@ pub(crate) fn path_key(path: &Path) -> PathBuf {
     PathBuf::from(deskspace_platform::upper_name(OsStr::new(&text)))
 }
 
+/// How many free-looking names a move into a folder tries. Each try after the
+/// first means another file took the name between the check and the move, so
+/// more than a few means something keeps creating files there.
+const CLAIM_ATTEMPTS: usize = 8;
+
 fn move_into(path: &Path, folder: &Path) -> Result<PathBuf, StoreError> {
     let name = path
         .file_name()
         .ok_or_else(|| StoreError::NotMovable(path.to_path_buf()))?;
-    let destination = unique_destination(folder, Path::new(name));
-    match std::fs::rename(path, &destination) {
-        Ok(()) => Ok(destination),
-        Err(error) if error.kind() == io::ErrorKind::CrossesDevices => {
-            Err(StoreError::OtherVolume(path.to_path_buf()))
+    move_to_first_free(path, free_names(folder, Path::new(name)))
+}
+
+/// Moves `path` to the first of `candidates` that is still free when the move
+/// runs. `move_no_replace` is the real check: `candidates` only skips names
+/// already taken, and a name taken after that is passed over for the next.
+fn move_to_first_free(
+    path: &Path,
+    candidates: impl Iterator<Item = PathBuf>,
+) -> Result<PathBuf, StoreError> {
+    let mut last_taken = None;
+    for destination in candidates.take(CLAIM_ATTEMPTS) {
+        match move_no_replace(path, &destination) {
+            Ok(()) => return Ok(destination),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                tracing::debug!(
+                    to = %destination.display(),
+                    "a file took the name before the move; trying the next"
+                );
+                last_taken = Some(destination);
+            }
+            Err(error) => return Err(move_error(path, &destination, error)),
         }
-        Err(source) => Err(StoreError::Io {
-            path: path.to_path_buf(),
-            source,
-        }),
+    }
+    Err(match last_taken {
+        Some(destination) => StoreError::Taken(destination),
+        None => StoreError::NotMovable(path.to_path_buf()),
+    })
+}
+
+fn move_error(from: &Path, to: &Path, error: io::Error) -> StoreError {
+    match error.kind() {
+        io::ErrorKind::CrossesDevices => StoreError::OtherVolume(from.to_path_buf()),
+        io::ErrorKind::AlreadyExists => StoreError::Taken(to.to_path_buf()),
+        _ => StoreError::Io {
+            path: from.to_path_buf(),
+            source: error,
+        },
     }
 }
 
 /// `folder/name`, or `folder/stem (n).ext` with the smallest `n >= 2` that
 /// does not exist yet.
 pub(crate) fn unique_destination(folder: &Path, name: &Path) -> PathBuf {
-    let first = folder.join(name);
-    if !first.exists() {
-        return first;
-    }
+    free_names(folder, name)
+        .next()
+        .expect("an unused name exists")
+}
+
+/// `folder/name`, then `folder/stem (2).ext`, `(3)`, and on, skipping each
+/// that exists now.
+fn free_names(folder: &Path, name: &Path) -> impl Iterator<Item = PathBuf> {
     let stem = name.file_stem().unwrap_or_default().to_string_lossy();
     let extension = name
         .extension()
         .map(|ext| format!(".{}", ext.to_string_lossy()))
         .unwrap_or_default();
-    (2..)
-        .map(|n| folder.join(format!("{stem} ({n}){extension}")))
-        .find(|candidate| !candidate.exists())
-        .expect("an unused name exists")
+    let numbered = (2u64..).map(move |n| format!("{stem} ({n}){extension}"));
+    std::iter::once(folder.join(name))
+        .chain(numbered.map(move |numbered| folder.join(numbered)))
+        .filter(|candidate| !candidate.exists())
 }
 
 #[cfg(test)]
@@ -320,6 +355,93 @@ mod tests {
         store.move_between(&original, &stored).unwrap();
         assert!(stored.exists());
         assert!(!original.exists());
+    }
+
+    /// Undo checks that `to` is free well before it moves; a file that
+    /// appears there meanwhile must survive.
+    #[test]
+    fn move_between_onto_an_existing_file_fails_and_changes_nothing() {
+        let scratch = Scratch::new("move-between-taken");
+        let store = ItemStore::new(scratch.0.join("storage"));
+        std::fs::create_dir_all(store.root()).unwrap();
+        let stored = store.root().join("report.txt");
+        std::fs::write(&stored, "stored").unwrap();
+        let back = scratch.0.join("report.txt");
+        std::fs::write(&back, "appeared").unwrap();
+
+        let error = store.move_between(&stored, &back).unwrap_err();
+
+        assert!(
+            matches!(&error, StoreError::Taken(path) if *path == back),
+            "{error}"
+        );
+        assert_eq!(std::fs::read_to_string(&stored).unwrap(), "stored");
+        assert_eq!(std::fs::read_to_string(&back).unwrap(), "appeared");
+    }
+
+    /// A name that looked free but was taken by the time of the move: the
+    /// candidates stand in for the race, which no test can time.
+    #[test]
+    fn a_name_taken_after_the_check_is_passed_over() {
+        let scratch = Scratch::new("race");
+        let source = scratch.0.join("source.txt");
+        std::fs::write(&source, "dropped").unwrap();
+        let taken = scratch.0.join("report.txt");
+        std::fs::write(&taken, "appeared").unwrap();
+        let free = scratch.0.join("report (2).txt");
+
+        let landed =
+            move_to_first_free(&source, [taken.clone(), free.clone()].into_iter()).unwrap();
+
+        assert_eq!(landed, free);
+        assert_eq!(std::fs::read_to_string(&free).unwrap(), "dropped");
+        assert_eq!(std::fs::read_to_string(&taken).unwrap(), "appeared");
+        assert!(!source.exists());
+    }
+
+    #[test]
+    fn a_move_gives_up_when_every_name_it_tries_is_taken() {
+        let scratch = Scratch::new("all-taken");
+        let source = scratch.0.join("source.txt");
+        std::fs::write(&source, "dropped").unwrap();
+        let taken: Vec<PathBuf> = (0..CLAIM_ATTEMPTS + 1)
+            .map(|n| scratch.0.join(format!("taken {n}.txt")))
+            .collect();
+        for path in &taken {
+            std::fs::write(path, "appeared").unwrap();
+        }
+
+        let error = move_to_first_free(&source, taken.clone().into_iter()).unwrap_err();
+
+        assert!(
+            matches!(&error, StoreError::Taken(path) if *path == taken[CLAIM_ATTEMPTS - 1]),
+            "{error}"
+        );
+        assert_eq!(std::fs::read_to_string(&source).unwrap(), "dropped");
+        for path in &taken {
+            assert_eq!(std::fs::read_to_string(path).unwrap(), "appeared");
+        }
+    }
+
+    #[test]
+    fn release_numbers_a_clash_on_the_desktop() {
+        let scratch = Scratch::new("release-clash");
+        let desktop = scratch.0.join("Desktop");
+        std::fs::create_dir_all(&desktop).unwrap();
+        let store = ItemStore::new(scratch.0.join("storage"));
+        let dropped = scratch.0.join("notes.txt");
+        std::fs::write(&dropped, "stored").unwrap();
+        let stored = store.adopt(&dropped).unwrap();
+        std::fs::write(desktop.join("notes.txt"), "on the desktop").unwrap();
+
+        let back = store.release(&stored, &desktop).unwrap();
+
+        assert_eq!(back, desktop.join("notes (2).txt"));
+        assert_eq!(std::fs::read_to_string(&back).unwrap(), "stored");
+        assert_eq!(
+            std::fs::read_to_string(desktop.join("notes.txt")).unwrap(),
+            "on the desktop"
+        );
     }
 
     #[test]
