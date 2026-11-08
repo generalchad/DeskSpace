@@ -234,10 +234,7 @@ impl App {
     /// Makes space `id` current so the keyboard hook reports Esc during a
     /// column gesture. The selection stays unless it was on another surface.
     fn make_current_for_column_gesture(&mut self, ui: &mut Ui, id: SpaceId) {
-        let surface = Surface::Space(id);
-        let previous = self.selection.surface.replace(surface);
-        if let Some(previous) = previous.filter(|previous| *previous != surface) {
-            self.selection.clear_items();
+        if let Some(previous) = self.selection.enter(Surface::Space(id)) {
             self.refresh_surface(ui, previous);
         }
     }

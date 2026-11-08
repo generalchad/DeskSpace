@@ -65,6 +65,22 @@ impl Selection {
         self.items = items;
     }
 
+    /// Makes `surface` current and returns the surface it replaced, if it was
+    /// another, which needs repainting.
+    ///
+    /// A selection lives in one surface, as each Explorer window has its own,
+    /// so entering another drops the items, anchor, and focus. Kept, a
+    /// Ctrl+click in a second space added to items the first no longer drew,
+    /// and Delete, Copy, and Cut then acted on those unseen items too.
+    pub(super) fn enter(&mut self, surface: Surface) -> Option<Surface> {
+        let previous = self.surface.replace(surface);
+        if previous == Some(surface) {
+            return None;
+        }
+        self.clear_items();
+        previous
+    }
+
     /// Moves the anchor and focus to `item`, as a Shift/Ctrl click does before
     /// it extends or toggles the selection.
     pub(super) fn focus(&mut self, item: ItemId) {
@@ -592,6 +608,46 @@ mod tests {
         assert_eq!(next_in_direction(&cells, 4, NavDir::Left), Some(2));
         assert_eq!(next_in_direction(&cells, 5, NavDir::Left), Some(3));
         assert_eq!(next_in_direction(&cells, 6, NavDir::Left), Some(4));
+    }
+
+    #[test]
+    fn entering_another_surface_starts_an_empty_selection_there() {
+        let (one, two) = (Surface::Space(SpaceId(1)), Surface::Space(SpaceId(2)));
+        let mut selection = Selection::default();
+        assert_eq!(selection.enter(one), None, "nothing was current");
+        selection.toggle(ItemId(1));
+        selection.toggle(ItemId(2));
+        selection.focus(ItemId(2));
+
+        assert_eq!(selection.enter(one), None, "the same surface keeps it");
+        assert_eq!(selection.items, vec![ItemId(1), ItemId(2)]);
+
+        assert_eq!(selection.enter(two), Some(one), "the old one repaints");
+        assert!(selection.items.is_empty());
+        assert_eq!((selection.anchor, selection.focused), (None, None));
+    }
+
+    #[test]
+    fn ctrl_clicks_in_two_spaces_leave_only_the_second_spaces_items_to_act_on() {
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(Config::new(), store, false, false);
+        let first = fixtures::create_space(&mut app.config.desktop, "A", Rect::new(0, 0, 300, 300));
+        let second =
+            fixtures::create_space(&mut app.config.desktop, "B", Rect::new(400, 0, 300, 300));
+        let a1 = fixtures::add_item(&mut app.config.desktop, first, "C:/missing/a1.txt");
+        let a2 = fixtures::add_item(&mut app.config.desktop, first, "C:/missing/a2.txt");
+        let b1 = fixtures::add_item(&mut app.config.desktop, second, "C:/missing/b1.txt");
+
+        // Ctrl+click two items in the first space, then one in the second,
+        // as `begin_interaction` does for each press.
+        for (space, item) in [(first, a1), (first, a2), (second, b1)] {
+            app.selection.enter(Surface::Space(space));
+            app.selection.toggle(item);
+            app.selection.focus(item);
+        }
+
+        assert_eq!(app.selection.surface, Some(Surface::Space(second)));
+        assert_eq!(app.active_items(), vec![b1], "Delete and Copy see only b1");
     }
 
     #[test]

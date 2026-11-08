@@ -157,11 +157,8 @@ impl App {
             return false;
         }
         self.pointer.back_press = Some(id);
-        if self.selection.surface != Some(Surface::Space(id)) {
-            if let Some(previous) = self.selection.take() {
-                self.refresh_surface(ui, previous);
-            }
-            self.selection.surface = Some(Surface::Space(id));
+        if let Some(previous) = self.selection.enter(Surface::Space(id)) {
+            self.refresh_surface(ui, previous);
         }
         self.browse_up(ui, id);
         true
@@ -209,7 +206,7 @@ impl App {
         if self.checkbox_pressed(ui, surface, point) {
             return;
         }
-        let previous = self.selection.surface.replace(surface);
+        let previous = self.selection.enter(surface);
         self.pointer.pending_click = None;
         let item = self.surface_item_at(surface, point);
         match item {
@@ -287,7 +284,7 @@ impl App {
                 };
             }
         }
-        if let Some(previous) = previous.filter(|previous| *previous != surface) {
+        if let Some(previous) = previous {
             self.refresh_surface(ui, previous);
         }
         self.refresh_surface(ui, surface);
@@ -300,7 +297,7 @@ impl App {
         let Some(item) = self.checkbox_at(surface, point) else {
             return false;
         };
-        let previous = self.selection.surface.replace(surface);
+        let previous = self.selection.enter(surface);
         if self.surface_check_box_mode(surface) == CheckBoxMode::Independent {
             self.selection.toggle_checked(item);
             self.selection.select_only(surface, item);
@@ -308,7 +305,7 @@ impl App {
             self.selection.toggle(item);
             self.selection.focus(item);
         }
-        if let Some(previous) = previous.filter(|previous| *previous != surface) {
+        if let Some(previous) = previous {
             self.refresh_surface(ui, previous);
         }
         self.refresh_surface(ui, surface);
@@ -331,7 +328,7 @@ impl App {
     /// as a right-click does before its menu opens. Right-clicking an item
     /// that is already part of a multi-selection keeps the selection.
     pub(super) fn select_at(&mut self, ui: &mut Ui, surface: Surface, point: Point) {
-        let previous = self.selection.surface.replace(surface);
+        let previous = self.selection.enter(surface);
         let item = self.surface_item_at(surface, point);
         match item {
             Some(item) if !self.selection.is_selected(item) => {
@@ -340,7 +337,7 @@ impl App {
             Some(item) => self.selection.focused = Some(item),
             None => self.selection.deselect(),
         }
-        if let Some(previous) = previous.filter(|previous| *previous != surface) {
+        if let Some(previous) = previous {
             self.refresh_surface(ui, previous);
         }
         self.refresh_surface(ui, surface);

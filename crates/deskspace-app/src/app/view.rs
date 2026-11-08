@@ -669,7 +669,9 @@ impl App {
             return false;
         };
         self.view_cache.toggle_group(id, &name);
-        self.selection.surface = Some(Surface::Space(id));
+        if let Some(previous) = self.selection.enter(Surface::Space(id)) {
+            self.refresh_surface(ui, previous);
+        }
         self.refresh_space(ui, id);
         true
     }
