@@ -264,6 +264,15 @@ The gate's fixes are in section P, marked **[urgent] (v0.3.0)**: P14b and
 P14c, P35, P36, P37, and P46. B45, B47, and B48 (section B) join if they are
 ready in time. P32 does not; Z6 lists it as a known issue.
 
+Who takes what (split 2026-11-07, so juniors and interns can carry most of
+the gate):
+
+- **Juniors:** Z2, Z3, Z6, P14c, and the junior halves of P36 and P46
+  (P36a, P46a).
+- **Interns with a screen:** P14b, the Z5 batches, Z7a, and Z7c.
+- **A senior:** P36b and P46b, which land the junior halves with them.
+- **The maintainer:** what Z5's failures become, Z7b, and Z8.
+
 - [ ] **Z2. Bring the changelog up to date (docs).** **(junior)**
   - Read `git log v0.2.4..HEAD --format=%s` and, for each `feat:`, `fix:`,
     or `perf:` a user could notice, check that the "Unreleased" section of
@@ -291,6 +300,45 @@ ready in time. P32 does not; Z6 lists it as a known issue.
   first (section O). Rule 8 and section V's rules hold: a passing row is
   deleted, a failing one becomes a fix task here that joins the gate, unless
   the maintainer ships it as a known issue (then Z6 lists it).
+  - Split into batches, one intern and one sitting each, grouped by the
+    setup they share. A batch can start once the fixes its rows depend on
+    have landed; the rest of the gate need not wait. Rows for P36 and P46
+    join batches Z5g and Z5d when those fixes land.
+  - Rules for every batch:
+    - Run `./scripts/dev.ps1` for a scratch config, never the real one.
+      Never pass `-Fresh` without asking the maintainer first: it deletes the
+      scratch config and its stored files (`AGENTS.md`, Directive 1).
+    - Use throwaway folders and files only. Rows that recycle or delete
+      files go on a VM or a test account.
+    - Do the `(script)` and `(part script)` parts by hand until the O tasks
+      script them.
+    - Report each row as pass, fail, or not covered (this machine lacks the
+      setup), with the Windows version, the display scale, and what you saw.
+      Whoever commits the results follows section V's rules; a failure goes
+      to the maintainer.
+  - [ ] **Z5a (intern). Lens files.** A hand-made lens on a throwaway
+    folder, as section V's "First session" says: W3c, W3d, W3e, W3f, W3g,
+    W7, W25, W45, W46, P20.
+  - [ ] **Z5b (intern). Views and sorting.** W8, W9, W11, W12, W13, W15,
+    W16, W17, W18, W19, W21, W22, W23, W28, W33, W37 and W38, W39, W47, W48.
+    W18, W21, W22, and W33 need Explorer open beside the space.
+  - [ ] **Z5c (intern). Details and browsing.** W27, W30, W31, W32, W35,
+    W42, W43, W44.
+  - [ ] **Z5d (intern). Drops, drags, and the clipboard.** F1-F5, G5a, G5b,
+    G5c, Right-drop greying, L2, L5, L6, Drag and drop, Clipboard and
+    rename, P25, P37.
+  - [ ] **Z5e (intern). Undo.** U3, U4, U5, U6, U7, P10. After Z5d, whose
+    moves these undo.
+  - [ ] **Z5f (intern). The taken-over desktop.** Takeover on (Settings >
+    General) in the scratch config: I8, Desktop menu, Menu at the click, New
+    on the desktop, Layer rename, Desktop drop, Spaces above the layer. Turn
+    takeover off afterwards.
+  - [ ] **Z5g (intern). The debug window and startup.** `--debug`: X7, X8,
+    X9, Delete stress spaces; then P35, which holds the scratch config open.
+    X7 recycles files, so a VM or a test account.
+  - The install and update rows (E5-E7 and E10-E12, F-45 automatic install,
+    Update install failure) need an installed build, so they go with Z7a and
+    Z7c.
 
 - [ ] **Z6. Release notes and known issues (docs).** **(junior)** After: Z2.
   - At the top of the "Unreleased" section of `CHANGELOG.md`, two short
@@ -319,6 +367,18 @@ ready in time. P32 does not; Z6 lists it as a known issue.
     install updating to a v0.3.1 as the first real check; (c) a pre-release
     channel the updater can opt into (a setting and a second feed: new work,
     after v0.3.0). Recommended: (b) now, (c) as an idea in section Y.
+  - [ ] **Z7a (intern; clean VMs). Install, run, uninstall.** On clean
+    Windows 10 and 11 VMs, with the latest pre-release the maintainer has
+    published, every R12 check except the update itself: the zip's
+    contents, the extracted exe, the installer, the uninstall, and what
+    SmartScreen shows. Add the rows E5-E7, E12, and Update install failure
+    as far as they go without a newer release. Record the findings as R12
+    says. A first pass on `0.3.0-alpha.1` may start now, to find install
+    problems early; repeat it once the gate's fixes are in a pre-release.
+  - [ ] **Z7b (maintainer).** The **[needs decision]** above.
+  - [ ] **Z7c (intern; clean VM). The update.** After Z7b, the check it
+    chose. With (b): install v0.3.0 and keep the VM for v0.3.1. Also E10,
+    E11, and F-45 automatic install.
 
 - [ ] **Z8. Cut v0.3.0 (maintainer).** After: Z7. Follow `RELEASING.md`'s
   checklist, version `0.3.0`. Then, in one `docs:` commit: ROADMAP section 4
@@ -2313,10 +2373,18 @@ task goes into its tier, not at the end.
 
 A user can lose their layout, an attacker could reach every install, or the next release waits on it.
 
-- [ ] **P14b. Measure Explorer's fixed-view cells (no code).** **[urgent] (v0.3.0)** **[needs human]** Part
+- [ ] **P14b. Measure Explorer's fixed-view cells (no code).** **(intern)** **[urgent] (v0.3.0)** **[needs human]** Part
   of P14. In Explorer, at 100 % and 150 %, measure one cell's width and height, gap
   included, in Medium, Large, and Extra large icons. Record the numbers in P14c,
   with the date.
+  - How: open a folder with a dozen files, with Folder Options at its defaults (no
+    compact view). For each view, take a screenshot (Win+Shift+S) and read the
+    pixels in Paint, whose status bar shows the cursor's position. A cell's width
+    is the distance between the left edges of two items side by side; its height
+    is the distance between the tops of two rows. Change the scale in Settings >
+    System > Display, and sign out and in again if Windows asks.
+  - Record the Windows version beside the numbers: Windows 11 first, and Windows
+    10 too if you have it.
 
 - [ ] **P14c. Give the fixed icon views their own cell (fix).** **[urgent] (v0.3.0)** After: P14b. Part of
   P14. In `view_layout.rs`, beside `NORMAL_CELLS`, `pub fn fixed_view_cell(mode) ->
@@ -2460,6 +2528,25 @@ These are in the order we would take them. Each lands alone.
     from the Start menu. The spaces show and no second tray icon appears. A scratch
     `./scripts/dev.ps1` still runs beside it. Installing an update over a running
     instance still relaunches it (with R12).
+  - Split by person, landed as one commit. The pure half has no caller until the
+    senior's half, and clippy refuses code nothing calls, so both halves go into
+    one commit on the branch `fix/p36-one-instance`, which the senior makes with a
+    `Co-authored-by:` line for the junior.
+  - [ ] **P36a (junior; hands over to P36b).** In `win32/instance.rs`:
+    `instance_key(path: &Path) -> String` as above, and a written-out 64-bit
+    FNV-1a (offset basis `0xcbf2_9ce4_8422_2325`, prime `0x0100_0000_01b3`, over
+    the bytes of the key's UTF-16 units, low byte first), citing
+    https://datatracker.ietf.org/doc/html/draft-eastlake-fnv beside it. The key
+    is `DeskSpace-` followed by the hash as 16 lowercase hex digits. Tests: two
+    spellings of one path give one key, two paths give two, a scratch `--config`
+    differs from the real one, and the hash of empty input is the offset basis.
+    Also the `CONTEXT.md` line, a `CHANGELOG.md` "Fixed" line, and the section V
+    row. Leave the work uncommitted on the branch, or send a patch, and hand it to
+    the senior. Touch nothing `unsafe`.
+  - [ ] **P36b (senior).** The `Local\` mutex in `claim`, made as
+    `claim_single_instance` makes one; the controller window's title and
+    `signal`'s fallback; the hand-off loop in `bootstrap::run`; and dropping the
+    guard before `install_on_exit.install()`. Review P36a's half, then commit both.
 
 - [ ] **P46. Bring the shell's file-operation windows to the front (fix; Win32).** **[urgent] (v0.3.0)**
   A shell file operation that needs an answer can put its window behind the
@@ -2501,6 +2588,27 @@ These are in the order we would take them. Each lands alone.
     front and work. The same for a long copy's progress window, a move's error
     window, and a rename collision. With `--on-top` and the spaces above
     everything, the window still shows.
+  - Split by person and landed as one commit, as P36 is, on the branch
+    `fix/p46-shell-dialogs`.
+  - [ ] **P46a (junior; hands over to P46b).** In `win32/file_op.rs`: the
+    `OPERATION_STATUS_CLASS` constant with its reason and a link, and a pure
+    `is_our_operation_window(class: &str, window_pid: u32, our_pid: u32) -> bool`,
+    with tests: our class and our process id match; another process's window, or
+    another class, does not; the class compares exactly. Also the `CONTEXT.md`
+    and `ENGINEERING.md` lines, a `CHANGELOG.md` "Fixed" line, and the section V
+    row. Hand it over as P36a does. Touch nothing `unsafe`.
+  - [ ] **P46b (senior).** Arm and kill the timer around `PerformOperations` in
+    `transfer`, `delete`, `rename`, and `invoke_undelete`, and write the handler's
+    `EnumThreadWindows`, `GetClassNameW`, `GetWindowThreadProcessId`, and
+    `SetWindowPos` calls, as the task says. Review P46a's half, then commit both.
+    - Amended 2026-11-07, for the senior to confirm: the controller has no timer
+      ids of its own. Its `WM_TIMER` becomes `Event::Timer` for the app's `enum
+      Timer`, and `SetTimer` with an id already in use on that window replaces the
+      app's timer. So use a thread timer, `SetTimer(None, 0, ..)` with a
+      `TIMERPROC`: it has a system-chosen id and no window, and `DispatchMessage`
+      in the shell's own loop calls the procedure. Kill it by the id `SetTimer`
+      returns. This replaces "the timer's place among the controller's ids" in
+      the task's tests; say in the commit body which way you went.
 
 - [ ] **P32. Keep the keyboard hook alive through a stall (fix; key hook).** Windows
   removes a low-level hook, and does not tell it, when the hook's thread does not
