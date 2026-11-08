@@ -273,19 +273,6 @@ the gate):
 - **A senior:** P36b and P46b, which land the junior halves with them.
 - **The maintainer:** what Z5's failures become, Z7b, and Z8.
 
-- [ ] **Z2. Bring the changelog up to date (docs).** **(junior)**
-  - Read `git log v0.2.4..HEAD --format=%s` and, for each `feat:`, `fix:`,
-    or `perf:` a user could notice, check that the "Unreleased" section of
-    `CHANGELOG.md` says it. Missing on 2026-11-05, at least: the settings
-    window's cards, groups, collapsing groups, page scroll, a font per text
-    role, and the scrolling long name; the icon picker, and changing a
-    space's icon and name from its settings header; Details scrolling
-    sideways.
-  - Write in the file's own style: what a user sees, no task ids, no
-    internals. The debug window is a hidden flag, so it stays out.
-  - Done when: every user-visible change since v0.2.4 has a line, and the
-    commit body lists the subjects you judged invisible.
-
 - [ ] **Z3. Check the README against v0.3.0 (docs).** **(junior)** After: Z2.
   - Every user-visible line Z2 added has its place in `README.md` where it
     belongs (Controls, the views, lenses, Settings); every control in

@@ -6774,3 +6774,16 @@ until I5-I6 all land, so no partial build hides the desktop.
     their bytes. In `storage.rs`, `move_between` onto an existing file fails and
     changes nothing. The existing tests pass.
   - Ask a second senior to review: every dropped file takes this path.
+
+- [x] **Z2. Bring the changelog up to date (docs).** **(junior)**
+  - Read `git log v0.2.4..HEAD --format=%s` and, for each `feat:`, `fix:`,
+    or `perf:` a user could notice, check that the "Unreleased" section of
+    `CHANGELOG.md` says it. Missing on 2026-11-05, at least: the settings
+    window's cards, groups, collapsing groups, page scroll, a font per text
+    role, and the scrolling long name; the icon picker, and changing a
+    space's icon and name from its settings header; Details scrolling
+    sideways.
+  - Write in the file's own style: what a user sees, no task ids, no
+    internals. The debug window is a hidden flag, so it stays out.
+  - Done when: every user-visible change since v0.2.4 has a line, and the
+    commit body lists the subjects you judged invisible.

@@ -58,11 +58,12 @@ not yet been checked on screen, and the known issues below are fixed before
 ### Added
 
 - A redesigned settings window: each page lays its fields out on cards under
-  headings; the categories pane groups its pages under titles that fold; a
-  space lists its own pages before its look; a page taller than the window
-  scrolls; and the highlight fades in and out. A space's page shows its icon
-  and name in the header, where a double-click changes the icon or renames
-  the space, and a long name scrolls to show the rest.
+  headings; the categories pane groups its pages under titles that fold, and
+  each scope shows its kind's symbol (or the space's own icon); a space lists
+  its own pages before its look; a page taller than the window scrolls; and
+  the highlight fades in and out. A space's page shows its icon and name in
+  the header, where a double-click changes the icon or renames the space, and
+  a long name scrolls to show the rest.
 - Fonts: Settings chooses a font for each kind of text (titles, labels, and
   the rest), and the choice is saved.
 - An icon picker: while a space's title is renamed, its icon becomes a button
@@ -95,6 +96,14 @@ not yet been checked on screen, and the known issues below are fixed before
   deleting a lens never touches it. A lens keeps its sort rule as files come
   and go, has Open folder and Change folder… entries, and shows its folder's
   icon and name in its title bar.
+- A lens whose folder is gone says "Folder not available" instead of looking
+  empty; a very large folder stops at the screen edge and scrolls; Change
+  folder… to the folder a lens already shows keeps its items; and clearing a
+  typed title makes the title follow the folder again. A lens cannot point
+  into DeskSpace's storage.
+- Dragging an item from a lens onto a normal space moves the file there, as
+  from Explorer. Shift (keep in place) is refused over a lens, where it cannot
+  work.
 - Explorer's eight views for every space: Extra large, Large, Medium, and
   Small icons, List, Details, Tiles, and Content, from the View menu,
   Ctrl+Shift+1..8, or the status bar's buttons. Details has Explorer's
@@ -132,9 +141,11 @@ not yet been checked on screen, and the known issues below are fixed before
   seen. Settings > Animations offers it for Startup and Delete, with its own
   edge.
 
-- Undo and redo for layout changes, file moves, item removal, space creation
-  and deletion, copies, pastes, and new shortcuts. Ctrl+Z and Ctrl+Y act while
-  a space is current, and the space menu and the tray name the action ("Undo
+- Undo and redo for layout changes, file moves, item renames, item removal,
+  space creation and deletion, copies, pastes, new shortcuts, a space's view,
+  and a lens's sort, hidden files, folder, and creation. Undoing a delete
+  brings the file back from the Recycle Bin. Ctrl+Z and Ctrl+Y act while a
+  space is current, and the space menu and the tray name the action ("Undo
   Move 3 items"). Undo and redo last for the session. Shift+Delete and edits
   in the settings window are not undone.
 - Drawn shadows on Windows 11: DeskSpace draws each space's shadow, so it
@@ -157,6 +168,9 @@ not yet been checked on screen, and the known issues below are fixed before
   space that is capped scrolls.
 - Bounce plays slower, with fewer and softer rebounds.
 - Settings pages switch in one paint, without a flicker.
+- Names sort the way Windows does, so `file2` comes before `file10`.
+- Changing a space's view keeps its sort rule, direction, Keep sorted, and
+  status bar.
 - An older DeskSpace reads a settings or theme file written by a newer one,
   keeping the defaults for anything it does not know, instead of refusing it.
 
@@ -169,10 +183,25 @@ not yet been checked on screen, and the known issues below are fixed before
   An item shows a generic icon at once, and its own fills in, as in Explorer.
 - Renaming an item in a big lens, grouping one by Type for the first time, and
   opening the Shortcuts page on it no longer stall the spaces.
+- An undo that cannot finish puts back every file it already moved and says
+  so, instead of leaving a half-done change. Undoing an item rename in a lens
+  keeps it selected, and a file added to or removed from a lens's folder no
+  longer makes its undo entries stale.
+- Changing Sort by on a space that keeps sorted re-sorts it at once.
+- A Details or Content space stops at one whole row when resized; rows in the
+  order-placed views grow with a large label size instead of clipping; and
+  Fit to contents counts group headers and leaves out folded items.
+- After browsing into a lens's subfolder, the keys keep reaching the lens,
+  Change folder… returns to the lens's own folder, and a long title with
+  accents or emoji is cut cleanly.
+- A lens on an unreachable share no longer freezes every space while
+  DeskSpace checks the storage folder.
 - With the desktop takeover on: a taskbar that ended up under the desktop
   layer takes clicks again; Delete removes loose desktop icons; New › Folder
-  opens a visible rename box; and an icon updates when its file changes in
-  place, without a restart.
+  opens a visible rename box; an icon updates when its file changes in place,
+  without a restart; moving the Desktop folder (for example with OneDrive
+  backup or the Location tab) re-points the layer; and Ctrl+click and
+  Shift+click extend a selection on it.
 - A right drag shows DeskSpace's drag image rather than the shell's, and each
   entry in the right-drop menu is greyed when the source cannot do it.
 - The settings window's selection follows a change to the Windows accent
@@ -191,6 +220,15 @@ not yet been checked on screen, and the known issues below are fixed before
 - The settings and debug windows show DeskSpace's icon on the taskbar.
 - Spaces follow an accent color change at once.
 - Commands from an item's shell menu run where it was clicked.
+- Ctrl+C, Ctrl+Break, and Exit no longer hang when a folder is watched.
+- The Back button no longer folds or resizes a lens, and the mouse's back
+  button finishes a rename before going back; Alt with Home, End, PageUp, or
+  PageDown scrolls again.
+- Fly and Bounce leave no empty outlined shadow box as they cross the screen's
+  edge, and no bright line is left where a space was.
+- Icons load for paths written with forward slashes, and the icon picker
+  leaves out icons marked hidden or deprecated.
+- The hover tip goes when a rename starts.
 - `--new-space` starts DeskSpace when it is not running, and `--config`
   leaves the per-user registry entries alone.
 
