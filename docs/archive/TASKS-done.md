@@ -6807,3 +6807,24 @@ until I5-I6 all land, so no partial build hides the desktop.
   - `SECURITY.md` says "the in-app updater offers" a fix: true from v0.3.0 on,
     not for v0.2.x. Say so in a few words.
   - Change only these two files.
+
+- [x] **B45. Log how long the pickers take (platform).** Any contributor;
+  it adds log lines only.
+  - Why: the tasks after it need numbers from a real screen, and the next
+    slowdown should show in a `-v` log without a debugger.
+  - Copy `settings: switched page` in `win32/settings_window/nav.rs`: an
+    `Instant` before, and `tracing::debug!` with `elapsed_us` after. Add:
+    - `icon picker: opened`, timed from the top of `pick_icon` to just
+      before `dialog::run_modal`, with the number of cells;
+    - `icon picker: searched`, timed around the work in `fill_list`, with
+      the number of cells found;
+    - `icon picker: drew icons`, logged once when the picker closes (in
+      `pick_icon`, after the modal loop), with how many icons
+      `on_display_info` drew and their total time. Keep the two running
+      totals in `PickerState`.
+    - `app picker: filled`, timed around `fill_list` in
+      `win32/app_picker.rs`, with the row count.
+  - `debug`, never `info` (`ENGINEERING.md` section 3: noisy paths).
+  - Done when: the gates pass and a `./scripts/dev.ps1 -Release -Verbosity 1`
+    run shows each line. Say in the commit body that you saw them, or that a
+    person must.

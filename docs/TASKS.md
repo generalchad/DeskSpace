@@ -20,8 +20,8 @@ tag, or for log-only work meanwhile.
 are collected in section V instead of blocking:
 - section P's "Juniors and interns" list, the best place for a first task,
   ranked most severe first, so take one from the top;
-- section B's icon picker tasks, in order: B45 (log lines) first; then
-  B51, B53, and B55 from "Measure and trim the UI thread";
+- section B's icon picker tasks: B47 and B48 next, then B49; then B51, B53,
+  and B55 from "Measure and trim the UI thread";
 - section G (settings window polish): the pure half of G13;
 - section K (K10-K13, K15, K16, K18), each a pure move with rules that
   leave nothing to design; K18 first, since `undo.rs` is at the limit;
@@ -261,8 +261,8 @@ check that section against what lands after it. It is also R12's first
 install (Z7). The 0.3.0 section gathers the alpha sections into one.
 
 The gate's fixes are in section P, marked **[urgent] (v0.3.0)**: P14b and
-P14c, P35, P36, P37, and P46. B45, B47, and B48 (section B) join if they are
-ready in time. P32 does not; Z6 lists it as a known issue.
+P14c, P35, P36, P37, and P46. B45 has landed; B47 and B48 (section B) join if
+they are ready in time. P32 does not; Z6 lists it as a known issue.
 
 Who takes what (split 2026-11-07, so juniors and interns can carry most of
 the gate):
@@ -389,31 +389,10 @@ Rules for every task here:
    commit a test that asserts a time: CI machines vary.
 2. **Same results.** A faster path returns what the slow one did, in the same
    order; the existing tests are the spec, and none is deleted or loosened.
-3. **The picker's Win32 code is `unsafe`.** B45, B47, and B48 change
+3. **The picker's Win32 code is `unsafe`.** B47 and B48 change
    `win32/icon_picker.rs` but no `unsafe` block's reasoning. Keep every
    `with_state` borrow as short as it is now (no Win32 call inside one), and
    keep each `// SAFETY:` comment true. A senior reviews B47 and B48.
-
-- [ ] **B45. Log how long the pickers take (platform).** Any contributor;
-  it adds log lines only.
-  - Why: the tasks after it need numbers from a real screen, and the next
-    slowdown should show in a `-v` log without a debugger.
-  - Copy `settings: switched page` in `win32/settings_window/nav.rs`: an
-    `Instant` before, and `tracing::debug!` with `elapsed_us` after. Add:
-    - `icon picker: opened`, timed from the top of `pick_icon` to just
-      before `dialog::run_modal`, with the number of cells;
-    - `icon picker: searched`, timed around the work in `fill_list`, with
-      the number of cells found;
-    - `icon picker: drew icons`, logged once when the picker closes (in
-      `pick_icon`, after the modal loop), with how many icons
-      `on_display_info` drew and their total time. Keep the two running
-      totals in `PickerState`.
-    - `app picker: filled`, timed around `fill_list` in
-      `win32/app_picker.rs`, with the row count.
-  - `debug`, never `info` (`ENGINEERING.md` section 3: noisy paths).
-  - Done when: the gates pass and a `./scripts/dev.ps1 -Release -Verbosity 1`
-    run shows each line. Say in the commit body that you saw them, or that a
-    person must.
 
 - [ ] **B47. Keep the search index while the picker is open (platform).**
   After: B46. Senior review (rule 3).

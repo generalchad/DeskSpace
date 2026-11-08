@@ -9,6 +9,8 @@
 //! is drawn (`LVN_GETDISPINFOW`), from the catalog's cached icon or, when the
 //! catalog was listed without icons, rendered then.
 
+use std::time::Instant;
+
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{DeleteObject, FillRect, HDC, HGDIOBJ};
 use windows::Win32::UI::Controls::{
@@ -304,6 +306,7 @@ unsafe fn fill_list(window: HWND) {
     // are sent after it, with `filling` set so the check notifications they
     // raise are ignored.
     unsafe {
+        let started = Instant::now();
         let Some((list, rows)) = with_state(window, |state| {
             state.filling = true;
             let rows: Vec<(usize, String, bool)> = state
@@ -319,6 +322,7 @@ unsafe fn fill_list(window: HWND) {
         .flatten() else {
             return;
         };
+        let count = rows.len();
         SendMessageW(list, LVM_DELETEALLITEMS, None, None);
         for (row, (index, name, checked)) in rows.into_iter().enumerate() {
             let mut text = wide(&name);
@@ -355,6 +359,11 @@ unsafe fn fill_list(window: HWND) {
             Some(LPARAM(LVSCW_AUTOSIZE_USEHEADER as isize)),
         );
         with_state(window, |state| state.filling = false);
+        tracing::debug!(
+            rows = count,
+            elapsed_us = started.elapsed().as_micros(),
+            "app picker: filled"
+        );
     }
 }
 

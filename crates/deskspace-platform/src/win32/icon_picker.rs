@@ -2,6 +2,8 @@
 //! dropdown, a search box, and Automatic / No icon / OK. Modal, like the
 //! installed-apps picker (`app_picker.rs`), whose structure it copies.
 
+use std::time::Instant;
+
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{DeleteObject, FillRect, HDC, HGDIOBJ};
 use windows::Win32::UI::Controls::{
@@ -98,6 +100,10 @@ struct PickerState<'a> {
     cells: Vec<Cell>,
     images: HIMAGELIST,
     glyphs: GlyphCache,
+    /// How many cell icons were drawn while the picker was open, and their
+    /// total draw time.
+    icons_drawn: usize,
+    icon_draw_micros: u128,
     search: Option<HWND>,
     list: Option<HWND>,
     note: Option<HWND>,
@@ -127,6 +133,7 @@ pub(crate) unsafe fn pick_icon(
     // SAFETY: Win32 window creation on the UI thread. `state` is owned here
     // and dropped after the loop; the window points at it only while alive.
     unsafe {
+        let opened = Instant::now();
         if ensure_class().is_err() || request.sets.is_empty() {
             return None;
         }
@@ -143,6 +150,8 @@ pub(crate) unsafe fn pick_icon(
             cells,
             images: ImageList_Create(icon_px, icon_px, ILC_COLOR32, 64, 64),
             glyphs: GlyphCache::new(),
+            icons_drawn: 0,
+            icon_draw_micros: 0,
             chrome,
             search: None,
             list: None,
@@ -171,7 +180,17 @@ pub(crate) unsafe fn pick_icon(
         if let Some(search) = state.search {
             let _ = SetFocus(Some(search));
         }
+        tracing::debug!(
+            cells = state.cells.len(),
+            elapsed_us = opened.elapsed().as_micros(),
+            "icon picker: opened"
+        );
         dialog::run_modal(owner, window);
+        tracing::debug!(
+            icons = state.icons_drawn,
+            elapsed_us = state.icon_draw_micros,
+            "icon picker: drew icons"
+        );
         state.result.take()
     }
 }
@@ -412,6 +431,7 @@ unsafe fn fill_list(window: HWND) {
     // SAFETY: the cells are built under a short borrow; the list and note
     // messages are sent after it.
     unsafe {
+        let started = Instant::now();
         let Some((list, note_text, count)) = with_state(window, |state| {
             let query = state
                 .search
@@ -449,6 +469,11 @@ unsafe fn fill_list(window: HWND) {
             let _ = SetWindowTextW(note, PCWSTR(text.as_ptr()));
         }
         set_ok_enabled(window);
+        tracing::debug!(
+            cells = count,
+            elapsed_us = started.elapsed().as_micros(),
+            "icon picker: searched"
+        );
     }
 }
 
@@ -539,6 +564,7 @@ unsafe fn on_display_info(window: HWND, info: &mut NMLVDISPINFOW) {
             let image = match cell.image {
                 Some(image) => image,
                 None => {
+                    let draw = Instant::now();
                     let key = format!("{prefix}:{}", cell.name);
                     let name = cell.name.clone();
                     let icon: Option<Icon> = with_state(window, |state| {
@@ -559,6 +585,8 @@ unsafe fn on_display_info(window: HWND, info: &mut NMLVDISPINFOW) {
                         if let Some(cell) = state.cells.get_mut(index) {
                             cell.image = Some(image);
                         }
+                        state.icons_drawn += 1;
+                        state.icon_draw_micros += draw.elapsed().as_micros();
                     });
                     image
                 }
