@@ -25,7 +25,8 @@ are collected in section V instead of blocking:
 - section G (settings window polish): the pure half of G13;
 - section K (K10-K13, K15, K16, K18), each a pure move with rules that
   leave nothing to design; K18 first, since `undo.rs` is at the limit;
-- section T: T24 (needs nothing now), T41a, and then T42;
+- section T: T24 (needs nothing now), T41a, and then T42; once T41 has
+  landed, T25-T31 in order, then T44 and T46-T48;
 - O5 and the O6-O9 harness abilities; Q8a-Q8c, comments only;
 - anything else not marked **[needs decision]**, "still to design", or in
   section D.
@@ -1460,7 +1461,7 @@ Rules for these, on top of section T's:
     `BurnField::new` builds today) with its tests. `BurnField` then holds a
     `RisingField`. Before moving anything, pin three of today's field values
     in a test, so the move provably changes no burn. The branch's
-    `random(seed, index)` waits for its first caller (T28 or T29).
+    `random(seed, index)` waits for its first caller, T28.
   - [ ] **T41b (senior review; Win32). One layered window for every overlay.**
     Pull the window, its DIB section, `present` (today's `UpdateLayeredWindow`
     call), `follow`, and the z-order helpers out of `FlameOverlay` into a new
@@ -1495,8 +1496,10 @@ Rules for these, on top of section T's:
   - Done when: the sheets are written, and the commit body describes them.
     Commit no PNG.
 
-- [ ] **T44. Burn's smoke (platform).** **[needs human]** After: T41, T42,
-  and T31.
+- [ ] **T44. Burn's smoke (platform).** **(junior, senior review)**
+  **[needs human]** After: T41, T42, and T31.
+  - The senior review is for the port: say in the commit body what was kept
+    from the branch's version and what was left, and why.
   - Pure, in `render/burn_smoke.rs`; read the branch's version first and
     keep what worked (its emission ramp, so no smoke is left when a burn
     ends; its columns rather than a fog).
@@ -1537,8 +1540,8 @@ Rules for these, on top of section T's:
   the current, and the hand-back without a frame's gap. Its check is the
   branch's T22 row, rewritten for `main`.
 
-- [ ] **T46. A glow around the flames, on the CPU (platform).** **[needs
-  human]** After: T29 and B53.
+- [ ] **T46. A glow around the flames, on the CPU (platform).** **(junior)**
+  **[needs human]** After: T29 and B53.
   - Why: T32 plans bloom on the GPU, and Windows 10 and the accent path will
     never have it. A cheap glow makes the CPU flames read as light, not paint.
   - In `flames::paint`, after the tongues: a quarter-size copy of the flame
@@ -1559,10 +1562,16 @@ Rules for these, on top of section T's:
   - Each spark is a short streak along its motion, as long as it moves in a
     sixtieth of a second, times the scale. Its colour runs down `FIRE_RAMP`
     as it rises, white-yellow to deep red, and its alpha follows. Each tongue
-    throws 0 to 2 sparks, chosen by `noise::random(seed, col)`, and a few
-    flare once on the way up.
+    throws 0 to 2 sparks, chosen by `noise::random(seed, col)`.
+  - A spark flares when `noise::random(seed ^ FLARE_SALT, spark)` is below
+    `FLARE_SHARE` (0.15). It flares once, at the height that same value
+    picks along its climb: its brightness doubles, capped at 255, for
+    `FLARE_PX` (6 px times the scale) of the climb. `FLARE_SALT` is a named
+    constant. These numbers are a first guess (2026-11-07); tune them on
+    T42's sheet and say so in the commit body.
   - Tests: the same inputs give the same pixels; a spark is cooler the higher
-    it is; pixels stay premultiplied and inside the buffer.
+    it is; a flaring spark is brighter at its flare than just before it;
+    pixels stay premultiplied and inside the buffer.
   - **[needs human]** check, appended to the Burn row: sparks streak up,
     cooling from yellow to red as they fade; no squares.
 
@@ -1594,6 +1603,13 @@ ash, and looks the same at every DPI. One commit each, in order.
   task below names the branch's types, read `main`'s after T41:
   `EffectOverlay` and `Art::Burn` are `FlameOverlay` (the burn's state, in
   `win32/flame_overlay.rs`), and `Margins` is what `flames::margins` returns.
+- **Who.** Tiers follow section P's "Who takes what": **(junior)** is pure
+  pixel or model code whose design the task states, proven mostly by its
+  tests, with no `unsafe`, thread, hook, or user file. **(junior, senior
+  review)** is the same, with an algorithm, a budget, or a port that a
+  senior reads before it lands. Calls the tasks add in `win32/` use safe
+  functions that are already there; one that needs `unsafe` is a stop and
+  ask (rule 4).
 - **Units.** "px" means pixels at 96 DPI. From T26 on, multiply every px
   constant by the window's scale (`dpi as f32 / 96.0`).
 - **Reversible.** Every frame stays a pure function of the progress, the
@@ -1606,7 +1622,7 @@ ash, and looks the same at every DPI. One commit each, in order.
   keep the overlay's drawing order: smoke, then flames, then ash.
 
 - [ ] **T24. Each effect sets its own pace (core, app, platform).**
-  **[needs human]**
+  **(junior)** **[needs human]**
   - Why: D12 (amended 2026-10-22). At the default 250 ms, Burn is over
     before its flames read. Smoothstep, the curve every effect but Bounce
     uses (`smoothstep` in `render/transition.rs`), slows at both ends, while
@@ -1656,7 +1672,7 @@ ash, and looks the same at every DPI. One commit each, in order.
     fast and settles; every other effect looks and times as before.
 
 - [ ] **T25. One seeded Burn field per play (platform).**
-  **[needs human]**
+  **(junior)** **[needs human]**
   - Why: every burn has the same shape, because the noise has no seed.
     At exit, same-sized spaces burn identically one after another. The
     painter (`Effects::burn` in `render/d2d/effects.rs`) and the overlay
@@ -1689,7 +1705,7 @@ ash, and looks the same at every DPI. One commit each, in order.
     along different edges; one space burns differently each time it is
     hidden; reversing mid-burn still un-burns along the same edge.
 
-- [ ] **T26. Burn scales with DPI (platform).** **[needs human]**
+- [ ] **T26. Burn scales with DPI (platform).** **(junior)** **[needs human]**
   - Why: `burn::CELL` (3), the overlay `Margins`, and the flame sizes
     (`HEIGHT_RANGE`, 18 to 60) are physical pixels. At 150 % the flames
     are two-thirds the size and the edge looks finer.
@@ -1714,7 +1730,7 @@ ash, and looks the same at every DPI. One commit each, in order.
     the same as at 100 %, only bigger: the edge is as ragged relative to
     the space, and the flames are as tall relative to the title bar.
 
-- [ ] **T27. The field owns its bands (platform; refactor).**
+- [ ] **T27. The field owns its bands (platform; refactor).** **(junior)**
   - Why: `GLOW`, `CHAR`, and `SCORCH` are global field units, so their
     width in pixels depends on the noise and on the space's height. T28
     gives each field its own bands; this task moves the code first, with
@@ -1732,10 +1748,14 @@ ash, and looks the same at every DPI. One commit each, in order.
     unchanged in meaning. No new behavior, so no on-screen check; say so
     in the commit body.
 
-- [ ] **T28. Burn spreads like fire (platform).** **[needs human]**
+- [ ] **T28. Burn spreads like fire (platform).** **(junior, senior review)**
+  **[needs human]** The senior reads the solve and the timing before it lands.
   - Why: a threshold sweeping through noise moves at one speed along a
     blobby edge. Fire catches unevenly, climbs faster than it spreads,
     runs up in fingers, and burns holes that join the main front.
+  - `render/noise.rs`: port the branch's `random(seed, index)` with its
+    tests. T41a left it for this task, its first caller; T29-T31 and T47
+    use it too.
   - `render/burn.rs`: a cell's value becomes when the fire reaches it,
     scaled to 0 to 1. Leave the stages, `cell_pixels`, and the painter as
     they are.
@@ -1782,7 +1802,7 @@ ash, and looks the same at every DPI. One commit each, in order.
     on small and large spaces; Detail still coarsens it; startup and
     exit with many spaces do not stutter.
 
-- [ ] **T29. Turbulent flames (platform).** **[needs human]**
+- [ ] **T29. Turbulent flames (platform).** **(junior)** **[needs human]**
   - Why: today's flames are identical teardrops every `SPACING` cells,
     swaying on one sine, and overlapping fire keeps the brighter channel
     (`brightest`) instead of adding up.
@@ -1811,7 +1831,7 @@ ash, and looks the same at every DPI. One commit each, in order.
     neighbours differ in size; where flames cross they glow brighter; no
     regular comb of tongues; still no box around them.
 
-- [ ] **T30. A glow that lives (platform).** **[needs human]**
+- [ ] **T30. A glow that lives (platform).** **(junior)** **[needs human]**
   - Why: the glowing edge is a fixed colour ramp, the char is flat, and
     the paper ahead gets no light from the fire.
   - Clock: `frame` (`render/transition.rs`) takes `time: f32`, the
@@ -1846,7 +1866,7 @@ ash, and looks the same at every DPI. One commit each, in order.
     the edge flickers with the flames; at rest after a show, no tint is
     left on the space.
 
-- [ ] **T31. Ash (platform).** **[needs human]**
+- [ ] **T31. Ash (platform).** **(junior)** **[needs human]**
   - Why: burned-away paper just disappears. Black flakes lifting off
     the edge sell the fire.
   - Pure, in a new `render/ash.rs`:
