@@ -40,7 +40,9 @@ not a finished product yet.
   single space without changing the rest. Settings > Fonts (Spaces and
   Windows) choose the family, size, and weight of each kind of text.
 - **Control center.** A tray icon, right-click menus, keyboard shortcuts, and a
-  settings window where every option can be changed and previewed live.
+  settings window where every option can be changed and previewed live. Its
+  scopes pane lists Global and every space, showing each space's kind as a
+  symbol or its own icon.
 
 ## Install
 
@@ -131,17 +133,22 @@ help inspect the look and the desktop layer.
   files or shortcuts on a lens puts them in its folder (Explorer asks before
   replacing a file, and "Copy here" copies); deleting an item from a lens
   sends its file to the Recycle Bin. Deleting a lens leaves the folder and
-  its files where they are. Double-click a folder in a lens to show it in
+  its files where they are. A lens whose folder is gone says so, and a very
+  large folder stops at the screen edge and scrolls. Change folder… to the
+  folder a lens already shows keeps its items, and a lens cannot point into
+  DeskSpace's storage. Double-click a folder in a lens to show it in
   place; the title names the folders below the lens's own, and a restart
   or "Change folder…" returns to the lens's folder. Right-click a lens to
   open the folder it shows, change its folder, or choose its order and
-  show hidden files. Hover a lens's title to see the folder it shows. Its
+  show hidden files. New lenses start with the defaults on Settings >
+  Lenses. Hover a lens's title to see the folder it shows. Its
   Lens page in Settings also filters it: "Show
   only" (`*.pdf; *.docx`) lists only matching files, and "Hide" leaves out
   matching files and folders.
 - "Sort by" (in a space's menu) is Explorer's menu: Name, Date modified,
   Type, Size, and Date created, then Ascending or Descending, then Folders
-  first and Keep sorted. A normal space sorts once, or holds the order as
+  first and Keep sorted. Names sort the way Windows does, so `file2` comes
+  before `file10`. A normal space sorts once, or holds the order as
   items come and go once Keep sorted is on; a lens always holds it.
   "Folders first" stands in both directions.
 - "Group by" (in a space's menu) groups its items under headers, as Explorer's
@@ -149,6 +156,12 @@ help inspect the look and the desktop layer.
   fold or open its group.
 - View ▸ "Compact view" tightens the rows of Small icons, List, Details, Tiles,
   and Content, as Explorer's does.
+- View ▸ "File name extensions" shows or hides extensions for that space;
+  Settings > View also offers Automatic, Show, or Hide.
+- A space can show Explorer's status bar: the item and selection counts, the
+  selected files' size, and two view buttons. Settings > View toggles it, and
+  it is on for new lenses. Changing a space's view keeps its sort rule,
+  direction, Keep sorted, and status bar.
 - In Details, right-click the header to choose which columns show, drag a
   divider to resize a column, and drag a header to reorder it (Esc cancels
   either; Name stays first). Click a header to sort by it.
@@ -175,8 +188,11 @@ help inspect the look and the desktop layer.
   Windows 11 the one "Show more options" opens) with New space, New lens,
   DeskSpace settings, and hide/show spaces on top.
 - `Ctrl+X` / `Ctrl+C` / `Ctrl+V` cut, copy, and paste items, and `Ctrl+Z` /
-  `Ctrl+Y` undo and redo while a space is current. `Delete` sends the
-  selection to the Recycle Bin (Shift+Delete removes it for good).
+  `Ctrl+Y` undo and redo while a space is current. Undo covers layout and
+  view changes, file moves and renames, deletes (restored from the Recycle
+  Bin), copies, pastes, new shortcuts, and a lens's sort, hidden files,
+  folder, and creation. `Delete` sends the selection to the Recycle Bin
+  (Shift+Delete removes it for good).
 - `F2` renames the selected item, or the current space's title when no item is
   selected. On a lens, the title is a nickname; clear it and press `Enter` to
   show the folder's name again. While a space's title is being renamed, click
@@ -196,6 +212,8 @@ help inspect the look and the desktop layer.
   the parent folder, never above the lens's own folder.
 - Drag files from Explorer or the desktop onto a space to move them into it;
   hold Shift to leave them where they are, or Alt to add a shortcut instead.
+  Over a lens, Shift (keep in place) is refused, and dragging an item from a
+  lens onto a normal space moves its file there.
   A right drag onto a space opens a menu to move or copy the files, create
   shortcuts to them, or just show them; a right drag out of a space to
   Explorer or the desktop shows the shell's own menu.

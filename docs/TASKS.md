@@ -273,15 +273,6 @@ the gate):
 - **A senior:** P36b and P46b, which land the junior halves with them.
 - **The maintainer:** what Z5's failures become, Z7b, and Z8.
 
-- [ ] **Z3. Check the README against v0.3.0 (docs).** **(junior)** After: Z2.
-  - Every user-visible line Z2 added has its place in `README.md` where it
-    belongs (Controls, the views, lenses, Settings); every control in
-    README still works as it says (compare with `CONTEXT.md` section 8 and
-    the `ENGINEERING.md` Keys table, which are the sources).
-  - `SECURITY.md` says "the in-app updater offers" a fix: true from v0.3.0 on,
-    not for v0.2.x. Say so in a few words.
-  - Change only these two files.
-
 - [ ] **Z5. Pass the marked rows (maintainer).** **[needs human]** After: Z4
   and the gate's fixes. R7, limited to the `(v0.3)` rows, scripted ones
   first (section O). Rule 8 and section V's rules hold: a passing row is

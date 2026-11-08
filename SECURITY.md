@@ -3,7 +3,8 @@
 ## Supported versions
 
 DeskSpace is pre-1.0. Only the latest release receives security fixes; fixes
-ship as a new patch version, and the in-app updater offers it.
+ship as a new patch version. From v0.3.0 on, the in-app updater offers it;
+older versions must be updated by hand.
 
 | Version | Supported |
 |---------|-----------|

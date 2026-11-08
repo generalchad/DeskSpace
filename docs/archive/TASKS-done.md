@@ -6798,3 +6798,12 @@ until I5-I6 all land, so no partial build hides the desktop.
       stop working until every space is left (P32); unsigned builds trigger
       SmartScreen (R10); and any row Z5 ships as a known issue.
   - These become the release page's notes (`RELEASING.md` checklist, step 9).
+
+- [x] **Z3. Check the README against v0.3.0 (docs).** **(junior)** After: Z2.
+  - Every user-visible line Z2 added has its place in `README.md` where it
+    belongs (Controls, the views, lenses, Settings); every control in
+    README still works as it says (compare with `CONTEXT.md` section 8 and
+    the `ENGINEERING.md` Keys table, which are the sources).
+  - `SECURITY.md` says "the in-app updater offers" a fix: true from v0.3.0 on,
+    not for v0.2.x. Say so in a few words.
+  - Change only these two files.
