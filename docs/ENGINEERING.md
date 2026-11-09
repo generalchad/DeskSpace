@@ -81,7 +81,7 @@ Four rules come first, because the rest follow from them:
   constants instead of magic numbers, one concept per module. When a file
   passes about 800 lines of non-test code, split it along its existing seams
   (`TASKS.md` section K) rather than adding to it. The limit is enforced:
-  `crates/deskspace-app/tests/file_size.rs` fails on a file past it unless
+  `crates/deskspace-app/tests/guards/file_size.rs` fails on a file past it unless
   the file is in its `ALLOWED` table with a reason, and with its task once
   one is written.
 - **Maintainable.** One source of truth per fact. Tables drive menus
@@ -91,7 +91,7 @@ Four rules come first, because the rest follow from them:
   `HotkeyAction`), so the compiler or a guard test points at every place still
   to wire up; the `TASKS.md` recipes list them. Delete dead code and branches
   instead of keeping them "just in case"; the compiler finds unused private
-  items, and `crates/deskspace-app/tests/dead_pub.rs` a library's unused
+  items, and `crates/deskspace-app/tests/guards/dead_pub.rs` a library's unused
   `pub` ones. Keep pure logic (core,
   `settings/`, `scene.rs`, helpers such as `next_in_direction`) apart from
   Win32 calls so it can be unit-tested. When code and docs disagree, fix the
@@ -185,7 +185,7 @@ https://stackoverflow.blog/2021/12/23/best-practices-for-writing-code-comments/)
 10. Keep task ids (`W3c`, `T12`) and dates out of new comments: say the why
     in the comment and put the id in the commit message. Ids are decoded
     only through `TASKS.md`, its archive, and git history, and they age as
-    tasks finish. `crates/deskspace-app/tests/comment_ids.rs` refuses one
+    tasks finish. `crates/deskspace-app/tests/guards/comment_ids.rs` refuses one
     in a comment.
 
 Rust specifics: `///` doc comments are expected on non-obvious public library
@@ -293,7 +293,7 @@ not own it links to it instead of copying it.
   is fine; a number every commit must update is not.
 - A rule a test can check gets the test, and the doc points at it.
 - Change or delete a sentence in the same commit as the code it describes.
-  When in doubt, delete it. `crates/deskspace-app/tests/doc_refs.rs` fails
+  When in doubt, delete it. `crates/deskspace-app/tests/guards/doc_refs.rs` fails
   on a backticked path or Rust name, or a relative link, that the docs
   describing the code (not the plans) no longer match.
 - Short sentences, one parenthetical at most, plain words.

@@ -11,7 +11,8 @@
 
 use std::collections::BTreeSet;
 use std::fs;
-use std::path::{Path, PathBuf};
+
+use super::support::{relative, rust_files, workspace_root};
 
 /// The files that define ids, read for their section letters.
 const ID_SOURCES: &[&str] = &[
@@ -25,8 +26,8 @@ const ALLOWED_LETTERS: &[char] = &['D', 'F'];
 
 /// The guards that describe the id format and quote ids as examples.
 const EXEMPT: &[&str] = &[
-    "deskspace-app/tests/task_ids.rs",
-    "deskspace-app/tests/comment_ids.rs",
+    "deskspace-app/tests/guards/task_ids.rs",
+    "deskspace-app/tests/guards/comment_ids.rs",
 ];
 
 #[test]
@@ -35,11 +36,7 @@ fn no_comment_carries_a_task_id() {
     let crates = workspace_root().join("crates");
     let mut found = Vec::new();
     for path in rust_files(&crates) {
-        let relative = path
-            .strip_prefix(&crates)
-            .expect("a file found under crates/")
-            .to_string_lossy()
-            .replace('\\', "/");
+        let relative = relative(&crates, &path);
         if EXEMPT.contains(&relative.as_str()) {
             continue;
         }
@@ -153,32 +150,4 @@ fn task_ids(comment: &str, letters: &BTreeSet<char>) -> Vec<String> {
         })
         .map(str::to_string)
         .collect()
-}
-
-fn workspace_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("the app crate lives under crates/ in the workspace")
-        .to_path_buf()
-}
-
-fn rust_files(dir: &Path) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    let mut pending = vec![dir.to_path_buf()];
-    while let Some(dir) = pending.pop() {
-        let entries = fs::read_dir(&dir)
-            .unwrap_or_else(|error| panic!("cannot read {}: {error}", dir.display()));
-        for entry in entries {
-            let entry = entry.unwrap_or_else(|error| panic!("cannot read an entry: {error}"));
-            let path = entry.path();
-            if path.is_dir() {
-                pending.push(path);
-            } else if path.extension().is_some_and(|extension| extension == "rs") {
-                files.push(path);
-            }
-        }
-    }
-    files.sort();
-    files
 }

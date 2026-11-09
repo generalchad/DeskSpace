@@ -7080,7 +7080,7 @@ section V.
 One line per task finished since 2026-11-09: its id and title. The commit
 that finished it says the rest (`git log --grep '(<id>)'`). No new task
 takes an id listed here or used anywhere above
-(`crates/deskspace-app/tests/task_ids.rs`).
+(`crates/deskspace-app/tests/guards/task_ids.rs`).
 
 - **P43.** Let clippy keep closures that only call a method out (lint).
 - **Q8a.** Decode the task ids left in comments: core, config, and update.

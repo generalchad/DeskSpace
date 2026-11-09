@@ -10,7 +10,8 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+
+use super::support::workspace_root;
 
 /// Ids that two tasks shared before this test existed (2026-11-09): an old
 /// section G and N were archived and their letters reused. They stay as
@@ -170,12 +171,4 @@ fn expand_range(first: &str, last: &str) -> Vec<String> {
         }
         _ => vec![first.to_string()],
     }
-}
-
-fn workspace_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("the app crate lives under crates/ in the workspace")
-        .to_path_buf()
 }

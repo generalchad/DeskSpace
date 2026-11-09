@@ -11,7 +11,8 @@
 //! cannot outlive the debt.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+
+use super::support::{relative, rust_files, workspace_root};
 
 /// The guideline's trigger, in non-test lines (`ENGINEERING.md` section 2).
 const LIMIT: usize = 800;
@@ -133,45 +134,6 @@ fn every_source_file_stays_within_the_size_guideline() {
             allowed.path
         );
     }
-}
-
-fn workspace_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("the app crate lives under crates/ in the workspace")
-        .to_path_buf()
-}
-
-fn rust_files(dir: &Path) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    let mut pending = vec![dir.to_path_buf()];
-    while let Some(dir) = pending.pop() {
-        let entries = fs::read_dir(&dir)
-            .unwrap_or_else(|error| panic!("cannot read {}: {error}", dir.display()));
-        for entry in entries {
-            let entry = entry.unwrap_or_else(|error| panic!("cannot read an entry: {error}"));
-            let path = entry.path();
-            if entry
-                .file_type()
-                .unwrap_or_else(|error| panic!("cannot read {}: {error}", path.display()))
-                .is_dir()
-            {
-                pending.push(path);
-            } else if path.extension().is_some_and(|extension| extension == "rs") {
-                files.push(path);
-            }
-        }
-    }
-    files.sort();
-    files
-}
-
-fn relative(root: &Path, path: &Path) -> String {
-    path.strip_prefix(root)
-        .expect("a file found under the walked root")
-        .to_string_lossy()
-        .replace('\\', "/")
 }
 
 /// Lines above the file's test module, or all of them when it has none.

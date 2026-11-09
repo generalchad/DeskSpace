@@ -11,7 +11,9 @@
 
 use std::collections::HashSet;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+
+use super::support::{relative, workspace_root};
 
 /// The docs checked whole.
 const DOCS: &[&str] = &[
@@ -64,7 +66,7 @@ const EXTERNAL: &[(&str, &str)] = &[
     ("locking_mode", "an input of the rust MCP server's tools"),
 ];
 
-const THIS_FILE: &str = "crates/deskspace-app/tests/doc_refs.rs";
+const THIS_FILE: &str = "crates/deskspace-app/tests/guards/doc_refs.rs";
 
 /// Directories never walked: build output, git, and agent worktrees.
 const SKIPPED_DIRS: &[&str] = &["target", ".git", "worktrees", "node_modules"];
@@ -403,19 +405,4 @@ fn slug(heading: &str) -> String {
 fn words(text: &str) -> impl Iterator<Item = &str> {
     text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
         .filter(|word| !word.is_empty())
-}
-
-fn relative(root: &Path, path: &Path) -> String {
-    path.strip_prefix(root)
-        .expect("a path found under the root")
-        .to_string_lossy()
-        .replace('\\', "/")
-}
-
-fn workspace_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("the app crate lives under crates/ in the workspace")
-        .to_path_buf()
 }

@@ -66,7 +66,7 @@ on-screen checks are in section V.
    (`refactor: split d2d.rs (K2)`). In the same commit, delete the task here
    and add its id and title as one line under "Retired ids" at the end of
    `archive/TASKS-done.md`. A new task takes an id that no task here and no
-   line in the archive uses; `crates/deskspace-app/tests/task_ids.rs` fails
+   line in the archive uses; `crates/deskspace-app/tests/guards/task_ids.rs` fails
    on a reused one.
 8. **[needs human]** tasks need an on-screen check you cannot do. Implement,
    list exactly what to check in the commit body, add a row to section V
@@ -139,8 +139,8 @@ Where each kind of code lives. Paths are under `crates/`.
 | Icon-set glyphs (SVG to pixels) | `deskspace-platform/src/render/glyph.rs` (the document), `render/d2d/glyph.rs` (the rasterizer), `win32/glyphs.rs` (the cache) |
 | Takeover: hide icons, watchdog | `deskspace-platform/src/win32/{desktop_icons,watchdog}.rs` |
 | CI and release | `.github/workflows/{ci,release,icons}.yml`, `crates/deskspace-app/build.rs` |
-| The file-size limit and its exceptions | `deskspace-app/tests/file_size.rs` (`ALLOWED`) |
-| The other repository guards: task ids, ids in comments, unused pub items, doc references | `deskspace-app/tests/{task_ids,comment_ids,dead_pub,doc_refs}.rs` |
+| The file-size limit and its exceptions | `deskspace-app/tests/guards/file_size.rs` (`ALLOWED`) |
+| The other repository guards: task ids, ids in comments, unused pub items, doc references | `deskspace-app/tests/guards/{task_ids,comment_ids,dead_pub,doc_refs}.rs` |
 
 Ids (`WM_APP` messages, timers, menu ids, `field::` ids): never renumber
 one. "Next free" in the recipes means the highest value in that list plus
@@ -1699,7 +1699,7 @@ order, after B11 and B12 (the strip adds scene and paint arguments).
 grows past it, add a K task naming what stays in `mod.rs` and what moves where
 (the archived K tasks are the model). Each K task is a **pure move**: no
 renames, no logic changes, no signature changes beyond visibility. The limit is
-enforced by `crates/deskspace-app/tests/file_size.rs`; its `ALLOWED` table lists
+enforced by `crates/deskspace-app/tests/guards/file_size.rs`; its `ALLOWED` table lists
 every file still over it, with the reason it is tolerated, and its K task once
 one is written.
 
@@ -1716,7 +1716,7 @@ Rules for every K task:
 - Commit as `refactor: split <file> (Kn)`. If a function does not clearly
   belong to one group, leave it in `mod.rs`.
 - Delete the split file's entry from `ALLOWED` in
-  `crates/deskspace-app/tests/file_size.rs`; that test fails on a stale one.
+  `crates/deskspace-app/tests/guards/file_size.rs`; that test fails on a stale one.
 - Done when: fmt, clippy, and tests pass with the same test count;
   `git diff --stat` shows mostly moved lines; and the file map above names
   the new files.
