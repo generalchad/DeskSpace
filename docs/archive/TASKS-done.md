@@ -6915,3 +6915,113 @@ until I5-I6 all land, so no partial build hides the desktop.
     (the maintainer chose that ticks stay with their space).
   - Tests cover the rule and the Ctrl+click sequence. Section V's P50 row is
     the on-screen check.
+
+## Section W's phase notes (moved 2026-11-08)
+
+### Phase 4: views, sort rules, and lens settings
+
+Read ROADMAP D17 first; it is the spec. Most of phase 4 is for every
+space, not only lenses. A view, a status bar, and a sort rule work the
+same on both kinds. Only the folder, the title, and hidden files are
+lens-only.
+
+- One commit each. W8-W11 are small and stand apart from the views: W9
+  needs nothing, W10 needs W8, and W11 needs W10. W12-W23 build the
+  views on each other, so take them in order.
+- Each task adds a type, variant, or field in the same commit as its
+  first caller, never ahead of it with `#[expect(dead_code)]`. So
+  `ViewMode` grows one variant per view task, and the task that draws a
+  view adds it.
+- Tables carry the design, so a new view is one row:
+  - `VIEW_MODES` (`settings/tables.rs`, added in W12): one row per view,
+    with its mode, its Explorer label, and its Ctrl+Shift digit. The
+    View ▸ menu, the keys, the View page, and the status bar's tips all
+    read it.
+  - `SORT_KEYS` (W14): the Sort by keys in Explorer's order and words.
+  - `DETAILS_COLUMNS` (W18) and `STATUS_BUTTONS` (W19).
+- Explorer is the reference for every look and word. Where a task says
+  "as Explorer", open the same folder in Explorer beside the space, at
+  100 % and 150 %, and match it. Record any measured size as a named
+  constant in 96-DPI pixels, with a comment saying it was measured, and
+  when.
+- Glyphs come from Segoe Fluent Icons on Windows 11 and Segoe MDL2
+  Assets on Windows 10. Use only code points both fonts have, and write
+  each one's name beside its constant:
+  https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-fluent-icons-font
+  and https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-ui-symbol-font.
+
+### Interleaving
+
+Two kinds. **Work interleaving**: tasks that edit the same code, so
+running two at once makes them collide. **Runtime interleaving**: events
+that can arrive in an order the code does not expect.
+
+Work that collides when run in parallel:
+
+- **`SpaceView` fields.** W12, W14, W15, W19, W28, W30, W33, and W36
+  each add a field and a serde-default test. Two branches add fields
+  side by side; resolve a merge by keeping both, in task order.
+- **"Next free" ids.** Menu ids (W12, W14, W15, W19, W28, W30, W33, W38),
+  `field::` ids (W10, W11, W20, W23, W28, W33, W35, W38, W40), and page
+  ids. Two branches that each take the "next free" value end up with the
+  same id, and git merges that without a conflict. The uniqueness tests
+  (`field_ids_are_unique`, the `MenuId::ALL` test) catch it after a
+  rebase; take a new id then. Never renumber an id that has landed.
+- **`view_layout.rs`** (W16) grows in W17, W18, W21, W22, W33 (compact),
+  and W37 (groups). Run those one at a time; each changes the metrics
+  every view shares.
+- **`DETAILS_COLUMNS`** is created in W18 and changed in W29-W32. Run
+  them in order.
+- **Label text.** W26 merges the four copies of the extension rule.
+  W28 then changes that one place. Taking W28 before W26 means editing
+  four places, so don't.
+- **The lens's folder.** File operations read the folder a lens
+  *shows*, through one `App::lens_folder` (W42). A task that reads
+  `FolderView.path` must say which one it means. W10 and W11 mean the
+  lens's own folder on purpose.
+- **Creation signatures.** W19 and W23 change `CreateLens`, and W40
+  changes `CreateSpace`. Rebase whichever lands second.
+- **Other sections:**
+  - J (tabs): J2 pages through the icon grid. After W16 it must page
+    through the view layout instead; if J2 starts first, stop and ask.
+  - U (undo): U3 lists the actions to record. If U3 has landed, wrap
+    each new action in `begin`/`finish` (`SetSpaceView`, `SetLensTitle`,
+    a column resize on release, not per move). If it has not, add the
+    new actions to U3's list. Browsing and folding a group are session
+    state and record nothing.
+  - B26 has split `settings_window/build.rs`; add W8's font where
+    `build_header` creates the title it draws.
+  - R14 (table-driven settings fields) would rewrite the pages W10, W20,
+    W23, W35, and W38 build. Do not start R14 while those are open.
+  - Section K: `win32/space_window/` is split (K8); put new hit tests and
+    paint code in `app/pointer/` and `render/d2d/`, not in its `mod.rs`.
+  - T (animations): the title icon (W9), status bar (W19), headers (W18,
+    W37), and Back button (W43) paint through the normal paint path, so
+    animations snapshot them for free. Each task's check includes one
+    Startup effect.
+
+### Phase 5 tasks
+
+All phase 5 tasks are done and archived; their on-screen checks are in
+section V.
+
+## P. Pay down what we found while working (continued)
+
+- [x] **P27. Archive section W's finished-phase notes (docs).** Every W task is
+  done, yet section W still carries guidance for running them side by side.
+  That makes this file long for every new reader.
+  - Move these, verbatim, to the end of `archive/TASKS-done.md` under a heading
+    "Section W's phase notes (moved 2026-mm-dd)": "Phase 4: views, sort rules,
+    and lens settings"; from "Interleaving", the two definitions and "Work that
+    collides when run in parallel" with its list; and "Phase 5 tasks".
+  - Keep everything else in section W. "Runtime orders the code must survive"
+    (rename the heading above it to "Runtime orders"), "Performance", and
+    "Safety and security" still bind any new lens task. Keep "Phase 5: lens and view extras" too,
+    since those two sit under it. Cut its first bullet list, which is about
+    task order, to one sentence: "Read ROADMAP D17 and D18 first; they are the
+    spec."
+  - Before deleting anything, search the repository (`docs/`, `crates/`,
+    `scripts/`) for each heading's name. Where something cites a moved heading,
+    point it at the archive.
+  - Change no other section. Commit as `docs: archive section W's phase notes
+    (P27)`.
