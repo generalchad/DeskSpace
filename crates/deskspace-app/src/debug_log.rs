@@ -6,8 +6,7 @@
 
 use std::collections::VecDeque;
 use std::fmt::{Debug, Write as _};
-use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
-use std::time::Instant;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use deskspace_platform::{LogLevel, LogLine};
 use tracing::field::{Field, Visit};
@@ -19,9 +18,6 @@ use tracing_subscriber::reload;
 
 /// The most lines the ring keeps; the oldest is dropped past it.
 pub const CAPACITY: usize = 10_000;
-
-/// When the first line was recorded: the console's zero.
-static START: OnceLock<Instant> = OnceLock::new();
 
 /// A shared handle to the ring of recorded lines.
 #[derive(Clone, Default)]
@@ -40,7 +36,7 @@ impl LogBuffer {
     /// Records one line, stamping its `seq` and time, and drops the oldest
     /// past `CAPACITY`.
     pub fn push(&self, level: LogLevel, target: &str, message: String) {
-        let millis = START.get_or_init(Instant::now).elapsed().as_millis();
+        let millis = deskspace_platform::startup_millis();
         let mut ring = self.lock();
         ring.last_seq += 1;
         let line = LogLine {

@@ -1,6 +1,12 @@
 //! Ui methods for space windows and the desktop layer.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use super::*;
+
+// Process state: whether the first scene has been pushed, so the startup
+// timeline logs it once. Nothing clears it.
+static FIRST_SCENE_PUSHED: AtomicBool = AtomicBool::new(false);
 
 impl Ui {
     /// Creates space `id`'s window, hidden: `show_space` brings it in once
@@ -124,6 +130,13 @@ impl Ui {
     pub fn set_space_scene(&mut self, id: u64, scene: SpaceScene) {
         if let Some(hwnd) = space_hwnd(id) {
             space_window::set_scene(hwnd, scene);
+            if !FIRST_SCENE_PUSHED.swap(true, Ordering::Relaxed) {
+                tracing::debug!(
+                    elapsed_ms = crate::startup_millis(),
+                    space = id,
+                    "startup: first scene pushed"
+                );
+            }
         }
     }
 

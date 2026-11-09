@@ -856,6 +856,11 @@ impl App {
         let display = desktop_display_since(self.system.shell().check_boxes);
         self.system.set_shell(display);
         self.refresh_desktop_entries();
+        tracing::debug!(
+            elapsed_ms = deskspace_platform::startup_millis(),
+            items = self.layer.entry_count(),
+            "startup: desktop items listed"
+        );
         self.apply_takeover(ui);
         // Building the debug window blocks this thread for a few
         // hundred milliseconds, so it opens before the spaces start

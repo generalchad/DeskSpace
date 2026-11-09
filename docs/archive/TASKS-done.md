@@ -7057,3 +7057,17 @@ section V.
   - Done when: the gates pass and a `./scripts/dev.ps1 -Release -Verbosity 2`
     run shows each line. Say in the commit body that you saw them, or that a
     person must.
+
+- [x] **B55. Log the startup timeline (app, platform).** Any contributor; it
+  adds log lines only.
+  - Why: "fast startup" is a goal (`CONTEXT.md` section 1) that no number
+    backs.
+  - One `debug` line per phase, `startup: <phase>`, with the milliseconds on
+    the clock the log console already keeps (`START` in `debug_log.rs`; start
+    it at the top of `main` if it is not started there already): the config
+    loaded, the runtime made, the desktop's items listed, the first scene
+    pushed, the first space painted (a one-shot flag in the platform), and the
+    icon worker first idle. Name each phase after the function that ends it.
+  - Done when: a `./scripts/dev.ps1 -Release -Verbosity 1` run shows each line
+    once, and the commit body records one run's numbers with the number of
+    spaces and items, or says a person must.

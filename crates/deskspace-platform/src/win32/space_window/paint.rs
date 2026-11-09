@@ -1,6 +1,7 @@
 //! Painting a space window: checking out its painter and scene, drawing the
 //! current frame, and showing the blur through the frame's mask afterwards.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use windows::Win32::Foundation::{HWND, RECT};
@@ -12,6 +13,11 @@ use crate::win32::space_animation::Animation;
 
 use super::with_state;
 
+// Process state: whether a real space (not the desktop layer, whose id is 0)
+// has painted, so the startup timeline logs the first one once. Nothing
+// clears it.
+static FIRST_PAINT: AtomicBool = AtomicBool::new(false);
+
 pub(super) unsafe fn paint(window: HWND) {
     // SAFETY: for every call, `window` is live and the state borrows are
     // short.
@@ -20,13 +26,14 @@ pub(super) unsafe fn paint(window: HWND) {
             let mut frame = state.frame.paint(window_dpi(window));
             frame.highlight = state.highlight.level();
             (
+                state.id,
                 state.painter.take(),
                 state.scene.take(),
                 frame,
                 state.animation.as_ref().map(Animation::frame),
             )
         });
-        let Some((Some(mut painter), scene, frame, transition)) = checked_out else {
+        let Some((id, Some(mut painter), scene, frame, transition)) = checked_out else {
             let _ = ValidateRect(Some(window), None);
             return;
         };
@@ -55,6 +62,13 @@ pub(super) unsafe fn paint(window: HWND) {
         }
         if let Err(error) = &painted {
             tracing::error!(%error, "space paint failed");
+        }
+        if painted.is_ok() && id != 0 && !FIRST_PAINT.swap(true, Ordering::Relaxed) {
+            tracing::debug!(
+                elapsed_ms = crate::startup_millis(),
+                space = id,
+                "startup: first space painted"
+            );
         }
         // The painter drew the blur's mask with a frame that leaves the
         // window see-through; only then does the blur show through it.

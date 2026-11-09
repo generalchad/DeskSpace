@@ -201,6 +201,18 @@ pub fn run(cli: Cli, debug_log: Option<DebugLog>) -> anyhow::Result<()> {
         }
     };
 
+    tracing::debug!(
+        elapsed_ms = deskspace_platform::startup_millis(),
+        spaces = config.desktop.spaces().len(),
+        items = config
+            .desktop
+            .spaces()
+            .iter()
+            .map(|space| space.items().len())
+            .sum::<usize>(),
+        "startup: config loaded"
+    );
+
     if config.desktop.spaces().is_empty() {
         seed_default_desktop(&mut config.desktop, !cli.no_icons);
     }

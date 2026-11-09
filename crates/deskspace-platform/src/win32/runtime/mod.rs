@@ -459,6 +459,10 @@ pub fn run(options: RunOptions, handler: Box<dyn EventHandler>) -> Result<(), Pl
             folder_watches: None,
         });
     });
+    tracing::debug!(
+        elapsed_ms = crate::startup_millis(),
+        "startup: runtime made"
+    );
     tray::add(controller, &options.tray_tooltip);
     console::install(controller);
 

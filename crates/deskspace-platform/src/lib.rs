@@ -6,6 +6,7 @@ mod input;
 mod page_scroll;
 mod render;
 mod settings_cards;
+mod startup;
 mod title_scroll;
 mod ui;
 mod win32;
@@ -24,6 +25,7 @@ pub use render::{
     Side, SpaceScene, SpaceStyle, StatusBar, StatusButtonVisual, TitleIcon, Transition,
     TransitionFrame, Way, ZoomBar, item_check_box, item_check_box_hit,
 };
+pub use startup::{millis as startup_millis, start as start_startup_clock};
 pub use ui::{
     CursorShape, CustomShortcut, DebugControl, DebugControlKind, DebugPanel, DebugSection, Field,
     FieldKind, FieldValue, HeaderIcon, IconChoice, IconPickerRequest, LogLevel, LogLine, MenuEntry,

@@ -75,7 +75,15 @@ fn run_worker(worker: &Worker, target: isize) {
     // them still needs COM.
     let _ = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
     let mut last_report = Instant::now();
-    while let Some(key) = next_request(worker, target, &mut last_report) {
+    let mut served = false;
+    let mut idle_logged = false;
+    while let Some(key) = next_request(
+        worker,
+        target,
+        &mut last_report,
+        &mut served,
+        &mut idle_logged,
+    ) {
         let icon = match key.2 {
             IconKind::Item { overlay_size } => load_icon(&key.0, key.1, overlay_size),
             IconKind::Folder { available } => {
@@ -84,6 +92,7 @@ fn run_worker(worker: &Worker, target: isize) {
         };
         let mut state = worker.lock();
         state.loaded.push((key, icon));
+        served = true;
         if should_report(&state, last_report.elapsed()) {
             report_loaded(&mut state, target, &mut last_report);
         }
@@ -92,7 +101,13 @@ fn run_worker(worker: &Worker, target: isize) {
 
 /// Blocks until the UI thread asks for an icon, reporting what is left to
 /// report first. `None` means stop.
-fn next_request(worker: &Worker, target: isize, last_report: &mut Instant) -> Option<Key> {
+fn next_request(
+    worker: &Worker,
+    target: isize,
+    last_report: &mut Instant,
+    served: &mut bool,
+    idle_logged: &mut bool,
+) -> Option<Key> {
     let mut state = worker.lock();
     loop {
         if state.stop {
@@ -103,6 +118,15 @@ fn next_request(worker: &Worker, target: isize, last_report: &mut Instant) -> Op
         }
         if !state.loaded.is_empty() && !state.reported {
             report_loaded(&mut state, target, last_report);
+        }
+        // Idle once it has served something and the UI thread has taken
+        // everything loaded, which is the end of the startup batch.
+        if *served && !*idle_logged && state.loaded.is_empty() {
+            *idle_logged = true;
+            tracing::debug!(
+                elapsed_ms = crate::startup_millis(),
+                "startup: icon worker idle"
+            );
         }
         state = worker
             .ready

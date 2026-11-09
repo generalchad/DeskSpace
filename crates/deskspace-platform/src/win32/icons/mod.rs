@@ -222,6 +222,9 @@ impl IconCache {
                 self.store(key, icon, finished.stale);
             }
         }
+        // Let the worker re-check whether it has any work left, which is how
+        // the startup timeline sees it first go idle after the initial batch.
+        worker.ready.notify_one();
         users.into_iter().collect()
     }
 

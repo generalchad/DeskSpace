@@ -28,6 +28,7 @@ use crate::cli::Cli;
 use crate::debug_log::{ConsoleLayer, ConsoleLevel, DebugLog, LogBuffer};
 
 fn main() -> ExitCode {
+    deskspace_platform::start_startup_clock();
     let cli = Cli::parse();
     let debug_log = init_tracing(cli.verbose, cli.debug);
     log_panics();

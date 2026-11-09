@@ -277,6 +277,11 @@ impl LayerState {
             taskbar_blocked: false,
         }
     }
+
+    /// How many loose desktop items the shell listed.
+    pub(super) fn entry_count(&self) -> usize {
+        self.entries.len()
+    }
 }
 
 /// Whether a grid takes its cell from the look, or from a fixed view's own
