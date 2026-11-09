@@ -261,7 +261,7 @@ check that section against what lands after it. It is also R12's first
 install (Z7). The 0.3.0 section gathers the alpha sections into one.
 
 The gate's fixes are in section P, marked **[urgent] (v0.3.0)**: P14b and
-P14c, P35, P36, P37, and P46. B45 has landed; B47 and B48 (section B) join if
+P14c, P35, P36, P37, P46, P49, and P50. B45 has landed; B47 and B48 (section B) join if
 they are ready in time. P32 does not; Z6 lists it as a known issue.
 
 Who takes what (split 2026-11-07, so juniors and interns can carry most of
@@ -281,7 +281,11 @@ the gate):
   - Split into batches, one intern and one sitting each, grouped by the
     setup they share. A batch can start once the fixes its rows depend on
     have landed; the rest of the gate need not wait. Rows for P36 and P46
-    join batches Z5g and Z5d when those fixes land.
+    join batches Z5g and Z5d when those fixes land; P49 and P50 join Z5d.
+  - Until P49 (found 2026-11-08), a space drawn through composition could
+    show an old frame, another space's, or nothing after a click. Any row a
+    batch passed on a build without it, where the picture matters, is run
+    again.
   - Rules for every batch:
     - Run `./scripts/dev.ps1` for a scratch config, never the real one.
       Never pass `-Fresh` without asking the maintainer first: it deletes the
@@ -342,6 +346,7 @@ the gate):
     as far as they go without a newer release. Record the findings as R12
     says. A first pass on `0.3.0-alpha.1` may start now, to find install
     problems early; repeat it once the gate's fixes are in a pre-release.
+    alpha.1 has P49's bug, so judge nothing visual on it.
   - [ ] **Z7b (maintainer).** The **[needs decision]** above.
   - [ ] **Z7c (intern; clean VM). The update.** After Z7b, the check it
     chose. With (b): install v0.3.0 and keep the VM for v0.3.1. Also E10,
@@ -2784,6 +2789,22 @@ These are in the order we would take them. Each lands alone.
     field, type a hex value, use the arrows and Esc, and sample from the screen with
     a right-click. All behave as before.
 
+- [ ] **P51. Report a composition draw Direct2D refused (fix; render).** After the
+  v0.3.0 tag. P49 hid for days because a composition surface's
+  `ICompositionDrawingSurfaceInterop::EndDraw` returns success even when Direct2D
+  discarded the draw's commands (`D2DERR_WRONG_FACTORY` there), so `paint` logged
+  nothing and the window kept an old frame.
+  - In `DrawingSurface::end` (`render/d2d/canvas.rs`), call `Flush` on the context
+    after popping the clip and before the surface's `EndDraw`, and return its error,
+    so `Painter::render` sees it: a lost device is recreated as now, and anything
+    else is logged as "space paint failed". Still call `EndDraw` when `Flush` fails.
+  - Tests: a draw that uses a stroke style from another factory (P49's test shows
+    how to make one) returns an error from `Painter::draw` on a surface canvas; or,
+    if a test cannot make a composition surface, stop and ask.
+  - Done when: the gates pass. **[needs human]** check: spaces still draw, and a
+    `-v` log shows no new errors over a session of clicks, folds, and settings
+    changes.
+
 ## D. Reserved (strong model or maintainer; do not start)
 
 Each needs design work first. Ids are `R`-numbered so they do not collide with
@@ -3196,6 +3217,8 @@ for a machine that has it.
 | C10c (part script) (F-58) | With a scratch config, customize a space's look, then Colors > "Save theme…" and name the file (with or without the suffix). Load it on Global and on another space, once through "Load theme…" and once from the Themes list after closing and reopening Settings: the look, icon spacing, and padding change, and the Dark/Light setting does not. A load on a space that follows Global turns its "Customize this space" switch on. Cancel puts the old look back; Apply keeps it over a restart. With no theme files the Themes list is disabled and says so; a broken or oversized file is reported and changes nothing; saving over an existing theme asks before replacing it. |
 | P35 (v0.3) (part script) (unreadable config) | Run `./scripts/dev.ps1` once, make a space, and exit. Hold the scratch config open from PowerShell (`$h = [IO.File]::Open($path, 'Open', 'Read', 'None')`) and run it again: after about a second a "DeskSpace did not start" box opens in front of other windows, names the file, says it was left unchanged, and reads well; OK ends the process with no tray icon or space shown. Close the handle (`$h.Close()`) and run again: every space is there, and no `.bak` was made. |
 | P37 (v0.3) (part script) (no replace on a move) | Every move into and out of storage now goes through `MoveFileExW`, so check the plain paths still work. Drop a file from the desktop onto a space: it leaves the desktop and opens from the space. Drop a second file with the same name from another folder: the space lists both, and both open with their own contents. Delete the space while the desktop already has a file of that name: the stored file comes back as "name (2)" and the desktop's own file is untouched. Ctrl+Z, then Ctrl+Y: each file goes back to where it was, then returns. Drop a file from a USB stick or a network share: it stays where it was and the space refers to it. With `-Verbosity 1`, no "could not move" line appears for any of these. |
+| P49 (v0.3) (part script) (space paint) | Windows 11 with Transparency effects on, three spaces with different items, `--on-top`: click an item in each space in turn, then fold and unfold one. Each click shows the selection and check box on the item clicked, in that space only; no space ever shows another's title or items, an older picture of itself, or only its blur. Repeat after changing a font in Settings > Fonts and pressing Apply. |
+| P50 (v0.3) (part script) (cross-space selection) | Ctrl+click two items in one space, then Ctrl+click one in another: only that one shows selected. Press Delete on a throwaway scratch config: only that file goes to the Recycle Bin, and the first space's two stay. Repeat with Shift+click, and with Explorer's check boxes on in independent mode (tick two in one space, click in another, Delete): the first space's ticks are gone and its files stay. |
 
 ## Found while working
 

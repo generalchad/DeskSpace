@@ -6828,3 +6828,35 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Done when: the gates pass and a `./scripts/dev.ps1 -Release -Verbosity 1`
     run shows each line. Say in the commit body that you saw them, or that a
     person must.
+
+- [x] **P49. Keep the Direct2D factory when the type scale changes (fix; render).**
+  **[urgent] (v0.3.0)** Found 2026-11-08 by the maintainer: spaces showed an
+  old picture of themselves, another space's items, or only their blur, and a
+  clicked item never showed as selected, while double-clicks still opened the
+  right file. Introduced with the type scale (G11, G12), so v0.3.0-alpha.1 has
+  it.
+  - Cause: `Ui::set_typography` called `release_graphics`, which dropped the
+    thread's Direct2D factory with the text formats. Startup sets the type
+    scale after composition has made its device from the first factory, so
+    the focus stroke came from another factory and every draw of a focused
+    item failed with `D2DERR_WRONG_FACTORY`. The composition surface reported
+    nothing, and the window kept whatever its atlas region held.
+  - Fix: `d2d::rebuild_text_formats` rebuilds the formats and the stroke from
+    the same factories. A test draws the focus stroke on a device made before a
+    type-scale change.
+  - Checked on screen with three `--on-top` spaces on a scratch config (scripted
+    clicks, folds, and forced repaints). Section V's P49 row covers the rest.
+    P51 makes such a refused draw show in the log.
+
+- [x] **P50. Start a new selection when a click moves to another space (fix;
+  app).** **[urgent] (v0.3.0)** Found 2026-11-08 by the maintainer while
+  checking P49.
+  - Cause: a Ctrl+click or Shift+click in a second space kept the first
+    space's items selected out of sight, and Delete, Shift+Delete, Copy, and
+    Cut acted on them too. Six places switched the selection's surface; only
+    the Details column gesture dropped the old items.
+  - Fix: `Selection::enter` is the one way to make a surface current; on
+    another surface it drops the items, anchor, focus, and independent ticks
+    (the maintainer chose that ticks stay with their space).
+  - Tests cover the rule and the Ctrl+click sequence. Section V's P50 row is
+    the on-screen check.
