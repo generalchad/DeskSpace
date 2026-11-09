@@ -7085,3 +7085,4 @@ takes an id listed here or used anywhere above
 - **P43.** Let clippy keep closures that only call a method out (lint).
 - **Q8a.** Decode the task ids left in comments: core, config, and update.
 - **Q8b.** Decode the task ids left in comments: the app.
+- **Q8c.** Decode the task ids left in comments: the platform.

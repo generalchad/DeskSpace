@@ -235,7 +235,7 @@ pub(crate) struct Animation {
     /// Windows draws the material flat ("Transparency effects" off), so it
     /// steps aside while a frame leaves the window see-through: a flat
     /// material stayed as a dark box under a fading space (seen 2026-10-18).
-    /// A real blur stays: a composition space's follows the frame (T13), and
+    /// A real blur stays: a composition space's follows the frame, and
     /// the accent blur steps at the end.
     flat_material: bool,
     /// The window's frames, which stop when the animation is dropped.

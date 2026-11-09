@@ -1,5 +1,5 @@
 //! The header title's scroll: measuring it, its timer and frames, and the
-//! frame that draws it (G8). The pure motion is `crate::title_scroll`.
+//! frame that draws it. The pure motion is `crate::title_scroll`.
 
 use std::time::Duration;
 
@@ -214,7 +214,7 @@ fn set_title_timer(window: HWND, after: Duration) {
     }
 }
 
-/// A long name scrolls in the header (G8): the icon slot and title are
+/// A long name scrolls in the header: the icon slot and title are
 /// painted here, and the title's offset comes from its `TitleScroll`.
 pub(super) unsafe fn on_draw_title(window: HWND, item: &DRAWITEMSTRUCT) {
     // SAFETY: `item.hDC` is the title's live DC during WM_DRAWITEM; the state

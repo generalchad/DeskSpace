@@ -1611,7 +1611,7 @@ mod tests {
     }
 
     /// A subfolder that is a junction into the store is refused while the
-    /// lens's own folder is still watched (W25).
+    /// lens's own folder is still watched.
     #[test]
     fn a_browsed_lens_refuses_a_subfolder_that_leads_into_the_store() {
         let (scratch, link, final_store) = store_with_junction("browsed-junction");
@@ -1835,7 +1835,7 @@ mod tests {
     }
 
     /// A browsed lens's shown subfolder is checked for the store on its own,
-    /// because the handle is on the lens's own folder (W25).
+    /// because the handle is on the lens's own folder.
     #[test]
     fn a_browsed_subfolder_that_leads_into_the_store_is_refused() {
         let (scratch, link, final_store) = store_with_junction("browsed-moved");

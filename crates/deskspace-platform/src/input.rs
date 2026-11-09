@@ -50,7 +50,7 @@ pub struct ShellItem {
 }
 
 /// What a drop does with the dragged files. A left drop picks this from the
-/// modifier keys; a right drop lets the user choose it from a menu (G5b).
+/// modifier keys; a right drop lets the user choose it from a menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DropAction {
     /// Move the files into the space storage (the default).

@@ -1,4 +1,4 @@
-//! A long settings header title's scroll: pure frame math (G7).
+//! A long settings header title's scroll: pure frame math.
 
 use std::time::Duration;
 

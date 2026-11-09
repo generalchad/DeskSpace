@@ -140,11 +140,10 @@ pub struct SpaceScene {
     /// The item with keyboard focus, drawn with a dotted focus rectangle. Only
     /// the current space's scene sets it.
     pub focused_item: Option<u64>,
-    /// The Details header and its columns, set only in Details (W18). The
+    /// The Details header and its columns, set only in Details. The
     /// header stays put while the rows scroll beneath it.
     pub details: Option<DetailsView>,
-    /// Explorer's status bar along the bottom edge, while the space shows one
-    /// (W19).
+    /// Explorer's status bar along the bottom edge, while the space shows one.
     pub status: Option<StatusBar>,
     /// While set, the painter draws this text in the title bar instead of
     /// `title`, with the selection highlight and a caret.
@@ -160,7 +159,7 @@ pub struct SpaceScene {
     /// Scaled item sizes (icon, label gap, check box) the painter draws with;
     /// the app's hit tests use the same metrics.
     pub metrics: ItemMetrics,
-    /// How each item cell places its icon and label (W16). The painter's icon,
+    /// How each item cell places its icon and label. The painter's icon,
     /// label, and rename-box positions and the check-box hit test both read it.
     pub item_layout: ItemLayout,
     /// Items are clipped to the area below the title bar, so the app can
@@ -183,7 +182,7 @@ pub struct SpaceScene {
     pub scroll_thumb_x: Option<Rect>,
 }
 
-/// How an item cell places its icon and label (W16).
+/// How an item cell places its icon and label.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ItemLayout {
     /// The icon grid: the icon centered at the top, with its label below it.
@@ -192,16 +191,16 @@ pub enum ItemLayout {
     /// One row of a list: the icon at the left and one label line beside it.
     Inline,
     /// One Details row: the icon at the left, the name beside it, then the
-    /// other column texts (W18).
+    /// other column texts.
     Details,
-    /// One tile: a 48 px icon at the left and three lines beside it (W21).
+    /// One tile: a 48 px icon at the left and three lines beside it.
     Tiles,
     /// One content row: the icon and name at the left, details at the right,
-    /// with a separator between rows (W22).
+    /// with a separator between rows.
     Content,
 }
 
-/// The Details header and its columns (W18). Rects are relative to the content
+/// The Details header and its columns. Rects are relative to the content
 /// area's top-left corner.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DetailsView {
@@ -245,7 +244,7 @@ pub enum ColumnAlign {
     Right,
 }
 
-/// Explorer's status bar (W19): the item counts on the left and its view
+/// Explorer's status bar: the item counts on the left and its view
 /// buttons on the right.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StatusBar {
@@ -302,7 +301,7 @@ pub struct ItemVisual {
     /// colors); `None` uses the scene's item text color.
     pub label_color: Option<Color>,
     /// The text for the view's secondary lines: Details column texts after
-    /// Name (W18), a tile's type and size (W21), or a content row's right-hand
-    /// texts (W22). Empty outside those views.
+    /// Name, a tile's type and size, or a content row's right-hand
+    /// texts. Empty outside those views.
     pub cells: Vec<String>,
 }

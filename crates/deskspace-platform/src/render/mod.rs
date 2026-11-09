@@ -40,7 +40,7 @@ pub const ITEM_CHECK_BOX_MARGIN: i32 = 1;
 const ITEM_CHECK_BOX_SLACK: i32 = 2;
 /// Inline cell (Small icons, and List later) at the base size: the inset from
 /// the cell's left edge and the gap after the icon. The check box sits in the
-/// inset, the icon after it, and the label after the icon (W16).
+/// inset, the icon after it, and the label after the icon.
 const INLINE_INSET: i32 = 4;
 const INLINE_GAP: i32 = 4;
 

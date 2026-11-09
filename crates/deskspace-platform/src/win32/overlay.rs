@@ -1,7 +1,7 @@
 //! The windows an effect draws on beside the space's own (ROADMAP D12,
 //! amended 2026-10-19): what an effect draws past the space's frame, where
 //! the space's own window would put blur behind it. Burn's flames are one;
-//! T21's lamp will be another. `kind_for` says which effect draws on
+//! a lamp effect would be another. `kind_for` says which effect draws on
 //! which, with a match that holds every effect to an answer.
 
 use deskspace_core::animation::Effect;

@@ -102,7 +102,7 @@ impl SpaceWindowOptions {
             click_through,
             on_top: false,
             visible: true,
-            // The layer never animates, so it keeps the accent blur (T12).
+            // The layer never animates, so it keeps the accent blur.
             composition: false,
         }
     }

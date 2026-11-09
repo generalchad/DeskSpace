@@ -418,7 +418,7 @@ impl Painter {
         }
     }
 
-    /// Draws how much of the blur `transition`'s frame leaves (T13): the
+    /// Draws how much of the blur `transition`'s frame leaves: the
     /// space's whole rect through the same opacity and mask as its contents.
     /// Pixelate's blocks are not drawn; the blur only fades with them.
     fn draw_blur_mask(
@@ -517,7 +517,7 @@ impl Painter {
 
             // A chrome-less layer (the desktop layer) draws its items from the
             // top; a space leaves room for the title bar. Details leaves the
-            // fixed header row above the items (W18).
+            // fixed header row above the items.
             let content_top = if scene.chrome { title_height } else { 0.0 };
             let header_height = scene
                 .details
@@ -650,7 +650,7 @@ impl Painter {
     }
 
     /// Draws the Details header row at `top`: each column's label, Explorer's
-    /// sort arrow on the sorted column, and a rule along its bottom (W18).
+    /// sort arrow on the sorted column, and a rule along its bottom.
     unsafe fn draw_details_header(
         &self,
         ctx: DrawContext,
@@ -773,7 +773,7 @@ impl Painter {
     }
 
     /// Draws Explorer's status bar: the counts on the left and the view
-    /// buttons on the right, with the space's current view marked (W19).
+    /// buttons on the right, with the space's current view marked.
     unsafe fn draw_status(
         &self,
         ctx: DrawContext,

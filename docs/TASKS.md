@@ -1881,8 +1881,6 @@ Rules for every Q task:
   ROADMAP `Dn` ids not counted). Each sends a reader to the archive to learn
   why the code is so, and nothing stops a new one.
   - The parts, each its own commit, any order before Q8d:
-    - [ ] **Q8c (junior).** The platform. Every edited `unsafe` block keeps its
-      `// SAFETY:` comment.
     - [ ] **Q8d (junior).** After Q8a-Q8c. A test beside `file_size.rs`
       (`crates/deskspace-app/tests/comment_ids.rs`) that fails on a task id in a
       `//` or `///` comment: a section letter this file uses and a number, as

@@ -27,11 +27,11 @@ const TICK_COLOR: Color = Color::rgb(255, 255, 255);
 /// An unchecked box: light, with a dark border that shows on any backdrop.
 const UNCHECKED_FILL: Color = Color::rgba(255, 255, 255, 210);
 const UNCHECKED_BORDER: Color = Color::rgba(0, 0, 0, 150);
-/// The opacity of a tile's type and size lines, dimmed under its name (W21).
+/// The opacity of a tile's type and size lines, dimmed under its name.
 const TILE_META_ALPHA: u8 = 150;
-/// The opacity of a Content row's labelled details (W22).
+/// The opacity of a Content row's labelled details.
 const CONTENT_META_ALPHA: u8 = 170;
-/// The opacity of the separator under a Content row (W22).
+/// The opacity of the separator under a Content row.
 const CONTENT_SEPARATOR_ALPHA: u8 = 40;
 
 /// Draws the rubber-band selection rectangle over empty space.
@@ -204,7 +204,7 @@ unsafe fn draw_item_label(
     }
 }
 
-/// Draws the other columns' text under a Details row's name (W18).
+/// Draws the other columns' text under a Details row's name.
 ///
 /// # Safety
 /// Call between `BeginDraw` and `EndDraw` on `ctx.target`.
@@ -250,7 +250,7 @@ unsafe fn draw_details_cells(
     }
 }
 
-/// Draws a tile's type and size, dimmed under its name (W21).
+/// Draws a tile's type and size, dimmed under its name.
 ///
 /// # Safety
 /// Call between `BeginDraw` and `EndDraw` on `ctx.target`.
@@ -293,7 +293,7 @@ unsafe fn draw_tile_lines(
     }
 }
 
-/// Draws a Content row's labelled details and the separator under it (W22).
+/// Draws a Content row's labelled details and the separator under it.
 ///
 /// # Safety
 /// Call between `BeginDraw` and `EndDraw` on `ctx.target`.
@@ -383,7 +383,7 @@ impl CellLayout {
         let icon_size = metrics.icon_size as f32;
         // A grid centers the icon over its label; every other view puts the
         // check box, then the icon, then the name on one line, vertically
-        // centered (W16).
+        // centered.
         let beside_icon = !matches!(mode, ItemLayout::Grid);
         let (icon_left, icon_top) = if beside_icon {
             let left = cell.left
@@ -404,7 +404,7 @@ impl CellLayout {
         let center_y = (cell.top + cell.bottom) / 2.0;
         let name_left = icon_left + icon_size + metrics.inline_gap as f32;
         // A content row keeps a right-hand area for its labelled details; the
-        // width follows the icon size, so it scales with the display (W22).
+        // width follows the icon size, so it scales with the display.
         let meta_left = if mode == ItemLayout::Content {
             (cell.right - (360.0 * icon_size / 16.0))
                 .max(cell.left + (cell.right - cell.left) * 0.4)

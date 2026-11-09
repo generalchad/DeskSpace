@@ -64,7 +64,7 @@ impl Canvas {
         }
     }
 
-    /// Draws the blur's mask (T13) with `draw`, given the target and where
+    /// Draws the blur's mask with `draw`, given the target and where
     /// the window's top-left corner is on it, over a transparent clear. A
     /// window target has no mask, since the accent blur takes none, so
     /// nothing is drawn. Call after `ensure`, outside `begin` and `end`.
@@ -189,8 +189,8 @@ impl HwndCanvas {
     }
 }
 
-/// A window's composition drawing surfaces: its content, and the blur's mask
-/// (T13). Resources are made on a device context of their own over the
+/// A window's composition drawing surfaces: its content, and the blur's mask.
+/// Resources are made on a device context of their own over the
 /// surfaces' device, since a surface's context exists only during a draw.
 pub(super) struct SurfaceCanvas {
     content: DrawingSurface,
