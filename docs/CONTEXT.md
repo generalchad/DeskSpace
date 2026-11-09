@@ -734,8 +734,8 @@ one arm in `App::on_event`, whose match is exhaustive.
   the material, corners, and border; `composition.rs` the visual tree and
   the startup choice; `space_animation.rs` and `frame_clock.rs` the frames;
   `space_window/highlight.rs` the settings highlight's fade;
-  `space_window/mod.rs` the backing and resizing and `space_window/mouse.rs`
-  the mouse modifiers; and
+  `space_window/mod.rs` the backing and resizing, `space_window/paint.rs`
+  the paint, and `space_window/mouse.rs` the mouse modifiers; and
   `shadow_window.rs` / `render/shadow.rs` the shadow. ROADMAP D12 and D15
   give the decisions.
 

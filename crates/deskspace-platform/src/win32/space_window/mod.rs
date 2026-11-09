@@ -15,20 +15,19 @@
 mod frame;
 mod highlight;
 mod mouse;
+mod paint;
 mod zorder;
-
-use std::time::Instant;
 
 use deskspace_core::geometry::Rect;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
-use windows::Win32::Graphics::Gdi::{InvalidateRect, MapWindowPoints, ValidateRect};
+use windows::Win32::Graphics::Gdi::{InvalidateRect, MapWindowPoints};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::WM_MOUSELEAVE;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetParent,
-    GetWindowRect, HTCLIENT, HWND_BOTTOM, HWND_TOPMOST, IsWindowVisible, KillTimer, LWA_ALPHA,
-    MA_NOACTIVATE, SC_MINIMIZE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    SWP_NOZORDER, SetLayeredWindowAttributes, SetTimer, SetWindowPos, ShowWindow, WINDOW_EX_STYLE,
+    CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, GetParent, GetWindowRect, HTCLIENT,
+    HWND_BOTTOM, HWND_TOPMOST, IsWindowVisible, KillTimer, LWA_ALPHA, MA_NOACTIVATE, SC_MINIMIZE,
+    SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+    SetLayeredWindowAttributes, SetTimer, SetWindowPos, ShowWindow, WINDOW_EX_STYLE,
     WM_CAPTURECHANGED, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
     WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEHWHEEL, WM_MOUSEMOVE,
     WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN,
@@ -57,6 +56,7 @@ use mouse::{
     apply_cursor, on_button_down, on_button_up, on_mouse_leave, on_mouse_move, on_mouse_wheel,
     to_desktop,
 };
+use paint::paint;
 use zorder::on_window_pos_changing;
 pub(crate) use zorder::{set_on_top, sink, window_above};
 
@@ -563,70 +563,6 @@ pub(super) unsafe fn with_state<R>(
     // SAFETY: space windows always hold a `SpaceState`; the caller rules out
     // re-entry.
     unsafe { window_state::with_state(window, f) }
-}
-
-unsafe fn paint(window: HWND) {
-    // SAFETY: for every call, `window` is live and the state borrows are
-    // short.
-    unsafe {
-        let checked_out = with_state(window, |state| {
-            let mut frame = state.frame.paint(window_dpi(window));
-            frame.highlight = state.highlight.level();
-            (
-                state.painter.take(),
-                state.scene.take(),
-                frame,
-                state.animation.as_ref().map(Animation::frame),
-            )
-        });
-        let Some((Some(mut painter), scene, frame, transition)) = checked_out else {
-            let _ = ValidateRect(Some(window), None);
-            return;
-        };
-        let started = Instant::now();
-        let painted = painter.paint(window, scene.as_ref(), frame, transition.as_ref());
-        let elapsed = started.elapsed();
-        let mut client = RECT::default();
-        if GetClientRect(window, &mut client).is_ok() {
-            let width = client.right - client.left;
-            let height = client.bottom - client.top;
-            if elapsed > crate::SCENE_STEP_BUDGET {
-                tracing::debug!(
-                    width,
-                    height,
-                    elapsed_us = elapsed.as_micros(),
-                    "scene: painted"
-                );
-            } else {
-                tracing::trace!(
-                    width,
-                    height,
-                    elapsed_us = elapsed.as_micros(),
-                    "scene: painted"
-                );
-            }
-        }
-        if let Err(error) = &painted {
-            tracing::error!(%error, "space paint failed");
-        }
-        // The painter drew the blur's mask with a frame that leaves the
-        // window see-through; only then does the blur show through it.
-        let masked = painted.is_ok()
-            && transition
-                .as_ref()
-                .is_some_and(|transition| !transition.covers_window());
-        with_state(window, |state| {
-            state.painter = Some(painter);
-            if state.scene.is_none() {
-                state.scene = scene;
-            }
-            if let Some(visuals) = &mut state.visuals
-                && let Err(error) = visuals.mask_blur(masked)
-            {
-                tracing::warn!(%error, "space composition backdrop not masked");
-            }
-        });
-    }
 }
 
 /// Raises `event` for this window's space. Same contract as `with_state`.
