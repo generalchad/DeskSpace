@@ -91,7 +91,7 @@ Four rules come first, because the rest follow from them:
   `HotkeyAction`), so the compiler or a guard test points at every place still
   to wire up; the `TASKS.md` recipes list them. Delete dead code and branches
   instead of keeping them "just in case". Keep pure logic (core,
-  `settings.rs`, `scene.rs`, helpers such as `next_in_direction`) apart from
+  `settings/`, `scene.rs`, helpers such as `next_in_direction`) apart from
   Win32 calls so it can be unit-tested. When code and docs disagree, fix the
   docs in the same commit.
 - **Extensible.** New behavior plugs into an extension point instead of a

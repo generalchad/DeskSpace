@@ -43,7 +43,9 @@ on-screen checks are in section V.
 1. Read `ENGINEERING.md` once (especially "Design priorities"), then only the
    `CONTEXT.md` sections a task names. Use the file map below to find code.
 2. One task per commit. Do not fix "nearby" things; note them under **Found
-   while working** at the end of this file instead.
+   while working** at the end of this file instead. A wrong sentence in a
+   doc the task follows or changes is not nearby: fix it in the same commit
+   (`ENGINEERING.md` section 2).
 3. Line numbers drift; find code by the function or type name given.
 4. If the code does not match the task, or the task needs a design decision
    it does not state, **stop and ask**. Do not improvise.
@@ -181,12 +183,15 @@ through `theme_for(id)`, `grid_for(id)`, and `palette_for(id)`, never
    `Rejected` when not allowed (for example a locked space), else `Applied`.
    Then an arm in `Desktop::touched_by` (`command/touched.rs`) naming what it
    changes; the compiler asks for it.
-2. Tests in `command/mod.rs`: one per outcome (copy the `Reflow` tests).
+2. Tests in `command/mod.rs`'s `tests` module: one per outcome (copy the
+   `Reflow` tests there).
 3. App: call it through `self.commit(ui, command, at)` (`app/persist.rs`),
    which repaints what `touched_by` names and saves; bare `self.dispatch`
    only when the caller repaints or saves in its own way. Never mutate
    `self.config.desktop` directly.
-4. Add the variant to the Commands list in `CONTEXT.md` section 4.
+4. The variant's `///` doc is its documentation; no doc lists the variants
+   (`ENGINEERING.md` section 7). Add a line to `CONTEXT.md` section 4,
+   "Command layer", only for a rule that doc cannot show.
 
 ### Recipe: a new key
 
