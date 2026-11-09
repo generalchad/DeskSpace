@@ -5,6 +5,8 @@
 //! range such as `**T35-T39.**`. A finished task is deleted from `TASKS.md`
 //! and retired as one such line at the end of `docs/archive/TASKS-done.md`
 //! (`TASKS.md` rule 7), so the two files together hold every id ever used.
+//! `docs/ROADMAP.md` defines its decisions (`D12`) and the ideas waiting for
+//! one (`Y3`) the same way, so they are checked with the tasks.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -17,7 +19,11 @@ const REUSED_BEFORE_THE_TEST: &[&str] = &[
     "G1", "G2", "G3", "G4", "G6", "G7", "K9", "N1", "N2", "N3", "N4", "N5",
 ];
 
-const SOURCES: &[&str] = &["docs/TASKS.md", "docs/archive/TASKS-done.md"];
+const SOURCES: &[&str] = &[
+    "docs/TASKS.md",
+    "docs/archive/TASKS-done.md",
+    "docs/ROADMAP.md",
+];
 
 #[test]
 fn every_task_id_is_defined_once() {
