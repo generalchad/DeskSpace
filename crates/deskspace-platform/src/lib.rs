@@ -75,3 +75,8 @@ pub use win32::watchdog::{
 pub use win32::{ClipboardFiles, EventHandler, RunOptions, Ui, Waker, alert, run, space_dpi};
 
 pub type Result<T, E = PlatformError> = std::result::Result<T, E>;
+
+/// The threshold over which a scene step is logged at `debug` instead of
+/// `trace`: half the 8 ms the UI thread may spend on one event, so a `-v` log
+/// shows only the steps already taking a large part of it.
+pub const SCENE_STEP_BUDGET: std::time::Duration = std::time::Duration::from_millis(4);

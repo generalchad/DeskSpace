@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Instant;
 
 use deskspace_core::animation::Kind;
 use deskspace_core::geometry::{Point, Rect};
@@ -976,6 +977,7 @@ impl App {
 
     /// Pushes the space's current geometry and draw list to its window.
     pub(super) fn refresh_space(&mut self, ui: &mut Ui, id: SpaceId) {
+        let started = Instant::now();
         self.sync_grouping(id);
         let view = self.view_for(Surface::Space(id));
         let Some(space) = self.config.desktop.space(id) else {
@@ -1004,6 +1006,26 @@ impl App {
         self.icons.end_scene();
         let rect = space.visible_rect();
         self.show_edit(&mut scene, Surface::Space(id));
+        let elapsed = started.elapsed();
+        let items = scene.items.len();
+        let view = space.view().mode;
+        if elapsed > deskspace_platform::SCENE_STEP_BUDGET {
+            tracing::debug!(
+                space = id.0,
+                items,
+                view = ?view,
+                elapsed_us = elapsed.as_micros(),
+                "scene: built"
+            );
+        } else {
+            tracing::trace!(
+                space = id.0,
+                items,
+                view = ?view,
+                elapsed_us = elapsed.as_micros(),
+                "scene: built"
+            );
+        }
         ui.set_space_rect(id.0, rect);
         ui.set_space_scene(id.0, scene);
     }

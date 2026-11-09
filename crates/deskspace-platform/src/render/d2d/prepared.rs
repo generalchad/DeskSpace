@@ -1,5 +1,7 @@
 //! A scene with its strings pre-encoded for the painter.
 
+use std::time::Instant;
+
 use super::*;
 
 /// A scene with its strings pre-encoded, so painting does not allocate.
@@ -27,6 +29,7 @@ pub struct PreparedScene {
 
 impl PreparedScene {
     pub fn new(scene: SpaceScene) -> Self {
+        let started = Instant::now();
         let title = scene.title.encode_utf16().collect();
         let edit = scene
             .editing
@@ -80,6 +83,13 @@ impl PreparedScene {
             .notice
             .as_ref()
             .map(|text| text.encode_utf16().collect());
+        let elapsed = started.elapsed();
+        let items = scene.items.len();
+        if elapsed > crate::SCENE_STEP_BUDGET {
+            tracing::debug!(items, elapsed_us = elapsed.as_micros(), "scene: prepared");
+        } else {
+            tracing::trace!(items, elapsed_us = elapsed.as_micros(), "scene: prepared");
+        }
         Self {
             scene,
             title,

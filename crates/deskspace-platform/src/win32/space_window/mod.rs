@@ -17,16 +17,18 @@ mod highlight;
 mod mouse;
 mod zorder;
 
+use std::time::Instant;
+
 use deskspace_core::geometry::Rect;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{InvalidateRect, MapWindowPoints, ValidateRect};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::WM_MOUSELEAVE;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, GetParent, GetWindowRect, HTCLIENT,
-    HWND_BOTTOM, HWND_TOPMOST, IsWindowVisible, KillTimer, LWA_ALPHA, MA_NOACTIVATE, SC_MINIMIZE,
-    SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
-    SetLayeredWindowAttributes, SetTimer, SetWindowPos, ShowWindow, WINDOW_EX_STYLE,
+    CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetParent,
+    GetWindowRect, HTCLIENT, HWND_BOTTOM, HWND_TOPMOST, IsWindowVisible, KillTimer, LWA_ALPHA,
+    MA_NOACTIVATE, SC_MINIMIZE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    SWP_NOZORDER, SetLayeredWindowAttributes, SetTimer, SetWindowPos, ShowWindow, WINDOW_EX_STYLE,
     WM_CAPTURECHANGED, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
     WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEHWHEEL, WM_MOUSEMOVE,
     WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN,
@@ -581,7 +583,29 @@ unsafe fn paint(window: HWND) {
             let _ = ValidateRect(Some(window), None);
             return;
         };
+        let started = Instant::now();
         let painted = painter.paint(window, scene.as_ref(), frame, transition.as_ref());
+        let elapsed = started.elapsed();
+        let mut client = RECT::default();
+        if GetClientRect(window, &mut client).is_ok() {
+            let width = client.right - client.left;
+            let height = client.bottom - client.top;
+            if elapsed > crate::SCENE_STEP_BUDGET {
+                tracing::debug!(
+                    width,
+                    height,
+                    elapsed_us = elapsed.as_micros(),
+                    "scene: painted"
+                );
+            } else {
+                tracing::trace!(
+                    width,
+                    height,
+                    elapsed_us = elapsed.as_micros(),
+                    "scene: painted"
+                );
+            }
+        }
         if let Err(error) = &painted {
             tracing::error!(%error, "space paint failed");
         }

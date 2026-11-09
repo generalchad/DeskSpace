@@ -7040,3 +7040,20 @@ section V.
     rules point at it instead of restating it.
   - Change no task's meaning. Commit as `docs: give the performance rules one
     home (B56)`.
+
+- [x] **B51. Log how long a space's scene takes (app, platform).** Any
+  contributor; it adds log lines only.
+  - Why: every scene a space gets is built whole, and nothing says what that
+    costs. B52 waits for this number.
+  - Copy `settings: switched page` (`win32/settings_window/nav.rs`). Add:
+    - `scene: built`, timed across `App::refresh_space` (`app/view.rs`), with
+      the space id, the scene's item count, and the view mode;
+    - `scene: prepared`, timed across `PreparedScene`'s constructor
+      (`render/d2d/prepared.rs`);
+    - `scene: painted`, timed across a space window's paint, with its size.
+  - These run on every hover change, so log them at `trace`. Log the same line
+    at `debug` as well when it takes over 4 ms, so a `-v` log shows only the
+    slow ones.
+  - Done when: the gates pass and a `./scripts/dev.ps1 -Release -Verbosity 2`
+    run shows each line. Say in the commit body that you saw them, or that a
+    person must.
