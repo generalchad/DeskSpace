@@ -69,15 +69,17 @@ impl Selection {
     /// another, which needs repainting.
     ///
     /// A selection lives in one surface, as each Explorer window has its own,
-    /// so entering another drops the items, anchor, and focus. Kept, a
-    /// Ctrl+click in a second space added to items the first no longer drew,
-    /// and Delete, Copy, and Cut then acted on those unseen items too.
+    /// so entering another drops the items, anchor, focus, and independent
+    /// ticks. Kept, a Ctrl+click in a second space added to items the first
+    /// no longer drew, and Delete, Copy, and Cut then acted on those unseen
+    /// items too; ticks are the operand in independent mode, so they go too.
     pub(super) fn enter(&mut self, surface: Surface) -> Option<Surface> {
         let previous = self.surface.replace(surface);
         if previous == Some(surface) {
             return None;
         }
         self.clear_items();
+        self.checked.clear();
         previous
     }
 
@@ -618,12 +620,15 @@ mod tests {
         selection.toggle(ItemId(1));
         selection.toggle(ItemId(2));
         selection.focus(ItemId(2));
+        selection.toggle_checked(ItemId(1));
 
         assert_eq!(selection.enter(one), None, "the same surface keeps it");
         assert_eq!(selection.items, vec![ItemId(1), ItemId(2)]);
+        assert_eq!(selection.checked, vec![ItemId(1)]);
 
         assert_eq!(selection.enter(two), Some(one), "the old one repaints");
         assert!(selection.items.is_empty());
+        assert!(selection.checked.is_empty(), "ticks stay with their space");
         assert_eq!((selection.anchor, selection.focused), (None, None));
     }
 
