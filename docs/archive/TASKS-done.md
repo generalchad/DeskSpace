@@ -7086,3 +7086,5 @@ takes an id listed here or used anywhere above
 - **Q8a.** Decode the task ids left in comments: core, config, and update.
 - **Q8b.** Decode the task ids left in comments: the app.
 - **Q8c.** Decode the task ids left in comments: the platform.
+- **Q8d.** A test that refuses task ids in comments (`comment_ids.rs`).
+- **Q8.** Decode the task ids left in comments.

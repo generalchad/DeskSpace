@@ -30,7 +30,7 @@ are collected in section V instead of blocking:
   leave nothing to design; K18 first, since `undo.rs` is at the limit;
 - section T: T24 (needs nothing now), T41a, and then T42; once T41 has
   landed, T25-T31 in order, then T44 and T46-T48;
-- O5 and the O6-O9 harness abilities; Q8a-Q8c, comments only;
+- O5 and the O6-O9 harness abilities;
 - anything else not marked **[needs decision]**, "still to design", or in
   section D.
 
@@ -1873,25 +1873,6 @@ Rules for every Q task:
 6. Done when: the gates pass, the subsection is at most half its length
    before, and `rg -n "<a distinctive phrase from each moved sentence>"
    crates` finds it in the code.
-
-- [ ] **Q8. Decode the task ids left in comments.** Decided (maintainer,
-  2026-11-05): sweep them, then guard (`ENGINEERING.md` section 4 rule 10).
-  About 180 comment
-  lines still carry one (2026-11-05: core 22, config 5, app 96, platform 56,
-  ROADMAP `Dn` ids not counted). Each sends a reader to the archive to learn
-  why the code is so, and nothing stops a new one.
-  - The parts, each its own commit, any order before Q8d:
-    - [ ] **Q8d (junior).** After Q8a-Q8c. A test beside `file_size.rs`
-      (`crates/deskspace-app/tests/comment_ids.rs`) that fails on a task id in a
-      `//` or `///` comment: a section letter this file uses and a number, as
-      a whole word. ROADMAP's `Dn` and `F-nn` and Win32 names (`WM_`, `VK_`,
-      ...) pass. The failure names the file and line.
-  - For each id: look it up in this file or `archive/TASKS-done.md`, and say
-    the why it stood for in the comment's own words. If the comment reads as
-    well without it, delete just the id. If a comment only names the task
-    ("added in W12"), delete the comment. Change comments only; Q's rules 2,
-    3, and 5 hold (the commit body lists each rewritten comment's file).
-  - Done when: the part's crates have no id left, and the gates pass.
 
 ## P. Pay down what we found while working
 

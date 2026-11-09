@@ -185,9 +185,8 @@ https://stackoverflow.blog/2021/12/23/best-practices-for-writing-code-comments/)
 10. Keep task ids (`W3c`, `T12`) and dates out of new comments: say the why
     in the comment and put the id in the commit message. Ids are decoded
     only through `TASKS.md`, its archive, and git history, and they age as
-    tasks finish. The ones still in the code are being swept out, and a test
-    will then refuse new ones (decided 2026-11-05; `TASKS.md` Q8); until
-    it lands, take out any you touch.
+    tasks finish. `crates/deskspace-app/tests/comment_ids.rs` refuses one
+    in a comment.
 
 Rust specifics: `///` doc comments are expected on non-obvious public library
 items, kept concise. Every `unsafe` block carries a `// SAFETY:` comment saying
