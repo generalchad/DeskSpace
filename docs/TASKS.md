@@ -40,8 +40,10 @@ on-screen checks are in section V.
 
 ## How to work a task
 
-1. Read `ENGINEERING.md` once (especially "Design priorities"), then only the
-   `CONTEXT.md` sections a task names. Use the file map below to find code.
+1. Use the file map below to find code, and follow the recipe for your kind
+   of change. Read the `ENGINEERING.md` sections it names (all of it before
+   an architectural change or Win32 work), then only the `CONTEXT.md`
+   sections a task names.
 2. One task per commit. Do not fix "nearby" things; note them under **Found
    while working** at the end of this file instead. A wrong sentence in a
    doc the task follows or changes is not nearby: fix it in the same commit

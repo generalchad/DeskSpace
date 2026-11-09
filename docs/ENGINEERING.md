@@ -44,8 +44,8 @@ with or without a `--` before them. `Get-Help ./scripts/dev.ps1` has
 examples.
 
 **The gates.** Before a change is complete, and before every commit, run
-`cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings`, and
-`cargo test --workspace`. CI (`.github/workflows/ci.yml`) fails on clippy
+`cargo fmt --all`, `cargo clippy --workspace --all-targets --locked -- -D warnings`,
+and `cargo test --workspace --locked`. CI (`.github/workflows/ci.yml`) fails on clippy
 warnings, also builds on the minimum supported Rust, and runs
 `cargo deny check all`.
 

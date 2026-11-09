@@ -52,8 +52,8 @@ of your editor. `Get-Help ./scripts/dev.ps1` lists the other switches.
 
 ```powershell
 cargo fmt --all
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
 ```
 
 (`./scripts/dev.ps1 -Check -NoRun` runs all three.) That's enough for a small
@@ -88,9 +88,11 @@ Security problems go through a private report instead of an issue; see
 
 ## Making a change
 
-1. Read [`docs/ENGINEERING.md`](docs/ENGINEERING.md), the engineering guide:
-   the design priorities, the architectural rules, the extension points, and
-   the comment style. Then read only the
+1. Find your kind of change in [`docs/TASKS.md`](docs/TASKS.md)'s file map
+   and recipes, and follow the recipe: it names the files and the rules that
+   apply. Read the [`docs/ENGINEERING.md`](docs/ENGINEERING.md) sections it
+   names, and all of it before an architectural change (a new module,
+   crate, dependency, or extension point) or Win32 work. Then read only the
    [`docs/CONTEXT.md`](docs/CONTEXT.md) sections your change touches.
 2. Keep each commit one logical unit of work, with tests for new logic.
    Update `docs/CONTEXT.md` in the same commit when behavior changes.
