@@ -17,7 +17,7 @@
 //! watchdog existed. A named mutex makes a stray watchdog a no-op, so two of
 //! them never fight over one parent.
 
-use std::ffi::c_void;
+use std::ffi::{OsStr, c_void};
 use std::os::windows::process::CommandExt;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
@@ -246,7 +246,7 @@ fn watchdog_exe() -> std::io::Result<std::path::PathBuf> {
     let directory = current.parent().unwrap_or(std::path::Path::new("."));
     let stem = current
         .file_stem()
-        .and_then(|stem| stem.to_str())
+        .and_then(OsStr::to_str)
         .unwrap_or("deskspace");
     Ok(directory.join(format!("{stem}-watchdog{}", std::env::consts::EXE_SUFFIX)))
 }
@@ -267,7 +267,7 @@ mod tests {
     use super::*;
 
     fn args(items: &[&str]) -> Vec<String> {
-        items.iter().map(|item| item.to_string()).collect()
+        items.iter().map(ToString::to_string).collect()
     }
 
     #[test]

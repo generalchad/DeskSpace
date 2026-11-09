@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use deskspace_core::geometry::{Point, Rect};
 use deskspace_core::layout::GridSpec;
-use deskspace_core::{Item, ItemId, Palette, SpaceId, Theme};
+use deskspace_core::{Item, ItemId, Palette, Space, SpaceId, Theme};
 use deskspace_platform::{
     CheckBoxMode, ItemLayout, ItemMetrics, item_check_box_hit, virtual_desktop_rect,
 };
@@ -80,11 +80,7 @@ impl App {
     /// The rect a surface's window occupies on screen.
     pub(super) fn surface_window_rect(&self, surface: Surface) -> Option<Rect> {
         match surface {
-            Surface::Space(id) => self
-                .config
-                .desktop
-                .space(id)
-                .map(|space| space.visible_rect()),
+            Surface::Space(id) => self.config.desktop.space(id).map(Space::visible_rect),
             Surface::Desktop => Some(virtual_desktop_rect()),
         }
     }
@@ -92,11 +88,7 @@ impl App {
     /// The area a rubber-band selection clamps to, in desktop coordinates.
     pub(super) fn surface_content(&self, surface: Surface) -> Option<Rect> {
         match surface {
-            Surface::Space(id) => self
-                .config
-                .desktop
-                .space(id)
-                .map(|space| space.content_rect()),
+            Surface::Space(id) => self.config.desktop.space(id).map(Space::content_rect),
             Surface::Desktop => Some(virtual_desktop_rect()),
         }
     }
@@ -301,7 +293,7 @@ impl App {
             .spaces()
             .iter()
             .filter(|space| !space.is_lens())
-            .flat_map(|space| space.items())
+            .flat_map(Space::items)
             .map(|item| (path_key(&item.path), item.id))
             .collect()
     }

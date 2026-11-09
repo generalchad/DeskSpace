@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -410,7 +411,7 @@ impl App {
         let Some(mut entry) = self.undo.undo.pop() else {
             return StepOutcome::Empty;
         };
-        if !entry.can_undo(&self.config.desktop, |path| path.exists()) {
+        if !entry.can_undo(&self.config.desktop, Path::exists) {
             return StepOutcome::Stale(entry.label);
         }
         match self.reverse_files(&mut ui, &mut entry.files, true) {
@@ -439,7 +440,7 @@ impl App {
         let Some(mut entry) = self.undo.redo.pop() else {
             return StepOutcome::Empty;
         };
-        if !entry.can_redo(&self.config.desktop, |path| path.exists()) {
+        if !entry.can_redo(&self.config.desktop, Path::exists) {
             return StepOutcome::Stale(entry.label);
         }
         match self.reverse_files(&mut ui, &mut entry.files, false) {
@@ -628,7 +629,7 @@ impl App {
                 let (Some(ui), Some(parent), Some(target_name)) = (
                     ui.as_deref_mut(),
                     to.parent(),
-                    to.file_name().and_then(|name| name.to_str()),
+                    to.file_name().and_then(OsStr::to_str),
                 ) else {
                     return false;
                 };
@@ -656,7 +657,7 @@ impl App {
     }
 
     fn reverse_rename(&mut self, ui: &mut Option<&mut Ui>, from: &Path, to: &Path) -> bool {
-        let Some(new_name) = to.file_name().and_then(|name| name.to_str()) else {
+        let Some(new_name) = to.file_name().and_then(OsStr::to_str) else {
             return false;
         };
         let ok = match ui.as_deref_mut() {

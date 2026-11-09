@@ -5,7 +5,9 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use deskspace_core::{Command, Item, ItemId, ItemKind, LensBuilder, LensList, SpaceId, lens_title};
+use deskspace_core::{
+    Command, Item, ItemId, ItemKind, LensBuilder, LensList, Space, SpaceId, lens_title,
+};
 use deskspace_platform::{FolderListing, Ui, WatchKey, desktop_directory, is_inside};
 
 use super::{App, Surface, Timer};
@@ -186,7 +188,7 @@ impl App {
                 .is_some_and(|view| view.path == browsed.root)
         });
         self.listed
-            .retain(|id, _| spaces.space(*id).is_some_and(|space| space.is_lens()));
+            .retain(|id, _| spaces.space(*id).is_some_and(Space::is_lens));
         let desktop = if self.layer_active() {
             match desktop_directory() {
                 Ok(directory) => Some(directory),
@@ -209,11 +211,7 @@ impl App {
         for (key, path) in wanted {
             if ui.is_watching_folder(key, &path) {
                 if let WatchKey::Space(id) = key
-                    && let Some(rules) = self
-                        .config
-                        .desktop
-                        .space(id)
-                        .and_then(|space| space.lens_rules())
+                    && let Some(rules) = self.config.desktop.space(id).and_then(Space::lens_rules)
                 {
                     ui.set_lens_rules(key, rules);
                 }
@@ -336,7 +334,7 @@ impl App {
         self.config
             .desktop
             .space(id)
-            .and_then(|space| space.lens_rules())
+            .and_then(Space::lens_rules)
             .is_some_and(|rules| rules == list.rules)
     }
 
@@ -367,7 +365,7 @@ impl App {
         let Some(id) = desktop.space_containing(item) else {
             return;
         };
-        if desktop.space(id).is_some_and(|space| space.is_lens())
+        if desktop.space(id).is_some_and(Space::is_lens)
             && let Some(entry) = desktop.item(item)
         {
             ui.note_lens_item(
@@ -565,6 +563,8 @@ fn browse_into(root: &Path, shown: &Path, entry: &Item) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsStr;
+
     use super::*;
 
     use deskspace_config::{Config, ConfigStore};
@@ -649,7 +649,7 @@ mod tests {
             .config
             .desktop
             .space(lens)
-            .and_then(|space| space.lens_rules())
+            .and_then(Space::lens_rules)
             .unwrap();
         let list = LensList {
             rules,
@@ -1191,7 +1191,7 @@ mod tests {
                         entry
                             .path
                             .extension()
-                            .and_then(|extension| extension.to_str())
+                            .and_then(OsStr::to_str)
                             .unwrap_or_default()
                             .to_ascii_lowercase()
                     };

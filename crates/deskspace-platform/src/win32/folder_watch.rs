@@ -1278,6 +1278,8 @@ impl Coalescer {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsStr;
+
     use super::*;
 
     #[test]
@@ -1515,10 +1517,7 @@ mod tests {
         };
         // The temp folder may be spelled with a short name, and the final
         // path never is, so compare the folder's own name.
-        assert_eq!(
-            to.file_name().and_then(|name| name.to_str()),
-            Some("new-root")
-        );
+        assert_eq!(to.file_name().and_then(OsStr::to_str), Some("new-root"));
     }
 
     /// A browsed lens sees a file added to the subfolder it shows, though its
@@ -1608,10 +1607,7 @@ mod tests {
         let Some(FolderListing::Moved { to }) = seen else {
             panic!("expected Moved, got {seen:?}");
         };
-        assert_eq!(
-            to.file_name().and_then(|name| name.to_str()),
-            Some("new-root")
-        );
+        assert_eq!(to.file_name().and_then(OsStr::to_str), Some("new-root"));
     }
 
     /// A subfolder that is a junction into the store is refused while the

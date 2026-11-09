@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use deskspace_core::item::ItemKind;
@@ -420,7 +421,7 @@ fn title_icon_rect_after(title_height: i32, back: Option<Rect>) -> Rect {
         Some(_) => BACK_BUTTON_GAP,
         None => TITLE_ICON_INSET,
     };
-    let left = back.map_or(0, |back| back.right()) + ((gap as f32) * scale).round() as i32;
+    let left = back.map_or(0, Rect::right) + ((gap as f32) * scale).round() as i32;
     Rect::new(left, ((title_height - size) / 2).max(0), size, size)
 }
 
@@ -1053,7 +1054,7 @@ pub(crate) fn item_label(item: &Item, show_extensions: bool) -> String {
         if show_extensions {
             return name.to_string();
         }
-        if let Some(stem) = item.path.file_stem().and_then(|stem| stem.to_str()) {
+        if let Some(stem) = item.path.file_stem().and_then(OsStr::to_str) {
             return stem.to_string();
         }
     }

@@ -1,6 +1,7 @@
 //! `App` files: drops, storage, deletion, and desktop reconciliation (R1).
 
 use std::collections::HashSet;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -927,7 +928,7 @@ fn write_shortcut(folder: &Path, source: &ShortcutSource) -> anyhow::Result<Path
 /// drop copies rather than links to.
 fn is_link_file(path: &Path) -> bool {
     path.extension()
-        .and_then(|extension| extension.to_str())
+        .and_then(OsStr::to_str)
         .is_some_and(|extension| {
             extension.eq_ignore_ascii_case("lnk") || extension.eq_ignore_ascii_case("url")
         })

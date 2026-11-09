@@ -1,6 +1,7 @@
 //! Reading icons from the shell: the image factory, the classic fallback,
 //! overlays, and the resampling the cache shares.
 
+use std::ffi::OsStr;
 use std::path::Path;
 
 use windows::Win32::Foundation::SIZE;
@@ -88,7 +89,7 @@ fn load_attribute_icon(name: &str, attributes: FILE_FLAGS_AND_ATTRIBUTES) -> Opt
 /// Whether `path` is a shortcut, which Windows marks with the link arrow.
 fn is_shortcut(path: &Path) -> bool {
     path.extension()
-        .and_then(|extension| extension.to_str())
+        .and_then(OsStr::to_str)
         .is_some_and(|extension| {
             extension.eq_ignore_ascii_case("lnk") || extension.eq_ignore_ascii_case("url")
         })

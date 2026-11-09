@@ -1979,23 +1979,6 @@ Logs, tooling, readability, docs, and checks that may close a task.
   - Done when: a run prints the state, and with a space on another virtual desktop
     the check fails and names the cloak.
 
-- [ ] **P43. Let clippy keep closures that only call a method out (lint).**
-  `.and_then(|name| name.to_str())` says what `.and_then(OsStr::to_str)` says, with
-  more to read. SonarCloud reports 21 of these (`rust:S1612`), and clippy's
-  `redundant_closure_for_method_calls` found 36 (2026-11-04); the two lists overlap
-  only in part. A lint keeps them out for good, as `ENGINEERING.md` section 2 rule 4
-  wants.
-  - Add `redundant_closure_for_method_calls = "warn"` to `[workspace.lints.clippy]`
-    in the root `Cargo.toml`, with a one-line comment. Every crate inherits it, and
-    CI's `-D warnings` makes it fail.
-  - Fix what clippy reports. `cargo clippy --fix --workspace --all-targets
-    --allow-dirty` applies most of them; read the diff before you commit.
-  - Then open the SonarCloud list (project `generalchad_DeskSpace`, rule
-    `rust:S1612`). Fix each hit that clippy did not, if the method reference
-    compiles. List any that do not compile in the commit body, so the maintainer can
-    mark them in SonarCloud.
-  - Done when: the gates pass, and nothing but closures changed.
-
 - [ ] **P12a. See whether a swallowed Alt shows anything (no code).**
   **[needs human]** The first step of P12. With an item selected, press
   Alt+Enter, Alt+Left, and Alt+Up, and watch for focus cues or any change on the

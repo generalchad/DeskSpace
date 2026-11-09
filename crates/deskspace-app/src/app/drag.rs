@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 use deskspace_core::geometry::{Point, Rect};
-use deskspace_core::{Command, ItemId, ResizeEdges, SpaceId};
+use deskspace_core::{Command, ItemId, ResizeEdges, Space, SpaceId};
 
 use deskspace_platform::{DragImage, Ui, drag_threshold, space_dpi, virtual_desktop_rect};
 
@@ -155,12 +155,7 @@ impl App {
         // Not `commit`: runs on every pointer move; `end_drag` saves once.
         self.dispatch(Command::SetSpaceRect { id, rect }, point)
             .is_applied()
-            .then(|| {
-                self.config
-                    .desktop
-                    .space(id)
-                    .map(|space| space.visible_rect())
-            })
+            .then(|| self.config.desktop.space(id).map(Space::visible_rect))
             .flatten()
     }
 
@@ -194,7 +189,7 @@ impl App {
         if !active.0 && !active.1 {
             return false;
         }
-        let before = self.config.desktop.space(id).map(|space| space.rect());
+        let before = self.config.desktop.space(id).map(Space::rect);
         let command = Command::ResizeSpace {
             id,
             edges: active_edges,
@@ -204,7 +199,7 @@ impl App {
         self.undo.begin_if_none("Resize space");
         // Not `commit`: runs on every pointer move; `end_drag` saves once.
         self.dispatch(command, point).is_applied()
-            && self.config.desktop.space(id).map(|space| space.rect()) != before
+            && self.config.desktop.space(id).map(Space::rect) != before
     }
 
     /// Repositions a loose desktop item as it is dragged, so it follows the
@@ -369,7 +364,7 @@ impl App {
             .config
             .desktop
             .space(space)
-            .is_some_and(|space| space.order_is_fixed())
+            .is_some_and(Space::order_is_fixed)
         {
             return false;
         }

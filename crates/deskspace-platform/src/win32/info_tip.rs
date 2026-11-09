@@ -9,6 +9,7 @@
 //! normal tip would need.
 //! https://learn.microsoft.com/en-us/windows/win32/controls/tooltip-control-reference
 
+use std::ffi::OsStr;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -160,7 +161,7 @@ fn pack_point(x: i32, y: i32) -> isize {
 /// its modification date, each on its own line.
 pub(crate) fn describe(path: &Path) -> String {
     let mut lines = Vec::new();
-    if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
+    if let Some(name) = path.file_name().and_then(OsStr::to_str) {
         lines.push(name.to_string());
     }
     if let Some(kind) = type_name(path) {

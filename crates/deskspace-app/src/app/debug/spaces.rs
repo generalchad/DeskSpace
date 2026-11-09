@@ -5,7 +5,7 @@ use deskspace_core::{Command, Desktop, Space, SpaceId};
 use deskspace_platform::{DebugControlKind, Ui, cursor_pos};
 
 use super::test_spaces::{
-    STRESS_SIZES, TEST_SPACES, is_stress_title, stress_shortcuts, stress_title,
+    STRESS_SIZES, TEST_SPACES, TestShortcut, is_stress_title, stress_shortcuts, stress_title,
 };
 use super::windows::rect_text;
 use crate::app::App;
@@ -81,7 +81,7 @@ impl App {
             let sources = space
                 .shortcuts
                 .iter()
-                .filter_map(|shortcut| shortcut.source())
+                .filter_map(TestShortcut::source)
                 .collect();
             if self.create_test_space(ui, space.title, sources).is_some() {
                 made += 1;
@@ -123,7 +123,7 @@ impl App {
             "Id", "Title", "Rect", "Items", "Folded", "Locked", "Own look",
         ];
         DebugControlKind::Table {
-            columns: columns.iter().map(|column| column.to_string()).collect(),
+            columns: columns.iter().map(ToString::to_string).collect(),
             rows: self.config.desktop.spaces().iter().map(space_row).collect(),
         }
     }

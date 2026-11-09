@@ -318,11 +318,7 @@ impl App {
         // to contents for the space that holds it (D23).
         let mut entries = vec![menu_item(MenuId::RenameItem, "Rename")];
         if let Surface::Space(id) = surface {
-            let can_fit = self
-                .config
-                .desktop
-                .space(id)
-                .is_some_and(|space| space.can_fit());
+            let can_fit = self.config.desktop.space(id).is_some_and(Space::can_fit);
             entries.push(menu_item(MenuId::Fit, "Fit to contents").enabled(can_fit));
         }
         match ui.item_menu(&path, &entries, at) {
@@ -831,7 +827,7 @@ impl App {
             .desktop
             .spaces()
             .iter()
-            .map(|space| space.rect())
+            .map(Space::rect)
             .collect()
     }
 }

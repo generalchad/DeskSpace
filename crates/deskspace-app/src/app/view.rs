@@ -18,10 +18,10 @@ use deskspace_core::{
 };
 use deskspace_platform::{
     CheckBoxMode, DesktopEntry, ITEM_ICON_SIZE, ItemMetrics, ShellDisplay, SpaceScene, SpaceStyle,
-    Ui, Way, arm_watchdog, desktop_display_since, enumerate_desktop_items, foreground_window,
-    hide_desktop_icons, local_today, rehide_desktop_icons, restore_desktop_icons, space_dpi,
-    system_accent_color, system_animations, system_uses_dark_mode, type_name, virtual_desktop_rect,
-    work_area_at,
+    TaskbarRow, Ui, Way, arm_watchdog, desktop_display_since, enumerate_desktop_items,
+    foreground_window, hide_desktop_icons, local_today, rehide_desktop_icons,
+    restore_desktop_icons, space_dpi, system_accent_color, system_animations,
+    system_uses_dark_mode, type_name, virtual_desktop_rect, work_area_at,
 };
 
 use crate::scene::{
@@ -323,7 +323,7 @@ impl App {
             if existing.contains(&id.0) {
                 continue;
             }
-            let Some(rect) = self.config.desktop.space(*id).map(|f| f.visible_rect()) else {
+            let Some(rect) = self.config.desktop.space(*id).map(Space::visible_rect) else {
                 continue;
             };
             if let Err(error) = ui.create_space(id.0, rect, self.style_for(*id)) {
@@ -791,7 +791,7 @@ impl App {
             .desktop
             .spaces()
             .iter()
-            .flat_map(|space| space.items())
+            .flat_map(Space::items)
             .map(|item| path_key(&item.path))
             .collect();
         self.layer
@@ -881,10 +881,10 @@ impl App {
             return;
         }
         let taskbars = ui.taskbars();
-        let found = taskbars.iter().any(|taskbar| taskbar.is_blocked());
+        let found = taskbars.iter().any(TaskbarRow::is_blocked);
         let blocked = found && {
             ui.sink_desktop_layer();
-            ui.taskbars().iter().any(|taskbar| taskbar.is_blocked())
+            ui.taskbars().iter().any(TaskbarRow::is_blocked)
         };
         let was_blocked = std::mem::replace(&mut self.layer.taskbar_blocked, blocked);
         // A repaired occurrence logs each time; one the repair cannot fix

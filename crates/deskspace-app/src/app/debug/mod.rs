@@ -221,7 +221,7 @@ impl App {
                 enabled: self.has_stress_spaces(),
             },
             DebugId::StressSize => DebugControlKind::Choice {
-                options: STRESS_SIZES.iter().map(|size| size.to_string()).collect(),
+                options: STRESS_SIZES.iter().map(ToString::to_string).collect(),
                 selected: self.debug.as_ref().map_or(0, |tools| tools.stress_size),
                 enabled: true,
             },

@@ -9,7 +9,7 @@
 //! instead, since Name has no width of its own to set.
 
 use deskspace_core::geometry::Point;
-use deskspace_core::{Column, Command, SpaceId, SpaceView, ViewMode};
+use deskspace_core::{Column, Command, Space, SpaceId, SpaceView, ViewMode};
 use deskspace_platform::{DetailsColumnVisual, DetailsView, Ui, drag_threshold, space_dpi};
 
 use super::drag::Drag;
@@ -435,7 +435,7 @@ impl App {
             return false;
         };
         let id = resize.id;
-        let current = self.config.desktop.space(id).map(|space| space.view());
+        let current = self.config.desktop.space(id).map(Space::view);
         if resize.applied != resize.before && current == Some(&resize.applied) {
             let at = self.space_center(id);
             let view = resize.before.clone();

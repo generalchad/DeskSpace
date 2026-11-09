@@ -22,7 +22,7 @@ pub(super) unsafe fn sync_title(window: HWND) {
                 state.header_layout,
                 state.form.nav.header.clone(),
                 state.heading_font,
-                state.title_motion.as_ref().map(|motion| motion.key()),
+                state.title_motion.as_ref().map(TitleMotion::key),
                 state.renaming,
             )
         }) else {
