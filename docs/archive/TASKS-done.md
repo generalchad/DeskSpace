@@ -7025,3 +7025,18 @@ section V.
     point it at the archive.
   - Change no other section. Commit as `docs: archive section W's phase notes
     (P27)`.
+
+- [x] **B56. One home for the performance rules (docs).** **(junior)** After:
+  P27, which moves section W's notes around the same text.
+  - Why: the 8 ms budget, "measure in a release build", and "never commit a
+    test that asserts a time" live in section W's "Performance" and in the
+    rules of B44-B50 and B51-B55, so each new performance task copies them. A
+    rule belongs in `ENGINEERING.md` (section 7's table).
+  - Add a short "Performance" part to `ENGINEERING.md` section 3: the 8 ms
+    UI-thread budget per event, nothing O(items) per mouse move or wheel notch,
+    no allocation while painting (now in section 4; move it), measure in
+    release, and no timing asserts. Section W keeps only what is about lenses
+    (the 50,000-file bar, no IO the listing did not do) and points at it; the B
+    rules point at it instead of restating it.
+  - Change no task's meaning. Commit as `docs: give the performance rules one
+    home (B56)`.

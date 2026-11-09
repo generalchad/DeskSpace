@@ -132,6 +132,11 @@ The crates and what each owns are in `CONTEXT.md` section 3.
 - Library crates return `thiserror` errors; the binary boundary uses `anyhow`.
 - Use `tracing` for diagnostics, and `debug` or `trace` (never `info`) on
   per-frame or noisy paths.
+- **Performance.** The UI thread may spend 8 ms on one event (half a 60 Hz
+  frame). Nothing costs O(items) per mouse move or wheel notch, and painting
+  allocates nothing. Measure in a release build, and record the before and
+  after numbers with the date in the commit body. Never commit a test that
+  asserts a time: CI machines vary.
 - Tests sit in each module as `#[cfg(test)] mod tests`.
 - Each crate tests on its own: `cargo test -p <crate>` passes with no
   other crate's tests, and a change re-tests only that crate and the
@@ -148,8 +153,8 @@ The crates and what each owns are in `CONTEXT.md` section 3.
 ## 4. Code style and comments
 
 Rust edition 2024 with rustfmt defaults. Prefer clear names and small
-functions over explanatory comments, avoid allocation in the per-frame paint
-path, and document public APIs with `///` only where behavior is not obvious.
+functions over explanatory comments, and document public APIs with `///` only
+where behavior is not obvious.
 
 Code says how; a comment says why, and only when the code cannot. A bad
 comment is worse than none: it clutters, costs reading time, and goes stale

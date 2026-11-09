@@ -379,19 +379,19 @@ The icon picker froze for seconds on opening and on every search keystroke
 (found 2026-11-05). Measured in a release build, a glyph cost about 55 ms to
 draw, because each one made a new Direct3D device. B44 (archived) keeps one
 device context, and a glyph now costs about 0.33 ms. A picker page of about
-100 cells is still about 35 ms, over the 8 ms the UI thread may spend
-(section W, "Performance"). These tasks take the rest, in order.
+100 cells is still about 35 ms, over the UI thread's budget
+(`ENGINEERING.md` section 3, "Performance"). These tasks take the rest, in
+order.
 
 Rules for every task here:
 
-1. **Measure before and after**, in a release build
-   (`cargo test --release` or `./scripts/dev.ps1 -Release`), and put both
-   numbers with the date in the commit body. To time pure code, write a
-   throwaway `#[ignore]` test, run it with `-- --ignored --nocapture`, and
-   delete it before you commit. The real Fluent set is
-   `%TEMP%\deskspace-dev\icons\fluent-r1.json` once a `dev.ps1` run has
-   downloaded it; parse it with `serde_json::from_slice::<IconSet>`. Never
-   commit a test that asserts a time: CI machines vary.
+1. **Measure before and after**, as `ENGINEERING.md` section 3,
+   "Performance" says. To time pure code, write a throwaway `#[ignore]`
+   test, run it with `-- --ignored --nocapture`, and delete it before you
+   commit. The real
+   Fluent set is `%TEMP%\deskspace-dev\icons\fluent-r1.json` once a
+   `dev.ps1` run has downloaded it; parse it with
+   `serde_json::from_slice::<IconSet>`.
 2. **Same results.** A faster path returns what the slow one did, in the same
    order; the existing tests are the spec, and none is deleted or loosened.
 3. **The picker's Win32 code is `unsafe`.** B47 and B48 change
@@ -440,11 +440,11 @@ Rules for every task here:
     shortcut ▸ installed apps, search "mi" and clear. Record the times from
     each of B45's lines here, with the date and the machine (CPU, display
     scale).
-  - If the icon picker's first page of draws, or any search, is over 8 ms,
-    B50 is ready; if neither is, delete B50 with the numbers as the reason.
-    Separately, if the app picker's fill is over 8 ms, add a seniors-only
-    task for a virtual (`LVS_OWNERDATA`) app list, which must keep its check
-    boxes working.
+  - If the icon picker's first page of draws, or any search, is over the
+    budget, B50 is ready; if neither is, delete B50 with the numbers as the
+    reason. Separately, if the app picker's fill is over the budget, add a
+    seniors-only task for a virtual (`LVS_OWNERDATA`) app list, which must
+    keep its check boxes working.
 
 - [ ] **B50. Draw the picker's icons off the UI thread (platform; thread).**
   **Seniors only.** After: B49, and only if it says so.
@@ -466,9 +466,8 @@ Rules for every task here:
 
 Planned 2026-11-05 from a read of the code, not from a profile, so the first
 tasks measure and the later ones wait for the numbers. The rules of B44-B50
-hold here too: measure before and after in a release build, same results,
-and no committed test that asserts a time. The budget is 8 ms of UI-thread
-work per event (section W, "Performance").
+hold here too; the budget and the measurement rules are `ENGINEERING.md`
+section 3, "Performance".
 
 - [ ] **B51. Log how long a space's scene takes (app, platform).** Any
   contributor; it adds log lines only.
@@ -551,21 +550,6 @@ work per event (section W, "Performance").
     spaces and items, or says a person must.
 
 ### Readability and tooling (B56-B57)
-
-- [ ] **B56. One home for the performance rules (docs).** **(junior)** After:
-  P27, which moves section W's notes around the same text.
-  - Why: the 8 ms budget, "measure in a release build", and "never commit a
-    test that asserts a time" live in section W's "Performance" and in the
-    rules of B44-B50 and B51-B55, so each new performance task copies them. A
-    rule belongs in `ENGINEERING.md` (section 7's table).
-  - Add a short "Performance" part to `ENGINEERING.md` section 3: the 8 ms
-    UI-thread budget per event, nothing O(items) per mouse move or wheel notch,
-    no allocation while painting (now in section 4; move it), measure in
-    release, and no timing asserts. Section W keeps only what is about lenses
-    (the 50,000-file bar, no IO the listing did not do) and points at it; the B
-    rules point at it instead of restating it.
-  - Change no task's meaning. Commit as `docs: give the performance rules one
-    home (B56)`.
 
 - [ ] **B57. A coverage report for the pure crates (tooling).** **(junior)**
   Installing a tool is an install on the user's machine, so ask first, as
@@ -989,28 +973,26 @@ Runtime orders:
 #### Performance
 
 The bar is bare-metal: a 50,000-file lens scrolls, selects, and resizes
-with no hitch. `ENGINEERING.md` sections 2-4 have the general rules;
-these are the ones phase 4 and 5 code most often breaks.
+with no hitch. The general rules, including the UI thread's budget, are
+`ENGINEERING.md` section 3, "Performance"; these are what lens code adds.
 
 - **Layout is arithmetic.** An order-placed view finds the rect for index
   `i`, and the indices visible in a scroll window, by arithmetic, not by
   walking every item. Groups (W37) keep prefix sums of group sizes and
-  binary-search them. Nothing costs O(items) per mouse move or wheel
-  notch.
+  binary-search them.
 - **Text is made once.** Type names (cached by extension), dates, sizes,
   and group names are formatted when a scene is built, and only for the
-  items the scene carries (the visible ones). Painting allocates nothing;
-  `PreparedScene` already encodes strings to UTF-16 once.
+  items the scene carries (the visible ones). `PreparedScene` already
+  encodes strings to UTF-16 once.
 - **No IO the listing did not already do.** Dates, sizes, and attributes
   come from the `FindFirstFileExW` record the worker reads. Hover tips,
   titles, and status text read the model. Nothing calls the disk on the
   UI thread per item or per event; the folder watch checks the store on
   its worker (W25).
 - **Measure what could be slow.** A task that touches `LensBuilder`, `SyncLens`,
-  sorting, filtering, or grouping times it on 50,000 entries with a
-  release build and records the dated result in its commit body. Over
-  8 ms (half a 60 Hz frame) on the UI thread means stop and ask before
-  merging.
+  sorting, filtering, or grouping times it on 50,000 entries and records
+  the dated result in its commit body. Over the budget on the UI thread
+  means stop and ask before merging.
 
 #### Safety and security
 
