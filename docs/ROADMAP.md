@@ -952,8 +952,11 @@ checks collect in `TASKS.md` section V and no longer block work):
    Fluent set is published (`icons-fluent-r1`, S5).
 3. **v0.3.0** (decided 2026-11-05, maintainer: release before starting more
    work; `TASKS.md` section Z is the plan). Until it is tagged, only section
-   Z's tasks, the fixes it names, docs, and log-only tasks land; new features,
-   effects, and refactors wait. The gate:
+   Z's tasks, the fixes it names, docs, and log-only tasks land, plus (added
+   2026-11-09, maintainer) the compiler-proven neutral ones: a lint and the
+   fixes it asks for (P43), comment-only sweeps (Q8), and deleting code
+   nothing calls. New features, effects, and refactors, file splits
+   included, wait. The gate:
    - *Fixes:* the fixed views' cell (P14b, P14c, before a saved space needs a
      migration), a config that cannot be read is never replaced (P35), one
      DeskSpace per config (P36), no file replaced when moving into storage

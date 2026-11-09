@@ -12,9 +12,10 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 its section.
 
 **Release first:** until v0.3.0 is tagged, take section Z's tasks and the
-fixes it names, and land nothing else but docs and log-only tasks
-(decided 2026-11-05; ROADMAP section 4). The list below is for after the
-tag, or for log-only work meanwhile.
+fixes it names, and land nothing else but docs, log-only tasks, and the
+neutral work ROADMAP section 4 item 3 lists (decided 2026-11-05, widened
+2026-11-09). The list below is for after the tag, or for that work
+meanwhile.
 
 **Pick a task:** these are ready for any contributor, now that human checks
 are collected in section V instead of blocking:
@@ -257,8 +258,8 @@ matching on `Surface` at the call site.
 
 The maintainer chose to release before starting more work. ROADMAP section
 4, item 3, holds the gate; this section is the plan. **Until v0.3.0 is
-tagged, take these first**, and land only them, the gate's fixes, docs, and
-log-only tasks; every other task waits. When the tag is out, archive this
+tagged, take these first**, and land only them, the gate's fixes, and what
+"Release first" above allows; every other task waits. When the tag is out, archive this
 section and lift the freeze in the same commit (Z8).
 
 v0.3.0-alpha.1 went out first, as a pre-release (maintainer, 2026-11-05),
