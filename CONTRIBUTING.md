@@ -14,7 +14,7 @@ pinned Rust version on the first build. There is nothing else to install.
 ```powershell
 git clone https://github.com/generalchad/DeskSpace.git
 cd DeskSpace
-./scripts/dev.ps1 -Fresh -OnTop
+./scripts/dev.ps1 -OnTop
 ```
 
 `dev.ps1` builds and runs DeskSpace with a scratch profile in

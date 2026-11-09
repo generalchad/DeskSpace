@@ -61,7 +61,8 @@ on-screen checks are in section V.
    (`ENGINEERING.md` has the commands), with new tests for new logic;
    `CONTEXT.md` updated where
    behavior changed, and the `ROADMAP.md` feature index (section 7) where a
-   feature's status changed; and the task's own "Done when" list.
+   feature's status changed; a `CHANGELOG.md` "Unreleased" line for a
+   change a user would notice; and the task's own "Done when" list.
 7. Commit in the `ENGINEERING.md` style with the task id in parentheses
    (`refactor: split d2d.rs (K2)`). In the same commit, delete the task here
    and add its id and title as one line under "Retired ids" at the end of
@@ -189,11 +190,14 @@ through `theme_for(id)`, `grid_for(id)`, and `palette_for(id)`, never
    one-line arm in `apply_with_layout` calling `self.apply_<variant>(..)`,
    written in `space_ops.rs`, `item_ops.rs`, or `layer_ops.rs` (using
    `with_space` for a single space). Return `NotFound` for a missing id,
-   `Rejected` when not allowed (for example a locked space), else `Applied`.
+   `Rejected` when not allowed (for example a locked space), else `Applied`,
+   also when the model already holds what was asked (`CommandOutcome`'s doc;
+   `RefreshItemFacts` is an exception, `CONTEXT.md` section 4).
    Then an arm in `Desktop::touched_by` (`command/touched.rs`) naming what it
    changes; the compiler asks for it.
-2. Tests in `command/mod.rs`'s `tests` module: one per outcome (copy the
-   `Reflow` tests there).
+2. Tests in `command/mod.rs`'s `tests` module: one per outcome. Copy the
+   closest variant's tests there: `SetSpaceIcon`'s for a plain setter,
+   `Reflow`'s for a layout change.
 3. App: call it through `self.commit(ui, command, at)` (`app/persist.rs`),
    which repaints what `touched_by` names and saves; bare `self.dispatch`
    only when the caller repaints or saves in its own way. Never mutate
@@ -2727,3 +2731,4 @@ scroll's focus G13, and the settings header's keyboard path P48; the
 refreshed.
 
 - `write_shortcut` (`app/files.rs`) picks a name with `unique_destination`, then `std::fs::copy` or the shell link's save writes it, and both replace a file that appears there meanwhile, as `storage.rs` did before P37; in a lens that is the user's own folder. Suggested task: write to a temp name beside it and claim the final name with `move_no_replace`, as `move_to_first_free` does.
+- `a_folder_moves_with_its_contents_and_never_onto_a_file` (`win32/file_move.rs` tests) failed once with "Access is denied. (os error 5)" where it expects `AlreadyExists`, during a `cargo test --workspace` that a second worktree's build ran beside (2026-11-09); it passed alone and on rerun. Suggested task: find what holds the folder (an indexer or antivirus on the temp path) and make the test tolerate or avoid it.

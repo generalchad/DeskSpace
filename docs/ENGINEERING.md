@@ -24,8 +24,8 @@ links the `windows` crate under `cfg(windows)`.
 | Build  | `cargo build --workspace` |
 | Run    | `cargo run -p deskspace-app -- --no-icons` |
 | Inspect| `cargo run -p deskspace-app -- --config <scratch.toml> --on-top --settings` |
-| Test   | `cargo test --workspace` |
-| Lint   | `cargo clippy --workspace --all-targets` |
+| Test   | `cargo test --workspace --locked` |
+| Lint   | `cargo clippy --workspace --all-targets --locked -- -D warnings` |
 | Format | `cargo fmt --all` |
 | Deps   | `cargo deny check all` (licenses/advisories, per `deny.toml`) |
 | Release| `cargo build --release`; the checklist is in `RELEASING.md` |
