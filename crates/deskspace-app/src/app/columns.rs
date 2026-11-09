@@ -16,7 +16,7 @@ use super::drag::Drag;
 use super::{App, RESIZE_BORDER, Surface};
 
 /// How far from a divider a press still grabs it, each way, at 96 DPI.
-/// Provisional until W31's on-screen check compares it with Explorer's.
+/// Provisional until the divider's on-screen check compares it with Explorer's.
 const DIVIDER_SLOP: i32 = 4;
 
 /// The shown column whose right edge is the divider at `x`, relative to the

@@ -469,8 +469,8 @@ pub(super) fn new_spaces_page(config: &Config) -> SettingsPage {
     }
 }
 
-/// A space's View page (W20): its view mode, status bar, extension choice
-/// (W28), and sort rule. Built for every scope so the form keeps its shape,
+/// A space's View page: its view mode, status bar, extension choice,
+/// and sort rule. Built for every scope so the form keeps its shape,
 /// but only a space lists it.
 pub(super) fn view_page(space: Option<&Space>) -> SettingsPage {
     let view = space.map_or_else(SpaceView::default, |space| space.view().clone());
@@ -499,7 +499,7 @@ pub(super) fn view_page(space: Option<&Space>) -> SettingsPage {
     }
 }
 
-/// Global's Lenses page (W23): the defaults a new lens starts with.
+/// Global's Lenses page: the defaults a new lens starts with.
 pub(super) fn lenses_page(config: &Config) -> SettingsPage {
     let defaults = &config.window.new_lens;
     let mut fields = view_fields(&defaults.view, &LENSES_PAGE_IDS, true);

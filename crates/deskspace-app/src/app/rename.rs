@@ -1,5 +1,5 @@
-//! `App` inline rename: the edit session, caret, and commit (R1), plus the
-//! `EditState` they share (R2).
+//! `App` inline rename: the edit session, caret, and commit, plus the
+//! `EditState` they share.
 
 use std::ffi::OsStr;
 use std::path::Path;
@@ -122,8 +122,8 @@ impl App {
             return;
         };
         let title = space.title().to_owned();
-        // The pointer may rest on this title with its tip already shown
-        // (W27); the edit takes its place.
+        // The pointer may rest on this title with its tip already shown;
+        // the edit takes its place.
         self.dismiss_info_tip(ui);
         self.edit.begin(EditSession {
             surface: Surface::Space(id),

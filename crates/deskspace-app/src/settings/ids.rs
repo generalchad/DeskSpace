@@ -159,7 +159,7 @@ pub mod field {
     pub const LENSES_GROUP: u32 = 156;
     pub const LENSES_GROUP_ORDER: u32 = 157;
 
-    // Theme files (C10c): the list on the Colors page and its two actions.
+    // Theme files: the list on the Colors page and its two actions.
     pub const THEMES: u32 = 158;
     pub const SAVE_THEME: u32 = 159;
     pub const LOAD_THEME: u32 = 160;
@@ -204,10 +204,10 @@ pub mod page {
     pub const LENS: usize = 10;
     /// The first animation page; one per `ANIMATION_PAGES` row follows.
     pub const ANIMATIONS: usize = 11;
-    /// A space's View page (W20), built after the animation pages so no landed
+    /// A space's View page, built after the animation pages so no landed
     /// page id moves; `nav_groups` puts it with the space's pages.
     pub const VIEW: usize = 11 + crate::settings::tables::ANIMATION_PAGES.len();
-    /// Global's Lenses defaults page (W23), after View.
+    /// Global's Lenses defaults page, after View.
     pub const LENSES: usize = VIEW + 1;
     /// Global's two font pages, after Lenses; `nav_groups` lists them under
     /// Fonts.

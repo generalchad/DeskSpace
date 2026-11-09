@@ -1,7 +1,7 @@
 //! `App` zoom: Ctrl+wheel, the zoom pop-up's buttons, and the zoom keys
 //! change the icon size (ROADMAP D9), and the pop-up shows the result
 //! (ROADMAP F-57). On a space set to one of Explorer's views they step its
-//! view instead, with no pop-up (W39).
+//! view instead, with no pop-up.
 
 use deskspace_core::theme::{ICON_SIZE_DEFAULT, ICON_SIZE_RANGE, Palette, Theme};
 use deskspace_core::{Backdrop, SpaceId, SpaceView, ViewMode};
@@ -109,7 +109,7 @@ impl App {
     }
 
     /// Ctrl+wheel: `delta` is the wheel's, in `WHEEL_DELTA` units. A space
-    /// set to one of Explorer's views steps through them instead (W39).
+    /// set to one of Explorer's views steps through them instead.
     pub(super) fn adjust_icon_size(&mut self, ui: &mut Ui, surface: Surface, delta: i32) {
         // Zooming in walks toward the bigger views, against the menu's
         // order, as Explorer's Ctrl+wheel does.
@@ -122,7 +122,7 @@ impl App {
 
     /// Ctrl+Plus, Ctrl+Minus, and Ctrl+0: on a space set to one of
     /// Explorer's views they step it, and Ctrl+0 returns it to "Settings
-    /// icon size" (W39); anything else zooms as the pop-up's buttons do.
+    /// icon size"; anything else zooms as the pop-up's buttons do.
     pub(super) fn zoom_key(&mut self, ui: &mut Ui, action: ZoomAction) {
         if self.step_view_of(ui, self.zoom_step(self.selection.surface, action)) {
             return;
@@ -130,8 +130,8 @@ impl App {
         self.zoom(ui, action);
     }
 
-    /// The space on `surface` and the view `notches` wheel steps give it
-    /// (W39), when it is set to one of Explorer's views; `None` for
+    /// The space on `surface` and the view `notches` wheel steps give it,
+    /// when it is set to one of Explorer's views; `None` for
     /// "Settings icon size", the desktop layer, or a gone space, which zoom
     /// as D9 says. Pure, so tests check it without a `Ui`.
     fn view_step(&self, surface: Surface, notches: i32) -> Option<(SpaceId, SpaceView)> {
@@ -139,7 +139,7 @@ impl App {
         Some((id, view.with_mode(step_view(view.mode, notches))))
     }
 
-    /// The view a zoom key steps the current space to (W39): Ctrl+Plus and
+    /// The view a zoom key steps the current space to: Ctrl+Plus and
     /// Ctrl+Minus walk Explorer's views, zooming in toward the bigger ones,
     /// and Ctrl+0 returns to "Settings icon size". No current space, or one
     /// on "Settings icon size", zooms as D9 says.
@@ -157,8 +157,8 @@ impl App {
         Some((id, view.with_mode(mode)))
     }
 
-    /// The space on `surface` when it is set to one of Explorer's views
-    /// (W39), with its view; `None` otherwise.
+    /// The space on `surface` when it is set to one of Explorer's views,
+    /// with its view; `None` otherwise.
     fn fixed_view(&self, surface: Surface) -> Option<(SpaceId, SpaceView)> {
         let Surface::Space(id) = surface else {
             return None;
@@ -167,7 +167,7 @@ impl App {
         (view.mode != ViewMode::Icons).then(|| (id, view.clone()))
     }
 
-    /// Applies a view step `view_step` or `zoom_step` decided (W39): one
+    /// Applies a view step `view_step` or `zoom_step` decided: one
     /// "Change view" undo entry and no zoom pop-up. Returns whether the
     /// space was set to one of Explorer's views, so a step already at an
     /// end — or a partial wheel notch — does nothing rather than zooming.
@@ -482,7 +482,7 @@ mod tests {
         assert_eq!(bar.tint.a, ZOOM_BAR_MIN_TINT_ALPHA);
     }
 
-    /// An app with one space shown in `mode` (W39), and its id.
+    /// An app with one space shown in `mode`, and its id.
     fn view_app(mode: ViewMode) -> (App, SpaceId) {
         let mut app = zoom_app(Preset::Custom, ICON_SIZE_DEFAULT, None);
         let id = app.config.desktop.next_space_id();

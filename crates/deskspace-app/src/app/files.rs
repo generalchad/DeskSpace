@@ -1,4 +1,4 @@
-//! `App` files: drops, storage, deletion, and desktop reconciliation (R1).
+//! `App` files: drops, storage, deletion, and desktop reconciliation.
 
 use std::collections::HashSet;
 use std::ffi::OsStr;
@@ -321,7 +321,7 @@ impl App {
             DropAction::Move => true,
             DropAction::Copy => false,
             // Keeping a file in place means nothing for a folder. The platform
-            // never offers it over a lens (W3c); the arm keeps the match total.
+            // never offers it over a lens; the arm keeps the match total.
             DropAction::KeepInPlace => {
                 tracing::debug!("keep-in-place drop on a lens ignored");
                 return;
@@ -457,7 +457,7 @@ impl App {
     }
 
     /// Copies a dropped file into the store through the shell's file operation,
-    /// leaving the original where it is, as a Copy drop does (G5b) and a paste
+    /// leaving the original where it is, as a Copy drop does and a paste
     /// copies. Returns the new path, or `None` when the copy failed.
     fn copy_dropped(&mut self, ui: &mut Ui, path: PathBuf) -> Option<PathBuf> {
         let root = self.storage.root();

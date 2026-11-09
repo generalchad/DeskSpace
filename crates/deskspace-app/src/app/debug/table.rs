@@ -15,7 +15,7 @@ pub(crate) enum DebugSectionId {
     Animations,
     Takeover,
     Simulate,
-    /// The type scale and the language seam (G12).
+    /// The type scale and the language seam.
     Typography,
 }
 

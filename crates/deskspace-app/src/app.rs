@@ -167,7 +167,7 @@ enum MenuId {
     IconSizeMedium = 42,
     IconSizeLarge = 43,
     IconSizeXLarge = 44,
-    // 30-36 were the one-off sort presets; they are never reused (W14).
+    // 30-36 were the one-off sort presets; they are never reused.
     NewShortcutApps = 45,
     NewShortcutCustom = 46,
     PasteShortcut = 47,
@@ -191,17 +191,17 @@ enum MenuId {
     ViewExtraLargeIcons = 58,
     ViewLargeIcons = 59,
     ViewMediumIcons = 60,
-    /// Small icons (W16): inline cells placed by order.
+    /// Small icons: inline cells placed by order.
     ViewSmallIcons = 68,
-    /// List (W17): inline cells in columns that scroll sideways.
+    /// List: inline cells in columns that scroll sideways.
     ViewList = 69,
-    /// Details (W18): full-width rows under a header.
+    /// Details: full-width rows under a header.
     ViewDetails = 70,
-    /// The View submenu's "Status bar" toggle (W19).
+    /// The View submenu's "Status bar" toggle.
     StatusBar = 71,
-    /// Tiles (W21).
+    /// Tiles.
     ViewTiles = 72,
-    /// Content (W22).
+    /// Content.
     ViewContent = 73,
     /// The Sort by submenu's keys (D17).
     SortByName = 61,
@@ -215,7 +215,7 @@ enum MenuId {
     KeepSorted = 67,
     /// The Sort by submenu's "Date created", after Size.
     SortByCreated = 74,
-    /// The View submenu's "File name extensions" check (W28).
+    /// The View submenu's "File name extensions" check.
     FileExtensions = 75,
     /// The Details header menu's check per column.
     ColumnName = 76,
@@ -567,13 +567,13 @@ pub struct App {
     autosave: Autosave,
     /// Per-space view state that is not persisted: scroll and icon factor.
     view_cache: ViewCache,
-    /// Lens folders the watch worker could not read (W5 draws the
-    /// placeholder). Session-only.
+    /// Lens folders the watch worker could not read (their spaces
+    /// draw a placeholder). Session-only.
     unavailable_lenses: HashSet<SpaceId>,
-    /// The subfolder each browsed lens shows (W42). Session-only.
+    /// The subfolder each browsed lens shows. Session-only.
     browsed: HashMap<SpaceId, lens::Browsed>,
     /// The folder each lens's last list came from, and whether it held
-    /// anything before the lens's filters (W35). Session-only.
+    /// anything before the lens's filters. Session-only.
     listed: HashMap<SpaceId, (PathBuf, bool)>,
     /// The message each space shows on its notice bar until `Timer::Notice`
     /// clears it. Session-only.
@@ -928,7 +928,7 @@ impl EventHandler for App {
                 self.create_space(ui, cursor_pos());
             }
             Event::OpenSettings => self.open_settings(ui),
-            // A watched folder changed (I8): re-read the shell's loose items
+            // A watched folder changed: re-read the shell's loose items
             // and reconcile the layer. A no-op when the layer is not drawn.
             Event::FolderChanged {
                 key: WatchKey::Desktop,

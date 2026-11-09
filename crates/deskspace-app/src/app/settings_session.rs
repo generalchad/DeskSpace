@@ -1,4 +1,4 @@
-//! `App` settings session: the settings window, its edits, and previews (R1).
+//! `App` settings session: the settings window, its edits, and previews.
 
 use std::path::PathBuf;
 
@@ -463,7 +463,7 @@ impl App {
             if self.dispatch(command, self.space_center(id)).is_applied() {
                 if view_changed && self.config.desktop.space(id).is_some_and(Space::is_lens) {
                     // A lens's worker sorts its list, so it needs the new
-                    // rule (W20).
+                    // rule.
                     self.sync_watches(ui);
                 }
                 match effect {

@@ -26,14 +26,14 @@ const TITLE_ICON_SIZE: i32 = 16;
 const TITLE_ICON_INSET: i32 = 10;
 /// The Back button of a browsed lens (D18), at 96 DPI: a 24 px square, 4 px
 /// from the left edge, and 2 px before the title icon. Provisional until
-/// W43's on-screen check compares it with Explorer's.
+/// the Back button's on-screen check compares it with Explorer's.
 const BACK_BUTTON_SIZE: i32 = 24;
 const BACK_BUTTON_INSET: i32 = 4;
 const BACK_BUTTON_GAP: i32 = 2;
 /// The gap between a Details column's text and its divider, at 96 DPI.
 const DETAILS_CELL_PAD: i32 = 6;
 /// Explorer's status-bar button size, gap, and edge inset at 96 DPI.
-/// Provisional until W19's on-screen check measures Explorer's own.
+/// Provisional until the status bar's on-screen check measures Explorer's own.
 const STATUS_BUTTON_SIZE: i32 = 22;
 const STATUS_BUTTON_GAP: i32 = 2;
 const STATUS_BAR_INSET: i32 = 4;
@@ -103,12 +103,12 @@ pub struct ViewState {
     /// is DeskSpace's storage): the scene says so in place of items.
     pub folder_unavailable: bool,
     /// A lens whose filters leave none of its folder's entries: the scene
-    /// says so, so the lens never looks broken (W35).
+    /// says so, so the lens never looks broken.
     pub filtered_out: bool,
     /// The subfolder a lens is browsed into, relative to its own folder;
-    /// empty at its own folder (W42).
+    /// empty at its own folder.
     pub subfolder: PathBuf,
-    /// The status-bar view button the pointer is over, if any (W19).
+    /// The status-bar view button the pointer is over, if any.
     pub hovered_status: Option<usize>,
     /// The message on the space's notice bar, while it shows one.
     pub notice: Option<String>,
@@ -854,7 +854,7 @@ pub(crate) fn details_cells(view: &SpaceView, item: &Item) -> Vec<String> {
 
 /// The status bar for `space`, or `None` while it is off or folded. Its
 /// segments read the space's items and selection; an unavailable lens keeps
-/// only the buttons, as Explorer does for a folder it cannot open (W19).
+/// only the buttons, as Explorer does for a folder it cannot open.
 fn status_bar(space: &Space, view: &ViewState) -> Option<StatusBar> {
     let height = space.status_bar_height();
     if height <= 0 {
@@ -991,7 +991,7 @@ pub(crate) fn status_tip(index: usize) -> Option<String> {
     })
 }
 
-/// The tip a lens's title bar shows on hover (W27): the folder it displays,
+/// The tip a lens's title bar shows on hover: the folder it displays,
 /// with `Folder not available` first when its folder is gone. `None` for a
 /// normal space, whose title shows nothing, as before.
 pub(crate) fn title_tip(space: &Space, shown: &Path, unavailable: bool) -> Option<String> {
@@ -1005,8 +1005,8 @@ pub(crate) fn title_tip(space: &Space, shown: &Path, unavailable: bool) -> Optio
 }
 
 /// The text for a view's secondary lines, made by the app when the scene is
-/// built: a Details row's columns after Name (W18), a tile's type and size
-/// (W21), or a content row's labelled details (W22).
+/// built: a Details row's columns after Name, a tile's type and size,
+/// or a content row's labelled details.
 pub(crate) fn view_cells(view: &SpaceView, item: &Item) -> Vec<String> {
     match view.mode {
         ViewMode::Details => details_cells(view, item),
@@ -1021,7 +1021,7 @@ pub(crate) fn view_cells(view: &SpaceView, item: &Item) -> Vec<String> {
     }
 }
 
-/// A tile's second and third lines: its type and its size (W21).
+/// A tile's second and third lines: its type and its size.
 fn tile_cells(item: &Item) -> Vec<String> {
     let type_name = type_name(&item.path, item.kind == ItemKind::Folder).unwrap_or_default();
     let size = item
@@ -1032,7 +1032,7 @@ fn tile_cells(item: &Item) -> Vec<String> {
     vec![type_name, size]
 }
 
-/// A content row's right-hand texts, labelled as Explorer labels them (W22).
+/// A content row's right-hand texts, labelled as Explorer labels them.
 fn content_cells(item: &Item) -> Vec<String> {
     let date = item.modified.map(format_date).unwrap_or_default();
     let size = item

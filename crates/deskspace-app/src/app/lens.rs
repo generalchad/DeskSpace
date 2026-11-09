@@ -1,6 +1,6 @@
 //! `App` lens behavior: keeping folder watches in line with the model,
 //! turning a watched folder's listing into the lens's items (M4 phase 2), and
-//! browsing into subfolders (W42).
+//! browsing into subfolders.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -72,7 +72,7 @@ impl App {
     /// The lens's own folder to show when `listing` says the subfolder it
     /// browsed into is gone, or `None` when the lens has none to leave. A
     /// store junction is refused instead, so the lens says it is unavailable
-    /// rather than quietly going up a level (W25).
+    /// rather than quietly going up a level.
     fn home_for_missing_subfolder(&self, id: SpaceId, listing: &FolderListing) -> Option<PathBuf> {
         match listing {
             FolderListing::Unavailable => {
@@ -428,7 +428,7 @@ impl App {
     }
 
     /// Whether lens `id`'s filters leave none of its listing's entries, so
-    /// its placeholder says so instead of looking broken (W35).
+    /// its placeholder says so instead of looking broken.
     pub(super) fn filtered_out(&self, id: SpaceId) -> bool {
         let Some(space) = self.config.desktop.space(id) else {
             return false;

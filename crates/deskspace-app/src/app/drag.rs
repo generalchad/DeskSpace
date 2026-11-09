@@ -1,5 +1,5 @@
 //! App dragging: the in-progress `Drag` gesture, the drag image, and
-//! dropping items within, between, and out of surfaces (R1).
+//! dropping items within, between, and out of surfaces.
 
 use std::path::PathBuf;
 

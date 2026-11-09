@@ -1,4 +1,4 @@
-//! `App` hit-testing: the `surface_*` accessors and item lookup (R1).
+//! `App` hit-testing: the `surface_*` accessors and item lookup.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

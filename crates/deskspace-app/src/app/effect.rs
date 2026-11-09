@@ -1,4 +1,4 @@
-//! `App` effects (R17): what an event means, as plain data, and `App::run`,
+//! `App` effects: what an event means, as plain data, and `App::run`,
 //! the thin shell that carries it out against `Ui`.
 //!
 //! A decision is a method that changes `App`'s own state and returns

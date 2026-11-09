@@ -1,4 +1,4 @@
-//! `App` view: space windows, scenes, layout, and the desktop layer (R1).
+//! `App` view: space windows, scenes, layout, and the desktop layer.
 
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
@@ -552,7 +552,7 @@ impl App {
 
     /// Scaled icon, label, and check-box sizes for one space. An order-placed
     /// view draws its own fixed icon size and scales the rest for the display
-    /// alone, so the look and a zoom leave it alone (W16).
+    /// alone, so the look and a zoom leave it alone.
     pub(super) fn metrics_for(&self, id: SpaceId) -> ItemMetrics {
         let mode = self.view_mode(id);
         if mode.places_by_order() {
@@ -844,7 +844,7 @@ impl App {
         let takeover = self.desktop_takeover();
         // Follow the Desktop folder while the layer is drawn, and every
         // lens's folder, so files added or removed outside DeskSpace reach
-        // what DeskSpace draws (I8, M4 phase 2).
+        // what DeskSpace draws (M4 phase 2).
         self.sync_watches(ui);
         let layer_up = self.sync_desktop_layer(ui);
         if takeover && layer_up {
@@ -965,7 +965,7 @@ impl App {
     }
 
     /// Whether a surface's labels show filename extensions: the space's own
-    /// choice (W28), or under `Automatic` Explorer's own option on a surface
+    /// choice, or under `Automatic` Explorer's own option on a surface
     /// that mirrors Explorer's display.
     pub(super) fn shows_extensions(&self, surface: Surface) -> bool {
         if let Surface::Space(id) = surface
@@ -1185,7 +1185,7 @@ impl App {
         self.record_outcome(label, Command::SetSpaceView { id, view }, at, Vec::new())
     }
 
-    /// Ctrl+Shift+1 through 8 (W13): switches the current space to the view
+    /// Ctrl+Shift+1 through 8: switches the current space to the view
     /// its `VIEW_MODES` digit names. A digit with no view yet, or no space
     /// current, does nothing.
     pub(super) fn set_view_by_digit(&mut self, ui: &mut Ui, digit: u8) {
@@ -1210,9 +1210,9 @@ impl App {
     /// change, the icon-size setting, a preset, or Explorer's own size; never
     /// a DPI move, which the factor leaves out), pins a space that sizes
     /// itself to its current size first. It then re-flows into fewer or more
-    /// columns, as an Explorer window does when its icon size changes
-    /// (`TASKS.md` F15). An order-placed view draws a fixed icon size, so it is
-    /// never pinned (W16).
+    /// columns, as an Explorer window does when its icon size changes.
+    /// An order-placed view draws a fixed icon size, so it is
+    /// never pinned.
     fn keep_size_on_zoom(&mut self, id: SpaceId) {
         let mode = self.view_mode(id);
         let factor = mode.item_icon_px().map_or_else(

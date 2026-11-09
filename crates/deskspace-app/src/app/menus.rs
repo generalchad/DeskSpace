@@ -1,4 +1,4 @@
-//! `App` menus: the tray, space, and item context menus (R1).
+//! `App` menus: the tray, space, and item context menus.
 
 use std::path::PathBuf;
 
@@ -216,8 +216,8 @@ impl App {
     }
 
     /// Asks for a new folder for lens `id` and points the lens at it. A folder
-    /// DeskSpace keeps its own files in is refused with a message, as W3a's
-    /// guard refuses it at startup.
+    /// DeskSpace keeps its own files in is refused with a message, as the
+    /// startup guard refuses it.
     pub(super) fn change_lens_folder(&mut self, ui: &mut Ui, id: SpaceId, at: Point) {
         let Some((view, current)) = self.config.desktop.space(id).and_then(|space| {
             space
@@ -484,7 +484,7 @@ impl App {
                     self.set_space_view(ui, id, next, at);
                 } else if choice == MenuId::FileExtensions {
                     // The entry checks what the space shows now, so choosing
-                    // it flips to the opposite (W28); `Automatic` is the View
+                    // it flips to the opposite; `Automatic` is the View
                     // page's to choose.
                     let extensions = if self.shows_extensions(Surface::Space(id)) {
                         Extensions::Hide
@@ -679,7 +679,7 @@ impl App {
 
     /// New lens…: asks for a folder, then opens a lens on it where New space
     /// would put a space, titled with the folder's name. DeskSpace's storage
-    /// folder is refused with a message (W3a). Returns its id.
+    /// folder is refused with a message. Returns its id.
     pub(super) fn create_lens(&mut self, ui: &mut Ui, at: Point) -> Option<SpaceId> {
         let folder = ui.pick_folder("Choose a folder for the new lens")?;
         if !self.storage.allows_lens(&folder) {
@@ -703,7 +703,7 @@ impl App {
     }
 
     /// The folder view and space view a new lens starts with, from the Lenses
-    /// page's defaults (W23). Pure, so the defaults are tested without a
+    /// page's defaults. Pure, so the defaults are tested without a
     /// folder dialog.
     fn new_lens_settings(&self, path: PathBuf) -> (FolderView, SpaceView) {
         let defaults = self.config.window.new_lens.clone();
@@ -920,7 +920,7 @@ fn new_shortcut_choice(choice: MenuId) -> Option<NewShortcut> {
 /// The "View" submenu: one radio item per icon view, checking the space's
 /// current mode, then the status bar and file-extension checks. The
 /// extension entry checks what the space shows now, which `Automatic`
-/// decides with Explorer's own option (W28).
+/// decides with Explorer's own option.
 fn space_view_menu(space: &Space, shows_extensions: bool) -> MenuEntry {
     let mut entries: Vec<MenuEntry> = VIEW_PRESETS
         .iter()

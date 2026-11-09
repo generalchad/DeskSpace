@@ -1,4 +1,4 @@
-//! `App` clipboard: cut, copy, and paste through the shell (R1).
+//! `App` clipboard: cut, copy, and paste through the shell.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
