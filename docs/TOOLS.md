@@ -72,8 +72,7 @@ only prints what it would do. Never run a copy with the real steps in place.
 ## 3. The app's own diagnostics
 
 - `--debug` opens the debug window: a live log console, the model, config,
-  windows, monitors, hooks, and simulators for Windows events (`TASKS.md`
-  section X). Prefer it to adding temporary logging.
+  windows, monitors, hooks, and simulators for Windows events (ROADMAP D14). Prefer it to adding temporary logging.
 - `-v` and `-vv` (or `RUST_LOG`) raise the console log level. The debug window
   has its own level.
 - `--config <scratch.toml>` keeps a run away from the real config, its

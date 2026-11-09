@@ -309,7 +309,7 @@ A native, lightweight, offline Windows desktop organizer that:
     rule Ctrl+V follows; otherwise they still reach Explorer. The space menu
     and the tray offer Undo and Redo, named for the action ("Undo Move 3
     items").
-  - Work items: `TASKS.md` section U.
+  - Work items: done (U1-U7, `archive/TASKS-done.md` section U).
 
 - **D12. Animations (2026-10-17).** Decides F-33 and M5 item 5.
   - *Kinds:* three moments animate, each its own kind with its own
@@ -550,7 +550,8 @@ A native, lightweight, offline Windows desktop organizer that:
     (restore or re-hide Explorer's icons, re-sync, watchdog), and
     Simulate (theme change, Explorer restart, a read-only config, a
     crash).
-  - Work items: `TASKS.md` section X.
+  - Work items: done (`archive/TASKS-done.md` section X); a new control follows
+    the `TASKS.md` recipe "a debug control".
 
 - **D15. Drawn shadows (2026-10-19, maintainer).** Moving spaces to
   composition (D12) took away the Windows 11 window shadow: it comes with
@@ -719,7 +720,7 @@ A native, lightweight, offline Windows desktop organizer that:
     does.
   - Lenses are unreleased (2026-10-21), so `FolderView`'s sort fields may
     move into `SortRule` without a migration.
-  - Work items: `TASKS.md` section W, phase 4 (W8-W23).
+  - Work items: done (W8-W23, `archive/TASKS-done.md` section W).
 
 - **D18. Lens and view extras, M4 phase 5 (2026-10-21, maintainer).**
   Builds on D17. It was planned to ship after v0.3 so it would never hold
@@ -772,7 +773,7 @@ A native, lightweight, offline Windows desktop organizer that:
   - *The rest of F-40:* Explorer's desktop offers only icon views, which
     the default view already follows. A check confirms this, then F-40
     closes.
-  - Work items: `TASKS.md` section W, phase 5 (W24-W49).
+  - Work items: done (W24-W49, `archive/TASKS-done.md` section W).
 
 - **D19. A lens follows its folder (2026-10-29, maintainer).** Resolves
   open question 5 and decides F-67.

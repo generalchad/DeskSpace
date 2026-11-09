@@ -1325,6 +1325,17 @@ section numbers stable.
 - **Lens**: a space whose contents mirror a folder live (comparable tools
   call it a Folder Portal); in code, a space with a folder source. Deleting a
   lens removes only the view, never the folder (ROADMAP D3).
+- **Watch**: `ReadDirectoryChangesW` on a lens's folder. It says only that
+  something changed, so the worker lists the folder again.
+- **Debounce**: copying 200 files fires 200 changes, so the worker waits
+  until a folder has been quiet for 150 ms and reacts once (`Coalescer` in
+  `win32/folder_watch.rs`, pure and tested).
+- **I/O completion port**: the queue every watch reports into, each folder
+  under its own completion key; the UI thread posts its own packets to add a
+  folder, remove one, or stop the worker
+  ([overview](https://learn.microsoft.com/en-us/windows/win32/fileio/i-o-completion-ports)).
+- **Shell file operation**: `IFileOperation`, Explorer's copy, move, and
+  delete engine with its progress and conflict dialogs (`win32/file_op.rs`).
 - **User-sized**: a space the user resized; it keeps its size, re-flows items
   to its width, and scrolls instead of growing.
 - **Fold**: collapsing a space to its title bar (called roll-up before D12;

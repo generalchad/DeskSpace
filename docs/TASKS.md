@@ -257,6 +257,100 @@ Take a `Surface`, not a `SpaceId`, and read through the `surface_*` accessors
 in `app/hit.rs`. If one is missing, add it there for both variants rather than
 matching on `Surface` at the call site.
 
+### Recipe: a view or lens change
+
+ROADMAP D3 (a lens's files), D17 (views, sort rules, lens settings), and D18
+(lens and view extras) are the spec. A view, the status bar, and a sort rule
+work the same on every space; only the folder, the title, and hidden files
+are lens-only. `CONTEXT.md` section 11 has the words (watch, debounce, I/O
+completion port).
+
+- **Tables carry the design.** A view is a `VIEW_MODES` row
+  (`settings/tables.rs`); the Sort by keys are `SORT_KEYS`, the Details
+  columns `DETAILS_COLUMNS`, and the status bar's buttons `STATUS_BUTTONS`.
+- **Explorer is the reference.** Match the same folder in Explorer beside the
+  space at 100 % and 150 %. A measured size is a named constant in 96-DPI
+  pixels whose comment says it was measured. Glyphs use only code points both
+  Segoe Fluent Icons and Segoe MDL2 Assets have, each named beside its
+  constant.
+- **A scratch lens.** Use "New lens…" in `./scripts/dev.ps1 -OnTop` on a
+  throwaway folder, never one you care about: Delete in a lens recycles real
+  files. To hand-make one, exit the app and add this to
+  `%TEMP%\deskspace-dev\deskspace.toml`, with an `id` no other space has:
+
+  ```toml
+  [[desktop.spaces]]
+  id = 90
+  title = "Lens test"
+  rect = { x = 100, y = 100, width = 320, height = 240 }
+  source = { folder = { path = "C:/Temp/lens-test" } }
+  ```
+
+- **Files.** A change that moves, copies, or deletes files lands complete or
+  not at all. It acts only on items the user can see and selected (a
+  filtered-out or folded item is never selected), inside the lens's own
+  folder, and passes the storage check on its final path. Only an entry the
+  listing marks a directory is browsable; a `.lnk` to a folder opens.
+- **Events cross.** A listing is a posted message, so it can arrive after
+  Change folder… or a step into a subfolder; it carries the folder it read,
+  and `on_lens_listing` drops a stale one. `transfer_files`, `pick_folder`,
+  and `alert` pump messages: hold no runtime borrow across them, and look the
+  space up again afterwards. Anything that holds an `ItemId`, a group, or a
+  column between events checks that it still exists and cancels quietly. A
+  menu edit while Settings is open goes into its snapshot, so Cancel never
+  undoes it. A key's handler looks up the current space when it runs.
+  Bursts (column drags, Ctrl+wheel, typing in a filter) re-lay out per event
+  and save once, through `schedule_save`.
+- **50,000 files without a hitch.** Layout is arithmetic: the rect for index
+  `i`, and prefix sums for groups. Text is formatted once, only for the items
+  a scene carries. No IO on the UI thread beyond what the listing read. A
+  change to `LensBuilder`, `SyncLens`, sorting, filtering, or grouping times
+  itself on 50,000 entries and records the dated result in its commit body.
+- **Config values are untrusted.** Clamp ranges, cap list lengths, drop
+  duplicates, and ignore unknown names (`#[serde(other)]`); each new field
+  gets a test that loads a hostile value. Patterns stay linear: no regex
+  crate.
+
+### Recipe: a debug control
+
+ROADMAP D14 is the spec. The control is three edits: a `DebugId` variant
+(`app/debug/ids.rs`, the next free value, and its `ALL` entry), a
+`DEBUG_CONTROLS` row (`app/debug/table.rs`: id, section, label), and an arm
+in both `App::debug_control` (what it shows) and `App::on_debug_control`
+(what it does). The compiler and `every_control_has_one_row` point at
+whatever is missing. Then:
+
+- An action calls the `App` method or sends the `Command` that the menus,
+  settings, or drops already use; if none fits, stop and ask.
+- Session only: no config field, no saved toggle, and no undo entry.
+- Ask before anything destructive with `self.debug_confirm(ui, question)`,
+  which adds the config path and the real-config warning.
+- Log what an action did with one `tracing::info!` line starting `debug:`.
+- One file per section in `app/debug/` holds its actions; `mod.rs` keeps the
+  framework and the two routing matches.
+
+### Recipe: an icon set or a space-icon change
+
+ROADMAP D16, amendments included, is the spec.
+
+- **Packs are rows.** An icon set is one `IconSetSpec` row in `ICON_SETS`;
+  the cache, the download, the picker, and saved names are keyed by its
+  `prefix`. Reach a set through `ICON_SETS`, `icon_set(prefix)`, or
+  `default_set()`; no code outside the Fluent row names Fluent.
+- **The network only after consent.** `deskspace_update::fetch_signed`,
+  started from `IconStep::Fetch`, which only an `Allowed` consent produces,
+  is the one way to download a set.
+- **Saved names never change.** A config stores `<prefix>:<name>`;
+  `assets/icons/<prefix>-names.txt` lists every name a set has shipped, and
+  the trimmer refuses to drop one.
+- **Display only, outside a rename.** The title icon has no hit test, hover,
+  or click except while its space's title is being renamed;
+  `title_icon_rect` is the one place its geometry lives.
+- **Glyphs are rasterized off the paint path,** through the `GlyphCache`; a
+  scene carries a finished `Icon`.
+- **One undo entry** per icon change, through `App::record_effects`,
+  labelled "Change icon".
+
 ---
 
 ## Z. Release v0.3.0 (ROADMAP section 4, decided 2026-11-05)
@@ -677,7 +771,7 @@ How people extend DeskSpace without forking it (review, 2026-11-03). There are
 three tiers, safest first:
 
 1. **Packs:** files of data the app loads, checks, and clamps. Themes (C10)
-   are the first; icon sets (section S) already work this way. Colour schemes
+   are the first; icon sets already work this way (the recipe "an icon set"). Colour schemes
    (N4) and animation effects (T40) are next.
 2. **Verbs:** commands a script hands to the running instance (R16, N5), for
    scripts, hotkey tools, and Explorer's "Send to".
@@ -700,7 +794,7 @@ Rules for every N task:
    file, as N1's `wrong-type` reference pins (maintainer, 2026-11-04). Each
    kind gets a hostile-file test.
 3. **Packs reach the network only through `deskspace_update::fetch_signed`**,
-   as icon sets do (section S, rule 2).
+   as icon sets do (the recipe "an icon set").
 4. **A shared file must keep loading.** Once a format is shared, a renamed
    field breaks other people's files. N1's reference files must load forever,
    so never edit or delete one; add new ones when the format changes.
@@ -792,251 +886,6 @@ Rules for every N task:
   - **[needs human]** check, with N5c: a desktop verb, a shortcut with `--show`,
     and a PowerShell script all reach a running instance. With none running,
     `--show` and `--new-space` still start DeskSpace, as today.
-
-## U. Undo and redo (ROADMAP D11, M2)
-
-Read D11 first; it is the spec. Do the tasks in order, one commit each. The
-history is session state in the app; core gains only a restore `Command`
-and ids that are never reused. Every undoable action records one entry, and
-undo or redo either applies a whole entry or, when the entry is stale,
-changes nothing and says so.
-
-All of U1-U7 are done; what still awaits a check is in section V.
-
-## W. Lenses (ROADMAP M4 phases 2-5, D3, D17, D18, F-07)
-
-### What you are building
-
-A *lens* is a space that shows the contents of a real folder, live. If a
-file is added to `C:\Users\me\Downloads` in Explorer, a lens on that
-folder shows it a moment later. A lens is only a view: DeskSpace never
-moves, copies, or deletes a lens's files on its own. Read ROADMAP D3 (the
-rules for files) and M4 (the plan) before you start; both are short.
-
-The model already exists (phase 1; `CONTEXT.md` section 4). In code a lens
-is a `Space` whose `source` is `SpaceSource::Folder(FolderView)`. There is
-no separate `Lens` type (D5). Four `Command`s change a lens:
-
-- `CreateLens` makes one.
-- `SetLensFolder` points it at another folder.
-- `SetLensView` changes its hidden and filter settings; `SetSpaceView`,
-  which every space has, changes its sort rule.
-- `SyncLens { id, items }` swaps in the list the watch worker built from
-  the folder. Nothing adds items to a lens one by one: `AddItem` and
-  `MoveItem` into a lens return `Rejected`.
-
-Phases 1-5 are done: drops, pastes, shortcuts, deletes, and menus treat a
-lens as D3 says (W1-W7), and the views, sort rule, status bar, and lens
-settings are in (W9, W18-W23, ROADMAP D17). Phase 5 was W24-W49 (D18);
-W41 closed F-40, and the rest of the on-screen checks are in section V.
-New here? Read "Where to start" below before anything else in this section.
-
-### Words used below
-
-- **Watch.** Windows' `ReadDirectoryChangesW` tells us that something in a
-  folder changed. It does not say what the folder now holds, so after a
-  change we list the folder again.
-- **Debounce.** Copying 200 files fires 200 changes. We wait until the
-  folder has been quiet for 150 ms and then react once. `Coalescer` in
-  `win32/folder_watch.rs` already does this. It is pure and tested, so
-  read it and its tests first.
-- **Worker thread.** Any thread that is not the UI thread. A slow folder,
-  such as a network drive or a folder of 50,000 files, must never freeze
-  the spaces, so watching and listing run on a worker. A worker cannot
-  touch windows. It posts a message (`PostMessageW`) to the controller
-  window, and the UI thread turns that message into an `Event` for the
-  app.
-- **I/O completion port.** A Windows queue that many file handles report
-  into, and that one thread waits on with `GetQueuedCompletionStatus`.
-  Each handle is registered with a number, its *completion key*, so when a
-  result arrives you know which folder it belongs to. You can also put
-  your own packets on the queue with `PostQueuedCompletionStatus`. That is
-  how the UI thread tells the worker to add a folder, remove one, or stop.
-  Overview:
-  https://learn.microsoft.com/en-us/windows/win32/fileio/i-o-completion-ports
-- **Shell file operation.** `IFileOperation` is the engine behind
-  Explorer's copy, move, and delete. It shows Explorer's progress and
-  conflict dialogs and records a step Explorer can undo.
-  `win32/file_op.rs` wraps it.
-
-### Before you start
-
-- One commit per task ("How to work a task" above). W1-W7 went in order
-  for safety: no menu could create a lens until drops and deletes were
-  safe, so no user could lose a file while the work was half done. Keep
-  that habit. A task that touches files lands complete, or not at all.
-- To get a lens to work on, run the app with a scratch config
-  (`./scripts/dev.ps1 -OnTop`; `ENGINEERING.md` section 1) and use "New
-  lens…" from the space or tray menu, on a throwaway folder. Never point a
-  test lens at a folder you care about: Delete in a lens recycles real
-  files. The section V rows that say "hand-made" mean one written into the
-  config instead. Exit the app, add this to
-  `%TEMP%\deskspace-dev\deskspace.toml`, and run the app again. Use an
-  `id` no other space has:
-
-  ```toml
-  [[desktop.spaces]]
-  id = 90
-  title = "Lens test"
-  rect = { x = 100, y = 100, width = 320, height = 240 }
-  source = { folder = { path = "C:/Temp/lens-test" } }
-  ```
-
-- `cargo test` cannot run a watch or open a dialog. Put every decision you
-  can into a small pure function and test that, and keep the Win32 calls
-  thin. Each task names its pure functions.
-- Decided (2026-10-20, maintainer): one worker thread serves every watch,
-  each watch has a key, and the worker lists the folder itself. Do not
-  redesign this inside a task. If it seems wrong, stop and ask.
-- Decided (2026-10-21, maintainer), for W3a-W4:
-  - A drop on a lens moves; "Copy here" copies. Both go through the
-    shell with Explorer's Replace or Skip dialog. Keep-in-place (Shift)
-    means nothing on a lens, so it is refused.
-  - Paste and new shortcuts on a lens put their files in the lens's
-    folder, exactly as a drop does.
-  - A lens item dropped or pasted on a normal space is an ordinary file
-    to that space: it moves into storage like a file from Explorer.
-  - There is one shell transfer function with a collision rule, not a
-    second copy of it.
-  - A lens whose folder is DeskSpace's storage folder, or inside it, is
-    kept in the config but never watched, and shows as unavailable.
-
-### Where a test cannot reach
-
-`App` methods that take `&mut Ui` cannot run in `cargo test`, because a
-`Ui` needs real windows. So every task below pulls its decision into a
-small function that takes plain data (a `&Space`, a `&Path`, a
-`DROPEFFECT`) and tests that. The method that takes the `Ui` only calls
-it. If you find yourself wanting to test a `Ui` method, stop and look for
-the decision inside it.
-
-### Where to start
-
-W1-W49 are done (2026-10-21 to 2026-10-31) and archived; their on-screen
-checks are in section V. No task in this section is open. A new lens task
-starts from "How to work a task" above and the file map, and reads ROADMAP
-D3, D17, and D18 first.
-
-### Phase 5: lens and view extras
-
-The phase 4 rules (first callers, the tables, Explorer as the reference,
-the glyph fonts) are in the archive, under "Section W's phase notes", and
-hold here too.
-
-Read ROADMAP D17 and D18 first; they are the spec.
-
-Runtime orders:
-
-- **A listing for a folder the lens no longer shows.** The watch worker
-  posts a listing as a message, so it can arrive after Change folder…
-  or (after W42) a step into a subfolder. A listing carries the folder
-  it read (W24), and the app drops a stale one, so a task that changes
-  which folder a lens shows keeps `on_lens_listing`'s check true.
-- **Message pumps inside a call.** `transfer_files`, `pick_folder`, and
-  `alert` pump messages. A listing, a settings event, or a delete can run
-  inside them. Hold no runtime borrow across them (`ENGINEERING.md`
-  section 6, Re-entrancy). Afterwards, look the space up again: it may
-  have been deleted, or (after W42) it may show another folder. Change
-  folder… from the Lens page is the case to test.
-- **An item or space that vanishes between two events.** A listing can
-  remove the item under a rename, a drag, a hover tip, or a column drag.
-  Anything that holds an `ItemId`, a group, or a column between events
-  checks that it still exists and cancels quietly if it does not.
-- **Settings window and menu at once.** A menu edit made while the
-  settings window is open goes into the window's snapshot (`CONTEXT.md`
-  section 6, Native UI). Every new `SpaceView` field follows that rule
-  (W20 sets it up), so Cancel never undoes a menu edit.
-- **The current space.** The keyboard hook decides to consume a key, and
-  the app handles it later; the current space can change in between. The
-  app looks the current space up when it handles the key, never earlier.
-- **Bursts.** Column-resize drags, Ctrl+wheel, and typing in a filter
-  field fire many events. Re-lay out per event, but save once, through
-  the existing debounced `schedule_save`.
-
-#### Performance
-
-The bar is bare-metal: a 50,000-file lens scrolls, selects, and resizes
-with no hitch. The general rules, including the UI thread's budget, are
-`ENGINEERING.md` section 3, "Performance"; these are what lens code adds.
-
-- **Layout is arithmetic.** An order-placed view finds the rect for index
-  `i`, and the indices visible in a scroll window, by arithmetic, not by
-  walking every item. Groups (W37) keep prefix sums of group sizes and
-  binary-search them.
-- **Text is made once.** Type names (cached by extension), dates, sizes,
-  and group names are formatted when a scene is built, and only for the
-  items the scene carries (the visible ones). `PreparedScene` already
-  encodes strings to UTF-16 once.
-- **No IO the listing did not already do.** Dates, sizes, and attributes
-  come from the `FindFirstFileExW` record the worker reads. Hover tips,
-  titles, and status text read the model. Nothing calls the disk on the
-  UI thread per item or per event; the folder watch checks the store on
-  its worker (W25).
-- **Measure what could be slow.** A task that touches `LensBuilder`, `SyncLens`,
-  sorting, filtering, or grouping times it on 50,000 entries and records
-  the dated result in its commit body. Over the budget on the UI thread
-  means stop and ask before merging.
-
-#### Safety and security
-
-`SECURITY.md` names file handling and parsing as the areas of most
-interest. In phase 4 and 5 terms:
-
-- **No file outside the user's intent.** A file operation acts only on
-  items the user can see and selected: filtered-out and folded items
-  are never selected (D18). It goes into the folder the lens shows,
-  inside its own folder, which passes the storage check on its final
-  path (W25).
-- **Never follow a shortcut while browsing.** Only an entry the listing
-  marks a directory is browsable. A `.lnk` to a folder opens as today.
-- **No regular expressions.** A pattern from the config cannot make
-  matching slow: the matcher (W34) is linear, its inputs are capped, and
-  there is no regex crate to audit.
-- **Every config value is untrusted.** Hand-edited files reach every
-  new field, so clamp ranges, cap list lengths, drop duplicates, and ignore
-  unknown names (`#[serde(other)]` on an unknown variant), so one bad
-  value never fails the whole config load. Each new field gets a test
-  that loads a hostile value.
-- **No new dependency** without `cargo deny check all`, and none is
-  expected in this phase.
-
-## S. Space icons (ROADMAP D16, F-62)
-
-Every S task is built and archived; their checks are in section V. The rules
-below stay for any task added here.
-
-Read D16 first, amendments included; it is the spec. Do the tasks in order,
-one commit each. M5 item 7 says to build this with or after F-28 (title bar
-style), which has no tasks yet. These tasks build on today's title bar, and
-`title_icon_rect` (S7) is the one place the icon's geometry lives, so
-whichever lands second keeps the other working.
-
-Rules for every S task:
-
-1. **Packs are rows.** Every icon set is one `IconSetSpec` row in
-   `ICON_SETS` (S3). The cache, the download, the picker, and the saved
-   names are keyed by the row's `prefix`. No code outside the Fluent row and
-   its tests names Fluent; reach a set through `ICON_SETS`,
-   `icon_set(prefix)`, or `default_set()`.
-2. **The network only after consent.** The one way to download a set is
-   `deskspace_update::fetch_signed` (S4), started from the app's
-   `IconStep::Fetch` (S8), which only an `Allowed` consent produces. Never
-   call the network from anywhere else.
-3. **Saved names never change.** A user's config stores `<prefix>:<name>`.
-   `assets/icons/<prefix>-names.txt` lists every name a set has shipped; the
-   trimmer (S3) refuses to drop one, and tests check the curated words
-   against it.
-4. **Display only, outside a rename.** The icon has no hit test, hover,
-   cursor, or click except while its space's title is being renamed, on the
-   desktop (S10) or in the settings header (S12).
-5. **Glyphs are rasterized off the paint path.** A scene carries a finished
-   `Icon`, as items do (S7); the painter only draws bitmaps. Rasterize
-   through the `GlyphCache` S6 added, never per frame.
-6. Unless a task says otherwise, a name in `code` that does not exist yet
-   is one the task creates.
-7. **One undo entry.** Changing an icon (S10, S11) records one entry
-   through `App::record_effects`, labelled "Change icon", so Ctrl+Z puts
-   the old icon back; `SetSpaceIcon` is already in `touched_by`.
 
 ## G. Settings window polish (ROADMAP D26, F-68)
 
@@ -1880,38 +1729,6 @@ with no visible change; T40 opens it to users.
 
   Then split it into tasks here. **[needs human]** check, with the last part:
   a hand-written effect plays in, plays out, and reverses mid-play.
-
-## X. The debug window (ROADMAP D14, F-61)
-
-Every planned task here is done (`archive/TASKS-done.md`); what remains
-are their on-screen checks in section V. D14 is the spec. These rules hold
-for any new debug control:
-
-1. **One way to change things.** An action calls the `App` method or sends
-   the `Command` that the menus, settings, or drops already use. If none
-   fits, stop and ask. Never write to `self.config.desktop` or move a file
-   any other way.
-2. **Session only.** Nothing here adds a config field or saves a debug
-   toggle. Every toggle starts off, or reads the live state, on each run.
-3. **No undo entries.** Debug actions record none (D14), even after
-   section U lands.
-4. **A control is three edits**: a `DebugId` variant
-   (`app/debug/ids.rs`, the next free value, plus its `ALL` entry), a
-   `DEBUG_CONTROLS` row (`app/debug/table.rs`: id, section, label), and an
-   arm in both `App::debug_control` (what it shows now) and
-   `App::on_debug_control` (what it does). The compiler and
-   `every_control_has_one_row` point at whatever is missing.
-5. **Ask before anything destructive** with `self.debug_confirm(ui,
-   question)`. It adds the config path and the real-config warning, so a
-   handler never writes those lines itself.
-6. **Log what an action did** with one `tracing::info!` line starting
-   `debug:` (for example `debug: deleted 4 spaces`), so the console shows
-   it.
-7. **[needs human] checks** run with `./scripts/dev.ps1 -Fresh --debug`
-   (a scratch config) unless the check says otherwise, and add a row to
-   section V.
-8. **One file per section** in `app/debug/` holds its actions; `mod.rs`
-   keeps only the framework and the two routing matches.
 
 ## J. Tabs in spaces (ROADMAP F-49)
 
@@ -2907,11 +2724,11 @@ for a machine that has it.
 | Right-drop greying (v0.3) | Right-drag onto a space from a source that offers only copy (a file on a read-only share or a zip's contents): "Move here" is greyed, "Copy here" and "Show here without moving" work; from Explorer every entry is enabled. |
 | H5, H4 (part script) (F-46) | Panes, hairlines, dimmed rows, and keyboard movement in both modes; a space is greyed until customized, then edits apply to it alone and Cancel restores; the switch off and on restores custom values; a menu edit with the window open survives Cancel; an old config with per-space `icon_size`/`tint` opens customized; the highlight outline is visible on Clear and Solid, and on Acrylic with Windows corners (border on and off, 100 % and 150 %) its corners are round, following the window's |
 | I8 (v0.3) (script) | With takeover on, creating, renaming, and deleting a desktop file updates the layer within about 150 ms; so does editing one in place whose icon is its content (save a new picture over a desktop `.png`, or re-point a desktop shortcut to another app), with no restart. |
-| W3c (v0.3) (part script) (F-07) | Shift-drag a file from Explorer onto a hand-made lens (section W): the cursor shows "no" and nothing moves. Right-drag onto a lens: "Show here without moving" is grey. On a normal space, Shift and the right-drop menu behave as before. |
-| W3d (v0.3) (part script) (F-07) | Drag an item from a hand-made lens (section W) onto a normal space: the file leaves the lens's folder, the space lists it, and the lens no longer shows it. Delete that space: the file goes to the desktop, not back to the folder (D3). |
-| W3e (v0.3) (part script) (F-07) | In Explorer, copy a file and paste it on a hand-made lens (section W; click it, then Ctrl+V): a copy lands in the folder. Cut and paste: it moves. Cut an item from a normal space and paste it on a lens: it moves into the folder and leaves the space. A paste on a normal space works as before. |
-| W3f (v0.3) (part script) (F-07) | Drop a Start-menu app on a hand-made lens (section W): a working `.lnk` is in the folder and the lens shows it. "New shortcut ▸ Paste shortcut" and the custom shortcut dialog on a lens do the same. On a normal space, shortcuts work as before. |
-| W3g (v0.3) (part script) (F-07) | Select an item on a hand-made lens (section W) and press Delete: the file is in the Recycle Bin and the lens drops it. On the settings window's Shortcuts page, the X on a lens item says the file goes to the Recycle Bin, and it does. |
+| W3c (v0.3) (part script) (F-07) | Shift-drag a file from Explorer onto a hand-made lens (the lens recipe): the cursor shows "no" and nothing moves. Right-drag onto a lens: "Show here without moving" is grey. On a normal space, Shift and the right-drop menu behave as before. |
+| W3d (v0.3) (part script) (F-07) | Drag an item from a hand-made lens (the lens recipe) onto a normal space: the file leaves the lens's folder, the space lists it, and the lens no longer shows it. Delete that space: the file goes to the desktop, not back to the folder (D3). |
+| W3e (v0.3) (part script) (F-07) | In Explorer, copy a file and paste it on a hand-made lens (the lens recipe; click it, then Ctrl+V): a copy lands in the folder. Cut and paste: it moves. Cut an item from a normal space and paste it on a lens: it moves into the folder and leaves the space. A paste on a normal space works as before. |
+| W3f (v0.3) (part script) (F-07) | Drop a Start-menu app on a hand-made lens (the lens recipe): a working `.lnk` is in the folder and the lens shows it. "New shortcut ▸ Paste shortcut" and the custom shortcut dialog on a lens do the same. On a normal space, shortcuts work as before. |
+| W3g (v0.3) (part script) (F-07) | Select an item on a hand-made lens (the lens recipe) and press Delete: the file is in the Recycle Bin and the lens drops it. On the settings window's Shortcuts page, the X on a lens item says the file goes to the Recycle Bin, and it does. |
 | W7 (v0.3) (part script) (F-07) | Create a lens with "New lens…" from the space menu, the tray menu, and the desktop layer's menu (takeover on): each asks for a folder and opens a lens titled with the folder's name beside the top row of spaces, filled within a moment. Picking DeskSpace's storage folder shows a message and creates nothing. Cancelling creates nothing. |
 | New space placement (script) (D10) | With a few spaces in a row at the top of a monitor, New space from the space menu, the tray, the desktop menu, and the hotkey each opens to the right of the row, its top in line, with the same gutter as the others; with the row full to the screen edge it goes to the next row or under all of them; it never covers another space; on a second monitor it opens on the monitor of the click or the pointer; on an empty monitor it opens near the top-left corner; on a 150 % monitor the gutter looks the same. |
 | Desktop menu (v0.3) (part script) (F-14) | With takeover on, right-click an empty spot of the desktop: New space, DeskSpace settings…, and Hide/Show spaces sit above Explorer's desktop menu; each DeskSpace entry works; View, Sort by, Refresh, New › Text Document, Paste, Display settings, and Personalize work, and the layer shows the result; the Menu key and Shift+F10 with nothing selected open the same menu; a right-click on a loose icon still shows its item menu, and on a space the space menu. Run elevated once too: the menu still shows New, Display settings, and Personalize below the DeskSpace entries, with masked icons and no separator dangling under Hide spaces; with `-Verbosity 1` any fallback logs a warning naming the step that failed. |
