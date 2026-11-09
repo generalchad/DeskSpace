@@ -140,6 +140,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Takeover: hide icons, watchdog | `deskspace-platform/src/win32/{desktop_icons,watchdog}.rs` |
 | CI and release | `.github/workflows/{ci,release,icons}.yml`, `crates/deskspace-app/build.rs` |
 | The file-size limit and its exceptions | `deskspace-app/tests/file_size.rs` (`ALLOWED`) |
+| The other repository guards: task ids, ids in comments, unused pub items, doc references | `deskspace-app/tests/{task_ids,comment_ids,dead_pub,doc_refs}.rs` |
 
 Ids (`WM_APP` messages, timers, menu ids, `field::` ids): never renumber
 one. "Next free" in the recipes means the highest value in that list plus
@@ -153,7 +154,7 @@ The pattern used by `Theme.icon_size` / `Theme.overlay_size`:
 1. `deskspace-core/src/theme.rs` (or `deskspace-config/src/schema.rs` for a
    `WindowSettings` field): add the field with a `///` doc, give it a value in
    `Default`, and rely on the struct-level `#[serde(default)]`. If it is a
-   range, add `pub const NAME_RANGE`/`NAME_DEFAULT` like `OVERLAY_SIZE_RANGE`,
+   range, add `pub const <NAME>_RANGE`/`<NAME>_DEFAULT` like `OVERLAY_SIZE_RANGE`,
    and clamp it in `Theme::clamped` so a hand-edited file loads in range.
 2. `deskspace-app/src/settings/`: a `field::` id in `ids.rs` (next free), and
    a `Field` in `pages.rs`: a look setting in `look_pages` (fed the theme

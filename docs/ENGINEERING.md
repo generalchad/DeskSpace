@@ -293,5 +293,7 @@ not own it links to it instead of copying it.
   is fine; a number every commit must update is not.
 - A rule a test can check gets the test, and the doc points at it.
 - Change or delete a sentence in the same commit as the code it describes.
-  When in doubt, delete it.
+  When in doubt, delete it. `crates/deskspace-app/tests/doc_refs.rs` fails
+  on a backticked path or Rust name, or a relative link, that the docs
+  describing the code (not the plans) no longer match.
 - Short sentences, one parenthetical at most, plain words.

@@ -697,7 +697,7 @@ one arm in `App::on_event`, whose match is exhaustive.
 ### Space windows (`win32/space_window/`, `win32/dwm.rs`)
 
 - **The desktop layer** (`Ui::create_desktop_layer`,
-  `set_desktop_layer_rect` / `_scene`, `destroy_desktop_layer`) reuses this
+  `set_desktop_layer_rect` / `set_desktop_layer_scene`, `destroy_desktop_layer`) reuses this
   window with a `chrome: false` style. It spans the
   virtual desktop (`system::virtual_desktop_rect`) and is a `WS_CHILD` of the
   host when one is in use, else top-level and kept at the bottom, behind the
