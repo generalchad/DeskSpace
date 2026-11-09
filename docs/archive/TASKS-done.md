@@ -6,7 +6,10 @@ line pointers describe the code when each task landed. `docs/CONTEXT.md` is
 authoritative for current behavior. Open on-screen checks for these tasks are
 listed in `docs/TASKS.md` section V.
 
-New entries are appended at the end, under the letter of their section.
+Since 2026-11-09 nothing is moved here: a finished task is deleted from
+`docs/TASKS.md`, its commit is the record, and its id and title get one line
+under "Retired ids" at the end of this file (`TASKS.md` rule 7). The entries
+above that list are frozen.
 
 ## A. Fix the bad examples (do these first)
 
@@ -7071,3 +7074,10 @@ section V.
   - Done when: a `./scripts/dev.ps1 -Release -Verbosity 1` run shows each line
     once, and the commit body records one run's numbers with the number of
     spaces and items, or says a person must.
+
+## Retired ids
+
+One line per task finished since 2026-11-09: its id and title. The commit
+that finished it says the rest (`git log --grep '(<id>)'`). No new task
+takes an id listed here or used anywhere above
+(`crates/deskspace-app/tests/task_ids.rs`).

@@ -17,8 +17,9 @@ How to read this file:
   other docs, so never renumber them.
 - The history of what landed up to v0.2.0 is in
   `archive/ROADMAP-progress-log.md`; read it only for background. A task id
-  cited here (`E7`, `L2`, ...) is in `TASKS.md` while open and in
-  `archive/TASKS-done.md` once finished.
+  cited here (`E7`, `L2`, ...) is in `TASKS.md` while open; once finished,
+  its commit names it (`git log --grep '(E7)'`), and tasks finished before
+  2026-11-09 are also in `archive/TASKS-done.md`.
 
 ## 1. Vision
 

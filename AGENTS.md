@@ -39,7 +39,7 @@ remove. When unsure, it is destructive.
   `cargo clippy --workspace --all-targets --locked -- -D warnings`, and
   `cargo test --workspace --locked`.
 - Commit after every change, one logical unit per commit; for a `TASKS.md`
-  task, tick and archive it in the same commit.
+  task, retire it in the same commit (its rule 7).
 - If a task needs a design decision it does not state, or no extension point
   fits, stop and ask. Do not improvise.
 - Follow the four rules at the top of `ENGINEERING.md` section 2: data

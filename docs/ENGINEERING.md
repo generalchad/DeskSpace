@@ -182,8 +182,8 @@ https://stackoverflow.blog/2021/12/23/best-practices-for-writing-code-comments/)
    description and an issue when one exists. Reuse existing markers.
 10. Keep task ids (`W3c`, `T12`) and dates out of new comments: say the why
     in the comment and put the id in the commit message. Ids are decoded
-    only through `TASKS.md` and its archive, and they age as tasks are
-    archived. The ones still in the code are being swept out, and a test
+    only through `TASKS.md`, its archive, and git history, and they age as
+    tasks finish. The ones still in the code are being swept out, and a test
     will then refuse new ones (decided 2026-11-05; `TASKS.md` Q8); until
     it lands, take out any you touch.
 
@@ -197,7 +197,7 @@ comment must be as correct as the code: change or delete it with the code.
 
 Commit after every change; never leave finished work uncommitted. One logical
 unit per commit; split unrelated edits. Working from `TASKS.md`, make one
-commit per task and tick its box in that commit ("How to work a task", rule
+commit per task and retire it in that commit ("How to work a task", rule
 7). Messages are imperative and lowercase with a type prefix: `feat:`,
 `fix:`, `refactor:`, `docs:`, `test:`, `perf:`, `ci:`, `release:`. The body
 says why; the diff already shows what. Run the gates (section 1) first.

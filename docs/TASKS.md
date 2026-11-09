@@ -4,9 +4,11 @@ Concrete, self-contained work items. `ROADMAP.md` says *what* to build and in
 what order; this file says *how*, one task per commit. Tasks are written so a
 contributor (human or model) can do one without designing anything new.
 
-Only open work lives here. Finished tasks are moved, verbatim, to
-`archive/TASKS-done.md` (history only; its file and line pointers predate the
-R1 and K splits). Built-but-unconfirmed work is listed in section V.
+Only open work lives here. A finished task is deleted; the commit that
+finished it is its record (`git log --grep '(K2)'`), and its id is retired
+(rule 7). Tasks finished before 2026-11-09 are in `archive/TASKS-done.md`
+(history only; its file and line pointers predate the R1 and K splits).
+Built-but-unconfirmed work is listed in section V.
 
 **Urgent first:** a task marked **[urgent]** goes ahead of everything else in
 its section.
@@ -61,11 +63,14 @@ on-screen checks are in section V.
    behavior changed, and the `ROADMAP.md` feature index (section 7) where a
    feature's status changed; and the task's own "Done when" list.
 7. Commit in the `ENGINEERING.md` style with the task id in parentheses
-   (`refactor: split d2d.rs (K2)`). In the same commit, tick the box and move
-   the task, verbatim, to the end of `archive/TASKS-done.md`.
+   (`refactor: split d2d.rs (K2)`). In the same commit, delete the task here
+   and add its id and title as one line under "Retired ids" at the end of
+   `archive/TASKS-done.md`. A new task takes an id that no task here and no
+   line in the archive uses; `crates/deskspace-app/tests/task_ids.rs` fails
+   on a reused one.
 8. **[needs human]** tasks need an on-screen check you cannot do. Implement,
    list exactly what to check in the commit body, add a row to section V
-   (the human test compendium), and archive the task as in rule 7. The check
+   (the human test compendium), and retire the task as in rule 7. The check
    does not block the next task; work continues while it awaits a person.
    Run any `scripts/onscreen/` check that covers part of it first, and cut
    what it covers from the row, as section O's rules say. Anything only a
@@ -259,7 +264,7 @@ matching on `Surface` at the call site.
 The maintainer chose to release before starting more work. ROADMAP section
 4, item 3, holds the gate; this section is the plan. **Until v0.3.0 is
 tagged, take these first**, and land only them, the gate's fixes, and what
-"Release first" above allows; every other task waits. When the tag is out, archive this
+"Release first" above allows; every other task waits. When the tag is out, retire this
 section and lift the freeze in the same commit (Z8).
 
 v0.3.0-alpha.1 went out first, as a pre-release (maintainer, 2026-11-05),
@@ -363,15 +368,16 @@ the gate):
 - [ ] **Z8. Cut v0.3.0 (maintainer).** After: Z7. Follow `RELEASING.md`'s
   checklist, version `0.3.0`. Then, in one `docs:` commit: ROADMAP section 4
   lists v0.3.0 as released and drops item 3 from "Next"; section 7's feature
-  statuses say what shipped; this section is archived, ticked, to
-  `archive/TASKS-done.md`, and the freeze sentence in "Pick a task" goes.
+  statuses say what shipped; this section's tasks are retired as rule 7
+  says, and the freeze sentence in "Pick a task" goes.
 
 ## B. Code health (any contributor)
 
 A B task is a behavior-preserving refactor: the test count only grows, and no
 user-visible change is expected. The exceptions are performance work: B32-B36,
 B39-B43 (the lens-performance costs left by B33/B37), and B44-B55 below.
-Finished ones are in `archive/TASKS-done.md`.
+Finished ones are in git history and, before 2026-11-09, in
+`archive/TASKS-done.md`.
 
 Not listed here on purpose: `settings/pages.rs` `look_pages` (278 lines),
 `settings/apply.rs` `apply_field` (197) and `apply_look_field` (136), and
@@ -2178,8 +2184,8 @@ Who takes what:
   proposes, and records the change in the commit body.
 
 A large task is split where a part can land alone, as C10 is: `P10a`, `P10b`,
-each its own commit. Archive each part as it lands, and its parent with the last
-one. A junior task that has to step over the line above says why and names a
+each its own commit. Retire each part as it lands (rule 7), and its parent with
+the last one. A junior task that has to step over the line above says why and names a
 senior to review it. A part marked **[needs decision]** waits for the maintainer,
 and the parts after it wait too.
 
