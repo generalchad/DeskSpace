@@ -1,4 +1,4 @@
-//! The reference theme files must keep loading (TASKS.md N1).
+//! The reference theme files must keep loading.
 //!
 //! A shared pack file must keep loading forever: once a format is shared, a
 //! renamed field breaks other people's files. Never edit or delete a

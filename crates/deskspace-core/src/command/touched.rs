@@ -1,4 +1,4 @@
-//! What a `Command` will change, so the app knows what to repaint (B28).
+//! What a `Command` will change, so the app knows what to repaint.
 
 use super::Command;
 use crate::desktop::Desktop;

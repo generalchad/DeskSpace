@@ -7083,3 +7083,4 @@ takes an id listed here or used anywhere above
 (`crates/deskspace-app/tests/task_ids.rs`).
 
 - **P43.** Let clippy keep closures that only call a method out (lint).
+- **Q8a.** Decode the task ids left in comments: core, config, and update.

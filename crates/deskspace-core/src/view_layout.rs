@@ -1,9 +1,9 @@
-//! Where a space's items sit, for its current view (W16, D17).
+//! Where a space's items sit, for its current view (D17).
 //!
 //! Every reader of item geometry goes through this pure layout: scenes, hit
 //! tests, the marquee, keyboard navigation, the drag drop index, and the scroll
 //! extent. The icon views keep the grid they always had; a view that places
-//! items by their order (Small icons, and List since W17) never writes
+//! items by their order (Small icons and List) never writes
 //! `Item.position`, so switching back to an icon view restores the hand
 //! arrangement (D17).
 //!
@@ -22,7 +22,7 @@ use crate::space::{ResizeEdges, Space};
 use crate::view::{SpaceView, ViewMode};
 
 /// The cells of the views that place items by order, at 96 DPI. Provisional
-/// until their on-screen checks measure Explorer's own (W16-W22, W33).
+/// until their on-screen checks measure Explorer's own.
 struct OrderedCells {
     /// Small icons: a 16 px icon with one label line beside it.
     small_icons: (i32, i32),
@@ -68,7 +68,7 @@ pub enum ScrollAxis {
     /// Rows stack downward; the wheel and the scroll bar are vertical.
     Vertical,
     /// Columns run sideways; the wheel and the scroll bar are horizontal
-    /// (List, W17).
+    /// (List).
     Horizontal,
 }
 
@@ -77,7 +77,7 @@ pub enum ScrollAxis {
 enum Flow {
     /// Cells fill a row across, then the next row down (every view but List).
     Rows,
-    /// Cells fill a column down, then the next column across (List, W17).
+    /// Cells fill a column down, then the next column across (List).
     Columns,
 }
 
@@ -114,8 +114,7 @@ pub struct ViewMetrics {
     pub gap: i32,
     /// The edge padding inside the content area.
     pub padding: i32,
-    /// The fixed header row above the items; 0 for every view but Details
-    /// (W18).
+    /// The fixed header row above the items; 0 for every view but Details.
     pub header: i32,
     /// A group's header row, when the space groups its items.
     pub group_header: i32,
@@ -379,7 +378,7 @@ impl ViewLayout {
         }
     }
 
-    /// The fixed header row's height above the items (Details only, W18).
+    /// The fixed header row's height above the items (Details only).
     pub fn header_height(&self) -> i32 {
         if self.mode == ViewMode::Details {
             self.metrics.header

@@ -1881,7 +1881,6 @@ Rules for every Q task:
   ROADMAP `Dn` ids not counted). Each sends a reader to the archive to learn
   why the code is so, and nothing stops a new one.
   - The parts, each its own commit, any order before Q8d:
-    - [ ] **Q8a (junior).** Core, config, and update.
     - [ ] **Q8b (junior).** The app.
     - [ ] **Q8c (junior).** The platform. Every edited `unsafe` block keeps its
       `// SAFETY:` comment.

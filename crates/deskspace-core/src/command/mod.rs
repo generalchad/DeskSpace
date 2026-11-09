@@ -34,7 +34,7 @@ pub use touched::Touched;
 pub enum Command {
     /// Creates a space at `at` (its top-left in desktop coordinates) with the
     /// configured `size`, optionally starting locked. `view` is the new
-    /// space's view settings (W40).
+    /// space's view settings.
     CreateSpace {
         title: String,
         at: Point,
@@ -45,7 +45,7 @@ pub enum Command {
     },
     /// Creates a lens: a space that mirrors `path` live (ROADMAP D3, M4).
     /// `path` is only stored; `SyncLens` fills the items. `view` is the new
-    /// lens's view settings (W19, W23).
+    /// lens's view settings.
     CreateLens {
         title: String,
         at: Point,
@@ -134,7 +134,7 @@ pub enum Command {
     /// Keeps a space at its current size from now on, as if the user had sized
     /// it, so later re-flows change its columns rather than its rect. An
     /// icon-size change uses it, so spaces keep their size as an Explorer
-    /// window does (`TASKS.md` F15).
+    /// window does.
     KeepSize {
         id: SpaceId,
     },

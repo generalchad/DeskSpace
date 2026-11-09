@@ -1,4 +1,4 @@
-//! A config written by a released build must keep loading (TASKS.md Z1).
+//! A config written by a released build must keep loading.
 //!
 //! "Never break users" (`docs/ENGINEERING.md` section 2, rule 3): a config
 //! that loaded yesterday loads today, and a save keeps every space, item, and

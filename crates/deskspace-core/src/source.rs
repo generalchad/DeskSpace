@@ -336,7 +336,7 @@ mod tests {
 
     #[test]
     fn a_lens_ignores_the_retired_sort_fields() {
-        // The order moved to `SpaceView.sort` (W14). Lenses are unreleased, so
+        // The order moved to `SpaceView.sort`. Lenses are unreleased, so
         // an old file's fields are dropped rather than migrated.
         let view: FolderView = toml::from_str(
             "path = 'C:/Temp'\nsort = 'size'\ndescending = true\nfolders_first = true\n",
