@@ -90,7 +90,9 @@ Four rules come first, because the rest follow from them:
   row. Where a table cannot carry the behavior, an enum does (`ButtonAction`,
   `HotkeyAction`), so the compiler or a guard test points at every place still
   to wire up; the `TASKS.md` recipes list them. Delete dead code and branches
-  instead of keeping them "just in case". Keep pure logic (core,
+  instead of keeping them "just in case"; the compiler finds unused private
+  items, and `crates/deskspace-app/tests/dead_pub.rs` a library's unused
+  `pub` ones. Keep pure logic (core,
   `settings/`, `scene.rs`, helpers such as `next_in_direction`) apart from
   Win32 calls so it can be unit-tested. When code and docs disagree, fix the
   docs in the same commit.

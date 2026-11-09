@@ -115,7 +115,7 @@ platform, data-driven UI) are `ENGINEERING.md` section 3.
 
 - `Point { x, y }`, `Size { width, height }`, and `Rect { x, y, width, height }`
   (with `contains`, `intersects`, `union`, `offset`, `inset`,
-  `with_position`, `with_size`, `center`) are `Copy`, `serde`, `Default`.
+  `with_position`, `center`) are `Copy`, `serde`, `Default`.
 - `SpaceId(u64)` and `ItemId(u64)` are transparent serde newtypes.
   `Desktop::next_space_id` / `next_item_id` give the next id above both the
   ids present and every id handed out this session, so an id freed by a
