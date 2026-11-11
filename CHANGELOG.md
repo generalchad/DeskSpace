@@ -22,6 +22,10 @@ Notable changes to DeskSpace, newest first. The format follows
 
 ### Fixed
 
+- Windows' "Replace or Skip Files", progress, and error windows for a drop,
+  paste, delete, or rename that DeskSpace started now open in front of other
+  apps. Before, one could open behind the app in use, and DeskSpace looked
+  frozen until it was found and answered.
 - On Windows 11 with transparency effects on, clicking an item no longer
   leaves a space showing an old picture of itself, another space's items, or
   nothing. Selected items now show as selected again.

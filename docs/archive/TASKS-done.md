@@ -7088,3 +7088,6 @@ takes an id listed here or used anywhere above
 - **Q8c.** Decode the task ids left in comments: the platform.
 - **Q8d.** A test that refuses task ids in comments (`comment_ids.rs`).
 - **Q8.** Decode the task ids left in comments.
+- **P46a.** The file-operation window's class and the rule that says it is ours.
+- **P46b.** The timer and the Win32 calls that raise the file-operation window.
+- **P46.** Bring the shell's file-operation windows to the front (fix; Win32).

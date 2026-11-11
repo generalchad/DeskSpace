@@ -216,6 +216,13 @@ says why; the diff already shows what. Run the gates (section 1) first.
   not work for them. `DWMWA_SYSTEMBACKDROP_TYPE` (Mica/Acrylic system
   backdrops) renders a flat color on inactive windows; the blur comes from
   the accent policy in `win32/dwm.rs`.
+- **DeskSpace never holds the foreground**, so shell UI it starts opens
+  behind the foreground app unless it is raised. A prompt nobody can see
+  looks like a hang: the user force-quits and the operation is lost.
+  `SetForegroundWindow` fails without the foreground, so
+  `RaiseOperationWindows` (`win32/file_op.rs`) makes the shell's
+  file-operation window topmost instead. Anything new that can open a shell
+  prompt needs the same care.
 - **Seeing a space.** Spaces sit at the bottom of the z-order, behind your
   editor; use `--on-top` with a scratch `--config`. To check the look, run over
   a high-contrast window (bright stripes or text) and take a screenshot: over a

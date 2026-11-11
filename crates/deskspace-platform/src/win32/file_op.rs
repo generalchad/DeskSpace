@@ -9,14 +9,20 @@
 //! folder gets the shell's Replace or Skip dialog.
 //! Delete uses the Recycle Bin (`FOF_ALLOWUNDO`) with no prompt.
 //! https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-ifileoperation
+//!
+//! DeskSpace never holds the foreground, so the shell opens its progress and
+//! conflict window behind the app that holds it. Every operation here therefore
+//! runs under a `RaiseOperationWindows`, which brings that window to the
+//! front.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use windows::Win32::Foundation::{HWND, PROPERTYKEY};
+use windows::Win32::Foundation::{HWND, LPARAM, PROPERTYKEY, TRUE};
 use windows::Win32::Storage::FileSystem::GetLongPathNameW;
 use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance, CoTaskMemFree};
+use windows::Win32::System::Threading::GetCurrentProcessId;
 use windows::Win32::UI::Shell::{
     BHID_EnumItems, BHID_SFUIObject, CMF_NORMAL, CMINVOKECOMMANDINFO, FILEOPERATION_FLAGS,
     FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_NOCONFIRMMKDIR, FOF_RENAMEONCOLLISION,
@@ -25,8 +31,12 @@ use windows::Win32::UI::Shell::{
     KF_FLAG_DEFAULT, SEE_MASK_FLAG_NO_UI, SHCreateItemFromParsingName, SHGetKnownFolderItem,
     SIGDN_FILESYSPATH, SIGDN_NORMALDISPLAY,
 };
-use windows::Win32::UI::WindowsAndMessaging::{CreatePopupMenu, DestroyMenu, SW_SHOWNORMAL};
-use windows::core::{GUID, HRESULT, Interface, PCWSTR, Ref, Result as WinResult, s};
+use windows::Win32::UI::WindowsAndMessaging::{
+    CreatePopupMenu, DestroyMenu, EnumWindows, GWL_EXSTYLE, GetClassNameW, GetWindowLongW,
+    GetWindowThreadProcessId, HWND_TOPMOST, IsWindowVisible, KillTimer, SW_SHOWNORMAL,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetTimer, SetWindowPos, WINDOW_EX_STYLE, WS_EX_TOPMOST,
+};
+use windows::core::{BOOL, GUID, HRESULT, Interface, PCWSTR, Ref, Result as WinResult, s};
 
 use crate::error::PlatformError;
 use crate::win32::shortcuts::display_name;
@@ -56,6 +66,126 @@ const PKEY_RECYCLE_DATE_DELETED: PROPERTYKEY = PROPERTYKEY {
 /// Seconds between the Windows `FILETIME` epoch (1601-01-01) and `UNIX_EPOCH`
 /// (1970-01-01).
 const WINDOWS_TO_UNIX_EPOCH_SECS: u64 = 11_644_473_600;
+
+/// The class of the window the shell shows for a file operation: its progress,
+/// and the "Replace or Skip Files" and error prompts that window turns into.
+/// Windows documents the window only as an interface, which names no class,
+/// so this is the name `GetClassNameW` gives for a live one (Windows 11). A
+/// Windows that names it otherwise leaves it where the shell put it.
+/// https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-ioperationsprogressdialog
+const OPERATION_STATUS_CLASS: &str = "OperationStatusWindow";
+
+/// How often a running operation looks for its window. A prompt nobody can
+/// see reads as a frozen DeskSpace, so it should come forward before the
+/// user wonders. One look measured about half a millisecond with 500
+/// top-level windows open, so ten a second leave the UI thread its budget.
+const RAISE_INTERVAL_MS: u32 = 100;
+
+/// Whether a top-level window is the shell's file-operation window for an
+/// operation this process started. The process id keeps Explorer's own, and
+/// every other app's, where their user left them.
+fn is_our_operation_window(class: &str, window_pid: u32, our_pid: u32) -> bool {
+    window_pid == our_pid && class == OPERATION_STATUS_CLASS
+}
+
+/// Brings the shell's window for a file operation to the front for as long as
+/// this lives, so hold one across every call that can show it.
+///
+/// A thread timer looks every `RAISE_INTERVAL_MS`: the operation pumps this
+/// thread's messages while it works, and a thread timer has no window and a
+/// system-chosen id, so it takes none of the app's timer ids on the
+/// controller.
+/// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-settimer
+struct RaiseOperationWindows {
+    /// Zero when Windows refused the timer; the operation then runs as it
+    /// did before, with its window wherever the shell put it.
+    timer: usize,
+}
+
+impl RaiseOperationWindows {
+    fn arm() -> Self {
+        // SAFETY: `raise_on_timer` matches TIMERPROC and lives forever.
+        let timer = unsafe { SetTimer(None, 0, RAISE_INTERVAL_MS, Some(raise_on_timer)) };
+        if timer == 0 {
+            tracing::warn!("no timer to bring the file operation's window forward");
+        }
+        Self { timer }
+    }
+}
+
+impl Drop for RaiseOperationWindows {
+    fn drop(&mut self) {
+        if self.timer != 0 {
+            // SAFETY: kills the thread timer `arm` made, on the thread that
+            // made it: a guard is a local of the function that armed it.
+            unsafe {
+                let _ = KillTimer(None, self.timer);
+            }
+        }
+    }
+}
+
+unsafe extern "system" fn raise_on_timer(_: HWND, _: u32, _: usize, _: u32) {
+    raise_operation_windows();
+}
+
+/// Makes each of this process's shown file-operation windows topmost, once.
+///
+/// It looks at every top-level window, not this thread's: the shell runs the
+/// window on a thread of its own. It skips a hidden one, because the shell
+/// makes the window at once and shows it only when an operation runs long or
+/// needs an answer, so showing it here would flash a progress box over every
+/// quick delete. Topmost is the one way forward: without the foreground,
+/// `SetForegroundWindow` only flashes a taskbar button.
+/// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-enumwindows
+fn raise_operation_windows() {
+    // SAFETY: `raise_if_ours` matches WNDENUMPROC and uses no context.
+    unsafe {
+        let _ = EnumWindows(Some(raise_if_ours), LPARAM(0));
+    }
+}
+
+unsafe extern "system" fn raise_if_ours(window: HWND, _: LPARAM) -> BOOL {
+    let mut window_pid = 0;
+    let mut class = [0u16; 64];
+    // SAFETY: `window` is a live handle from EnumWindows, and each read
+    // writes only to a local sized for it.
+    let (length, shown, style) = unsafe {
+        GetWindowThreadProcessId(window, Some(&mut window_pid));
+        (
+            GetClassNameW(window, &mut class).max(0) as usize,
+            IsWindowVisible(window).as_bool(),
+            WINDOW_EX_STYLE(GetWindowLongW(window, GWL_EXSTYLE) as u32),
+        )
+    };
+    let class = String::from_utf16_lossy(&class[..length.min(class.len())]);
+    // SAFETY: reading this process's id has no preconditions.
+    let ours = is_our_operation_window(&class, window_pid, unsafe { GetCurrentProcessId() });
+    // A window already topmost was raised by an earlier look, so each one is
+    // raised once and never fights the user for its place afterwards.
+    if ours && shown && !style.contains(WS_EX_TOPMOST) {
+        // SAFETY: the window belongs to this process. No size, place, or
+        // activation changes, so no space gains the focus and the foreground
+        // app keeps its own.
+        let raised = unsafe {
+            SetWindowPos(
+                window,
+                Some(HWND_TOPMOST),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            )
+        };
+        // `debug` for the failure too: it would repeat on every look.
+        match raised {
+            Ok(()) => tracing::debug!("brought the file operation's window to the front"),
+            Err(error) => tracing::debug!(%error, "could not raise the file operation's window"),
+        }
+    }
+    TRUE
+}
 
 /// What `transfer` does when a file with the same name is already in the
 /// destination.
@@ -127,7 +257,10 @@ pub(crate) fn transfer(
         // An operation with nothing queued reports a failure, so skip it.
         if queued {
             let cookie = operation.Advise(Some(&sink))?;
-            let outcome = operation.PerformOperations();
+            let outcome = {
+                let _in_front = RaiseOperationWindows::arm();
+                operation.PerformOperations()
+            };
             let _ = operation.Unadvise(cookie);
             // Keep whatever was created even if the operation failed partway,
             // so the caller can still list the files that did land.
@@ -187,6 +320,7 @@ pub(crate) fn delete(
         }
         // An operation with nothing queued reports a failure, so skip it.
         if queued {
+            let _in_front = RaiseOperationWindows::arm();
             operation.PerformOperations()?;
             if matches!(operation.GetAnyOperationsAborted(), Ok(aborted) if aborted.as_bool()) {
                 tracing::warn!("the delete was cancelled");
@@ -214,6 +348,7 @@ pub(crate) fn rename(
         operation.SetOperationFlags(FOF_ALLOWUNDO)?;
         let item = shell_item(path)?;
         operation.RenameItem(&item, PCWSTR(wide_name.as_ptr()), None)?;
+        let _in_front = RaiseOperationWindows::arm();
         operation.PerformOperations()?;
         if matches!(operation.GetAnyOperationsAborted(), Ok(aborted) if aborted.as_bool()) {
             tracing::warn!("the rename was cancelled");
@@ -320,7 +455,10 @@ unsafe fn invoke_undelete(owner: Option<HWND>, item: &IShellItem) -> Option<()> 
             nShow: SW_SHOWNORMAL.0,
             ..Default::default()
         };
-        let result = menu.InvokeCommand(&info);
+        let result = {
+            let _in_front = RaiseOperationWindows::arm();
+            menu.InvokeCommand(&info)
+        };
         let _ = DestroyMenu(popup);
         if let Err(error) = result {
             tracing::warn!(%error, "could not restore item from the Recycle Bin");
@@ -531,10 +669,120 @@ impl IFileOperationProgressSink_Impl for CreatedItems_Impl {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use windows::Win32::Foundation::{LRESULT, WPARAM};
     use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CreateWindowExW, DefWindowProcW, DestroyWindow, WINDOW_STYLE, WS_EX_NOACTIVATE,
+        WS_EX_TOOLWINDOW, WS_POPUP, WS_VISIBLE,
+    };
+    use windows::core::w;
+
+    use crate::win32::window_class::{self, WindowClass};
 
     fn has(flags: FILEOPERATION_FLAGS, flag: FILEOPERATION_FLAGS) -> bool {
         flags.0 & flag.0 == flag.0
+    }
+
+    unsafe extern "system" fn procedure(
+        window: HWND,
+        message: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
+        // SAFETY: forwards Windows' own arguments unchanged.
+        unsafe { DefWindowProcW(window, message, wparam, lparam) }
+    }
+
+    /// A window of `class` far off screen that never takes the focus, so a
+    /// test run shows nothing and steals nothing.
+    fn off_screen_window(class: PCWSTR, style: WINDOW_STYLE) -> HWND {
+        // SAFETY: `class` names a registered class and outlives the call.
+        unsafe {
+            CreateWindowExW(
+                WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+                class,
+                w!("file operation test"),
+                style,
+                -30000,
+                -30000,
+                100,
+                100,
+                None,
+                None,
+                None,
+                None,
+            )
+        }
+        .expect("a test window")
+    }
+
+    fn is_topmost(window: HWND) -> bool {
+        // SAFETY: reads a style of a window this test made.
+        let style = unsafe { GetWindowLongW(window, GWL_EXSTYLE) } as u32;
+        WINDOW_EX_STYLE(style).contains(WS_EX_TOPMOST)
+    }
+
+    #[test]
+    fn only_this_processs_operation_window_is_ours() {
+        assert!(is_our_operation_window(OPERATION_STATUS_CLASS, 7, 7));
+        assert!(
+            !is_our_operation_window(OPERATION_STATUS_CLASS, 8, 7),
+            "Explorer's own copy window stays where its user left it"
+        );
+        assert!(!is_our_operation_window("DeskSpaceSpace", 7, 7));
+        assert!(!is_our_operation_window("", 7, 7));
+    }
+
+    #[test]
+    fn the_operation_class_compares_exactly() {
+        for near in [
+            "operationstatuswindow",
+            "OperationStatusWindow2",
+            "OperationStatus",
+            " OperationStatusWindow",
+        ] {
+            assert!(!is_our_operation_window(near, 7, 7), "{near:?}");
+        }
+    }
+
+    #[test]
+    fn a_shown_operation_window_is_raised_and_a_hidden_one_is_left() {
+        // A class of the shell's name, registered for this executable: the
+        // shell's own belongs to its DLL, so the two never meet.
+        let name = wide(OPERATION_STATUS_CLASS);
+        let class = PCWSTR(name.as_ptr());
+        window_class::register(WindowClass::new(class, Some(procedure))).expect("the class");
+        let shown = off_screen_window(class, WS_POPUP | WS_VISIBLE);
+        let hidden = off_screen_window(class, WS_POPUP);
+        let bystander = off_screen_window(w!("Static"), WS_POPUP | WS_VISIBLE);
+
+        raise_operation_windows();
+        assert!(is_topmost(shown), "a shown prompt comes to the front");
+        assert!(
+            !is_topmost(hidden),
+            "the shell has not shown this one, so neither do we"
+        );
+        // SAFETY: reads the visibility of a window this test made.
+        assert!(!unsafe { IsWindowVisible(hidden) }.as_bool());
+        assert!(!is_topmost(bystander), "another class is not ours to move");
+
+        // SAFETY: destroys the windows this test made, on their own thread.
+        unsafe {
+            for window in [shown, hidden, bystander] {
+                let _ = DestroyWindow(window);
+            }
+        }
+    }
+
+    #[test]
+    fn the_raise_timer_ends_with_its_guard() {
+        let guard = RaiseOperationWindows::arm();
+        let timer = guard.timer;
+        assert_ne!(timer, 0, "Windows gave a thread timer");
+        drop(guard);
+        // SAFETY: asks to kill a timer id on this thread; a dead id only fails.
+        let killed_again = unsafe { KillTimer(None, timer) };
+        assert!(killed_again.is_err(), "the guard already killed it");
     }
 
     #[test]

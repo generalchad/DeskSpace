@@ -803,6 +803,14 @@ one arm in `App::on_event`, whose match is exhaustive.
   `permanent`. Items whose files are gone are dropped, and `restore_recycled`
   finds the newest matching Recycle Bin entry and restores it with the shell's
   `"undelete"` verb.
+- **The shell's own window** (`win32/file_op.rs`): while a transfer, delete,
+  rename, or restore runs, `RaiseOperationWindows` makes the shell's progress
+  or conflict window topmost once it shows. DeskSpace never holds the
+  foreground, so the shell would otherwise open it behind the foreground app,
+  and a prompt nobody sees looks like a frozen DeskSpace. The shell runs that
+  window on its own thread and keeps it hidden through a quick operation, so
+  the guard looks at this process's top-level windows and leaves a hidden one
+  alone.
 
 ### Rendering (`render/scene.rs`, `render/d2d/`)
 

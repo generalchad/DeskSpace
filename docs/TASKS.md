@@ -379,10 +379,9 @@ they are ready in time. P32 does not; Z6 lists it as a known issue.
 Who takes what (split 2026-11-07, so juniors and interns can carry most of
 the gate):
 
-- **Juniors:** Z2, Z3, Z6, P14c, and the junior halves of P36 and P46
-  (P36a, P46a).
+- **Juniors:** Z2, Z3, Z6, and P14c.
 - **Interns with a screen:** P14b, the Z5 batches, Z7a, and Z7c.
-- **A senior:** P36b and P46b, which land the junior halves with them.
+- **A senior:** P36 and P46, both landed, each with its junior half.
 - **The maintainer:** what Z5's failures become, Z7b, and Z8.
 
 - [ ] **Z5. Pass the marked rows (maintainer).** **[needs human]** After: Z4
@@ -1999,68 +1998,6 @@ Logs, tooling, readability, docs, and checks that may close a task.
 
 These are in the order we would take them. Each lands alone.
 
-- [ ] **P46. Bring the shell's file-operation windows to the front (fix; Win32).** **[urgent] (v0.3.0)**
-  A shell file operation that needs an answer can put its window behind the
-  foreground app, and DeskSpace then looks frozen: nothing answers, the user
-  force-quits, and the operation is lost. `Ui::transfer_files`
-  (`win32/runtime/ui_shell.rs`) gives `file_op::transfer` `runtime.controller` as
-  the owner, and that window is hidden. DeskSpace never holds the foreground
-  (spaces are never activated, and the drag source, Explorer, keeps it), so the
-  shell creates its `OperationStatusWindow` without bringing it forward.
-  - Seen 2026-11-04 on 0.3.0-alpha.1: a right drag of a clashing file onto a lens
-    with "Copy here" showed no dialog. The process was `Responding`; a visible,
-    ownerless `OperationStatusWindow` ("Replace or Skip Files", 463x292 at
-    345,267) sat behind the foreground editor. Forcing it topmost let the check
-    finish and the copy completed. The same applies to a conflict or progress
-    window from any drop, paste, delete, or rename that DeskSpace starts.
-  - Fix, chosen 2026-11-04: while our own shell UI may be open, find it and raise
-    it.
-    - `transfer`, `delete`, `rename`, and `invoke_undelete` in `win32/file_op.rs`
-      are the callers; each already takes an owner.
-    - Arm a Win32 timer on the controller before `PerformOperations` and kill it
-      after. `PerformOperations` pumps messages, so the timer fires while the
-      shell works.
-    - Its handler enumerates this process's top-level windows
-      (`EnumThreadWindows` on the UI thread), matches class
-      `OperationStatusWindow` and the process id, and calls
-      `SetWindowPos(HWND_TOPMOST, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE |
-      SWP_SHOWWINDOW)` once for each. The process id keeps another app's dialog
-      out of it, and `SWP_NOACTIVATE` keeps a space from taking the focus.
-    - The class name is undocumented; keep it in one named constant with the
-      reason and a link beside it, next to the shell calls in `file_op.rs`, not in
-      the app.
-  - Tests: the class match and the timer's place among the controller's ids.
-  - `CONTEXT.md` section 6, file operations: a line saying the shell's own window
-    is raised while the operation runs, and why. `ENGINEERING.md` section 6 gets
-    the gotcha: DeskSpace never holds the foreground, so shell UI it starts has to
-    be raised.
-  - **[needs human]** check: with a lens on a throwaway folder and Explorer
-    maximized over the spaces, drop a clashing file: Replace and Skip both show in
-    front and work. The same for a long copy's progress window, a move's error
-    window, and a rename collision. With `--on-top` and the spaces above
-    everything, the window still shows.
-  - Split by person and landed as one commit, as P36 is, on the branch
-    `fix/p46-shell-dialogs`.
-  - [ ] **P46a (junior; hands over to P46b).** In `win32/file_op.rs`: the
-    `OPERATION_STATUS_CLASS` constant with its reason and a link, and a pure
-    `is_our_operation_window(class: &str, window_pid: u32, our_pid: u32) -> bool`,
-    with tests: our class and our process id match; another process's window, or
-    another class, does not; the class compares exactly. Also the `CONTEXT.md`
-    and `ENGINEERING.md` lines, a `CHANGELOG.md` "Fixed" line, and the section V
-    row. Hand it over as P36a does. Touch nothing `unsafe`.
-  - [ ] **P46b (senior).** Arm and kill the timer around `PerformOperations` in
-    `transfer`, `delete`, `rename`, and `invoke_undelete`, and write the handler's
-    `EnumThreadWindows`, `GetClassNameW`, `GetWindowThreadProcessId`, and
-    `SetWindowPos` calls, as the task says. Review P46a's half, then commit both.
-    - Amended 2026-11-07, for the senior to confirm: the controller has no timer
-      ids of its own. Its `WM_TIMER` becomes `Event::Timer` for the app's `enum
-      Timer`, and `SetTimer` with an id already in use on that window replaces the
-      app's timer. So use a thread timer, `SetTimer(None, 0, ..)` with a
-      `TIMERPROC`: it has a system-chosen id and no window, and `DispatchMessage`
-      in the shell's own loop calls the procedure. Kill it by the id `SetTimer`
-      returns. This replaces "the timer's place among the controller's ids" in
-      the task's tests; say in the commit body which way you went.
-
 - [ ] **P32. Keep the keyboard hook alive through a stall (fix; key hook).** Windows
   removes a low-level hook, and does not tell it, when the hook's thread does not
   answer within `LowLevelHooksTimeout` (about a second). The hook runs on the UI
@@ -2720,6 +2657,7 @@ for a machine that has it.
 | P37 (v0.3) (part script) (no replace on a move) | Every move into and out of storage now goes through `MoveFileExW`, so check the plain paths still work. Drop a file from the desktop onto a space: it leaves the desktop and opens from the space. Drop a second file with the same name from another folder: the space lists both, and both open with their own contents. Delete the space while the desktop already has a file of that name: the stored file comes back as "name (2)" and the desktop's own file is untouched. Ctrl+Z, then Ctrl+Y: each file goes back to where it was, then returns. Drop a file from a USB stick or a network share: it stays where it was and the space refers to it. With `-Verbosity 1`, no "could not move" line appears for any of these. |
 | P49 (v0.3) (part script) (space paint) | Windows 11 with Transparency effects on, three spaces with different items, `--on-top`: click an item in each space in turn, then fold and unfold one. Each click shows the selection and check box on the item clicked, in that space only; no space ever shows another's title or items, an older picture of itself, or only its blur. Repeat after changing a font in Settings > Fonts and pressing Apply. |
 | P50 (v0.3) (part script) (cross-space selection) | Ctrl+click two items in one space, then Ctrl+click one in another: only that one shows selected. Press Delete on a throwaway scratch config: only that file goes to the Recycle Bin, and the first space's two stay. Repeat with Shift+click, and with Explorer's check boxes on in independent mode (tick two in one space, click in another, Delete): the first space's ticks are gone and its files stay. |
+| P46 (v0.3) (shell windows in front) | With a lens on a throwaway folder and Explorer maximized over the spaces, drop a clashing file onto the lens: "Replace or Skip Files" shows in front of Explorer within a moment, and Replace and Skip both work. The same for a long copy's progress window (a few GB, or onto a slow drive), a move's error window (a file another program holds open), and a rename to a name already taken. With `--on-top` and the spaces above everything, the window still shows in front of them. A quick delete, rename, or small copy shows no window at all, as before. A copy started from Explorer itself meanwhile keeps its own window where it was. Repeat the clashing drop on Windows 10: the window's class name was read on Windows 11 only. |
 
 ## Found while working
 
