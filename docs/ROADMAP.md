@@ -959,7 +959,7 @@ checks collect in `TASKS.md` section V and no longer block work):
    fixes it asks for (P43), comment-only sweeps (Q8), and deleting code
    nothing calls. New features, effects, and refactors, file splits
    included, wait. The gate:
-   - *Fixes:* the fixed views' cell (P14b, P14c, before a saved space needs a
+   - *Fixes:* the fixed views' cell (P14c, before a saved space needs a
      migration), a config that cannot be read is never replaced (P35), one
      DeskSpace per config (P36), no file replaced when moving into storage
      (P37), and the shell's dialogs in front (P46). The icon picker's

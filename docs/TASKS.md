@@ -372,15 +372,15 @@ note, the known issues, and the entries Z2 found missing, so Z2 and Z6 now
 check that section against what lands after it. It is also R12's first
 install (Z7). The 0.3.0 section gathers the alpha sections into one.
 
-The gate's fixes are in section P, marked **[urgent] (v0.3.0)**: P14b and
-P14c, P35, P36, P37, P46, P49, and P50. B45 has landed; B47 and B48 (section B) join if
+The gate's fixes are in section P, marked **[urgent] (v0.3.0)**: P14c,
+P35, P36, P37, P46, P49, and P50. B45 has landed; B47 and B48 (section B) join if
 they are ready in time. P32 does not; Z6 lists it as a known issue.
 
 Who takes what (split 2026-11-07, so juniors and interns can carry most of
 the gate):
 
 - **Juniors:** Z2, Z3, Z6, and P14c.
-- **Interns with a screen:** P14b, the Z5 batches, Z7a, and Z7c.
+- **Interns with a screen:** the Z5 batches, Z7a, and Z7c.
 - **A senior:** P36 and P46, both landed, each with its junior half.
 - **The maintainer:** what Z5's failures become, Z7b, and Z8.
 
@@ -1914,20 +1914,7 @@ task goes into its tier, not at the end.
 
 A user can lose their layout, an attacker could reach every install, or the next release waits on it.
 
-- [ ] **P14b. Measure Explorer's fixed-view cells (no code).** **(intern)** **[urgent] (v0.3.0)** **[needs human]** Part
-  of P14. In Explorer, at 100 % and 150 %, measure one cell's width and height, gap
-  included, in Medium, Large, and Extra large icons. Record the numbers in P14c,
-  with the date.
-  - How: open a folder with a dozen files, with Folder Options at its defaults (no
-    compact view). For each view, take a screenshot (Win+Shift+S) and read the
-    pixels in Paint, whose status bar shows the cursor's position. A cell's width
-    is the distance between the left edges of two items side by side; its height
-    is the distance between the tops of two rows. Change the scale in Settings >
-    System > Display, and sign out and in again if Windows asks.
-  - Record the Windows version beside the numbers: Windows 11 first, and Windows
-    10 too if you have it.
-
-- [ ] **P14c. Give the fixed icon views their own cell (fix).** **[urgent] (v0.3.0)** After: P14b. Part of
+- [ ] **P14c. Give the fixed icon views their own cell (fix).** **[urgent] (v0.3.0)** Part of
   P14. In `view_layout.rs`, beside `NORMAL_CELLS`, `pub fn fixed_view_cell(mode) ->
   Option<Size>`, measured in 96-DPI pixels with a comment saying so and when. If the
   150 % numbers are not 1.5 times the 100 % ones, stop and ask. `Cells::FixedView`
@@ -1940,6 +1927,41 @@ A user can lose their layout, an attacker could reach every install, or the next
     size" and no fixed view.
   - **[needs human]** check: three Extra large columns fit where Explorer's do.
     Update W12's row.
+  - Explorer's cells (P14b), measured 2026-11-11 on Windows 11 (build 26300), Folder
+    Options at their defaults except item check boxes, which were on. Physical
+    pixels, each the pitch from one item's edge to the next one's, read through UI
+    Automation from each item's rect while the window's width was stepped one pixel
+    at a time:
+
+    | View | 100 % | 150 % | Item box at 100 % / 150 % |
+    |------|-------|-------|---------------------------|
+    | Medium | 75 × 69 | 113 × 107 | 74 × 68 / 111 × 105 |
+    | Large | 106 × 117 | 160 × 179 | 105 × 116 / 158 × 177 |
+    | Extra large | 272 × 277 | 277 × 291 | 271 × 276 / 275 × 289 |
+
+    - The 150 % numbers are not 1.5 times the 100 % ones. A row is the icon, a
+      one-line label band (21 px at 100 %, 35 at 150 %), and nothing else. The
+      icon scales with the DPI except in Extra large, which stays 256 physical
+      pixels, the shell's largest icon, so its cell barely grows.
+    - The width is a minimum. n columns show once the list is n cells wide plus
+      its margins (30 px at 100 %, 45 at 150 %), and Explorer shares the spare
+      width out among them. A space's width already snaps to whole cells
+      (`ViewMetrics::fit_width`), so the minimum is the cell to copy.
+    - A row grows to the longest label in it, up to four lines: 15 px a line at
+      100 %, 25 at 150 %. The other rows keep the one-line height. Measured with
+      short names, then with one long name among them.
+  - Decided 2026-11-11 (maintainer), replacing the 96-DPI cell times the DPI above:
+    build the cell from parts. Its width is Explorer's minimum pitch, the icon plus
+    a side margin per view, fitted to both columns of the table. Its height is what
+    DeskSpace draws: the icon inset, the icon, the label gap, and the space's label
+    lines at the label size, all at the DPI alone. In both, the icon is the view's
+    size times the DPI, at most 256 physical pixels, and a fixed view draws its icon
+    at that size too. One row height per space stays: Explorer's rows taller than
+    one line are not copied.
+  - `metrics_for` (`app/view.rs`) changes too: it scales a fixed view's icon inset,
+    label gap, and check box by the icon factor (5.33 in Extra large), which would
+    not fit any measured cell. A fixed view takes its icon size from the view and
+    the rest for the DPI alone, as an order-placed view already does.
 
 #### Medium
 
@@ -2062,8 +2084,8 @@ These are in the order we would take them. Each lands alone.
   whole grid by icon size over 48 px (`fixed_icon_scale`, `app/view.rs`). With the
   default 96 × 104 cell, Large icons gets a 192 × 208 cell and Extra large about
   512 × 555, so three Extra large columns need about 1,500 px. W12's check does not
-  mention this. The behavior is decided (ROADMAP D17, amended 2026-11-02). P14b and
-  P14c are in the junior list. **Land them before the next release:** W12 is in no
+  mention this. The behavior is decided (ROADMAP D17, amended 2026-11-02). P14c is
+  in the junior list. **Land it before the next release:** W12 is in no
   release tag (the newest is v0.2.4, checked 2026-11-02), so no saved space needs a
   migration until one ships.
 
@@ -2669,4 +2691,5 @@ scroll's focus G13, and the settings header's keyboard path P48; the
 refreshed.
 
 - `write_shortcut` (`app/files.rs`) picks a name with `unique_destination`, then `std::fs::copy` or the shell link's save writes it, and both replace a file that appears there meanwhile, as `storage.rs` did before P37; in a lens that is the user's own folder. Suggested task: write to a temp name beside it and claim the final name with `move_no_replace`, as `move_to_first_free` does.
+- Measuring Explorer (P14b, 2026-11-11): UI Automation reads each item's rect in an Explorer window, `ShellFolderView.CurrentViewMode` and `IconSize` set the view, and `SetWindowPos` steps the width, so a script can measure what P16d and section B's "Explorer is the reference" ask a person to read off a screenshot. Suggested task: an `OnScreen.psm1` function that does it, with section O's rules.
 - `a_folder_moves_with_its_contents_and_never_onto_a_file` (`win32/file_move.rs` tests) failed once with "Access is denied. (os error 5)" where it expects `AlreadyExists`, during a `cargo test --workspace` that a second worktree's build ran beside (2026-11-09); it passed alone and on rerun. Suggested task: find what holds the folder (an indexer or antivirus on the temp path) and make the test tolerate or avoid it.
