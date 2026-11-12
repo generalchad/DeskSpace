@@ -80,7 +80,7 @@ pub(crate) struct DebugTools {
     /// the scale in force. Picks wait for "Apply fonts", so browsing a list
     /// does not rebuild every font at each step.
     pub(crate) typography_draft: Option<deskspace_core::typography::Typography>,
-    /// The interface language for the samples (G12), session only.
+    /// The interface language for the samples, session only.
     pub(crate) language: deskspace_core::text::Language,
 }
 
@@ -221,7 +221,7 @@ impl App {
                 enabled: self.has_stress_spaces(),
             },
             DebugId::StressSize => DebugControlKind::Choice {
-                options: STRESS_SIZES.iter().map(|size| size.to_string()).collect(),
+                options: STRESS_SIZES.iter().map(ToString::to_string).collect(),
                 selected: self.debug.as_ref().map_or(0, |tools| tools.stress_size),
                 enabled: true,
             },

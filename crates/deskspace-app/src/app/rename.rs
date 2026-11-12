@@ -1,6 +1,7 @@
-//! `App` inline rename: the edit session, caret, and commit (R1), plus the
-//! `EditState` they share (R2).
+//! `App` inline rename: the edit session, caret, and commit, plus the
+//! `EditState` they share.
 
+use std::ffi::OsStr;
 use std::path::Path;
 
 use deskspace_core::{Command, ItemId, ItemKind, LensTitle, Space, SpaceId, lens_title};
@@ -121,8 +122,8 @@ impl App {
             return;
         };
         let title = space.title().to_owned();
-        // The pointer may rest on this title with its tip already shown
-        // (W27); the edit takes its place.
+        // The pointer may rest on this title with its tip already shown;
+        // the edit takes its place.
         self.dismiss_info_tip(ui);
         self.edit.begin(EditSession {
             surface: Surface::Space(id),
@@ -352,7 +353,7 @@ impl App {
         } else {
             Path::new(&new_name)
                 .file_stem()
-                .and_then(|stem| stem.to_str())
+                .and_then(OsStr::to_str)
                 .unwrap_or(new_name.as_str())
                 .to_string()
         };
@@ -482,7 +483,7 @@ fn renamed_file_name(original: &Path, typed: &str, shows_extension: bool) -> Str
     if shows_extension {
         return typed.to_string();
     }
-    let Some(extension) = original.extension().and_then(|ext| ext.to_str()) else {
+    let Some(extension) = original.extension().and_then(OsStr::to_str) else {
         return typed.to_string();
     };
     let suffix = format!(".{extension}");

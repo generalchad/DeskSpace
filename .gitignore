@@ -2,3 +2,6 @@
 **/*.rs.bk
 *.pdb
 .DS_Store
+
+# Worktrees that agent sessions create for isolated work.
+.claude/worktrees/

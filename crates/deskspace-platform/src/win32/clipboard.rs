@@ -94,10 +94,7 @@ pub(crate) fn shell_items() -> Vec<ShellItem> {
 /// Replaces the clipboard with `text` as `CF_UNICODETEXT`, owned by `owner`.
 /// https://learn.microsoft.com/en-us/windows/win32/dataxchg/standard-clipboard-formats
 pub(crate) fn set_text(owner: HWND, text: &str) -> Result<(), PlatformError> {
-    let bytes: Vec<u8> = wide(text)
-        .into_iter()
-        .flat_map(|unit| unit.to_le_bytes())
-        .collect();
+    let bytes: Vec<u8> = wide(text).into_iter().flat_map(u16::to_le_bytes).collect();
     // SAFETY: opening the clipboard for our own live window.
     with_clipboard_retry(|| unsafe { OpenClipboard(Some(owner)) })?;
     // SAFETY: the clipboard is open until the close below; the global block

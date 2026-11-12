@@ -1,5 +1,4 @@
-//! `App` persistence: command dispatch and the debounced configuration write
-//! (R1).
+//! `App` persistence: command dispatch and the debounced configuration write.
 
 use std::path::Path;
 

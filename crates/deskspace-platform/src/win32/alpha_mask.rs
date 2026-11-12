@@ -1,7 +1,7 @@
 //! Direct2D's AlphaMask effect described to the compositor, so a space's
-//! blur can be masked (ROADMAP D12, TASKS T13): the first source's pixels
+//! blur can be masked (ROADMAP D12): the first source's pixels
 //! times the second's alpha. `CompositionMaskBrush` refuses a host backdrop
-//! brush as its source (T1), and composition takes effect graphs only
+//! brush as its source, and composition takes effect graphs only
 //! through these interfaces, which Win2D usually supplies.
 //! https://learn.microsoft.com/en-us/windows/win32/api/windows.graphics.effects.interop/nn-windows-graphics-effects-interop-igraphicseffectd2d1interop
 //! https://learn.microsoft.com/en-us/windows/win32/direct2d/alpha-mask-effect

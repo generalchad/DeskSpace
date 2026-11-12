@@ -79,7 +79,7 @@ impl App {
                 .map(|index| (surface, index)),
             _ => None,
         };
-        // A lens's title bar tips the folder it displays (W27). While that
+        // A lens's title bar tips the folder it displays. While that
         // space is being renamed the tip would cover the edit, so it is not
         // armed then.
         let title_hover = match (surface, hovered, status_hover) {

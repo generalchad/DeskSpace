@@ -1,7 +1,7 @@
-//! TASKS.md T1 (ROADMAP D12): does a `Windows.UI.Composition` host backdrop
+//! ROADMAP D12: does a `Windows.UI.Composition` host backdrop
 //! blur a window that is never activated, as spaces never are, and can that
 //! blur be faded, swept, and dissolved? A throwaway check, never shipped;
-//! delete it with T12-T14 if the answer is no.
+//! delete it with the composition path if the answer is no.
 //!
 //! Run it with `cargo run -p deskspace-platform --example backdrop_spike`
 //! over a high-contrast window. The window is never activated, so it takes
@@ -9,7 +9,7 @@
 //!
 //! - Ctrl+Alt+Shift+F: fade the whole window out and back (opacity).
 //! - Ctrl+Alt+Shift+G: sweep a soft edge down over the blur and back.
-//! - Ctrl+Alt+Shift+M: the same sweep through an effect brush (T13).
+//! - Ctrl+Alt+Shift+M: the same sweep through an effect brush.
 //! - Ctrl+Alt+Shift+D: dissolve the blur cell by cell and back.
 //! - Ctrl+Alt+Shift+T: toggle topmost.
 //! - Ctrl+Alt+Shift+Q: quit.
@@ -20,7 +20,7 @@
 //!
 //! Found while building it: `CompositionMaskBrush` refuses a host backdrop
 //! brush as its source ("Unsupported source brush type"), so G sweeps thin
-//! strips of backdrop at graded opacities. M is the way T13 chose to mask
+//! strips of backdrop at graded opacities. M is the way chosen to mask
 //! the blur itself: a `CompositionEffectBrush` whose graph is Direct2D's
 //! AlphaMask, with the backdrop as its source and a gradient as its mask.
 

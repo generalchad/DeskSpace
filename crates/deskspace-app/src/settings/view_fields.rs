@@ -1,5 +1,5 @@
 //! The view and sort controls the View page, the Lenses defaults page, and
-//! the New spaces page share (W20, W23, W40).
+//! the New spaces page share.
 
 use deskspace_core::SpaceView;
 use deskspace_platform::Field;
@@ -21,7 +21,7 @@ pub(super) struct ViewIds {
     pub(super) folders_first: u32,
     pub(super) keep_sorted: Option<u32>,
     /// The Group by choice and its direction. `None` on the New spaces page,
-    /// which W38 leaves out.
+    /// which has no Group by choice.
     pub(super) group: Option<(u32, u32)>,
 }
 

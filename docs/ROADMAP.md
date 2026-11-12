@@ -17,8 +17,9 @@ How to read this file:
   other docs, so never renumber them.
 - The history of what landed up to v0.2.0 is in
   `archive/ROADMAP-progress-log.md`; read it only for background. A task id
-  cited here (`E7`, `L2`, ...) is in `TASKS.md` while open and in
-  `archive/TASKS-done.md` once finished.
+  cited here (`E7`, `L2`, ...) is in `TASKS.md` while open; once finished,
+  its commit names it (`git log --grep '(E7)'`), and tasks finished before
+  2026-11-09 are also in `archive/TASKS-done.md`.
 
 ## 1. Vision
 
@@ -308,7 +309,7 @@ A native, lightweight, offline Windows desktop organizer that:
     rule Ctrl+V follows; otherwise they still reach Explorer. The space menu
     and the tray offer Undo and Redo, named for the action ("Undo Move 3
     items").
-  - Work items: `TASKS.md` section U.
+  - Work items: done (U1-U7, `archive/TASKS-done.md` section U).
 
 - **D12. Animations (2026-10-17).** Decides F-33 and M5 item 5.
   - *Kinds:* three moments animate, each its own kind with its own
@@ -549,7 +550,8 @@ A native, lightweight, offline Windows desktop organizer that:
     (restore or re-hide Explorer's icons, re-sync, watchdog), and
     Simulate (theme change, Explorer restart, a read-only config, a
     crash).
-  - Work items: `TASKS.md` section X.
+  - Work items: done (`archive/TASKS-done.md` section X); a new control follows
+    the `TASKS.md` recipe "a debug control".
 
 - **D15. Drawn shadows (2026-10-19, maintainer).** Moving spaces to
   composition (D12) took away the Windows 11 window shadow: it comes with
@@ -680,11 +682,16 @@ A native, lightweight, offline Windows desktop organizer that:
     `Item.position`, so switching back to an icon view restores a hand
     arrangement. (Amended 2026-11-02: Small icons places items by order too,
     since W16; the three larger icon views keep the grid.) (Amended 2026-11-02,
-    maintainer; lands with `TASKS.md` P14c: those three views use Explorer's
+    maintainer; landed with `TASKS.md` P14c: those three views use Explorer's
     measured cell and never the look's, so the look's spacing applies only to
     "Settings icon size". Scaling the whole cell by icon size made three Extra
     large columns about 1,500 px wide. No release has these views yet, so this
     lands before the next one, and no saved space needs a migration.)
+    (Amended 2026-11-11, maintainer: the cell is as wide as Explorer's narrowest
+    column and as tall as the item draws with the space's label lines and
+    size. Explorer's rows grow to their longest label, which one row height per
+    space cannot copy, and its row would clip DeskSpace's looser label. The
+    icon stops at 256 physical pixels, as Explorer's Extra large does.)
   - *One sort rule for both kinds:* `SortRule { key, descending,
     folders_first }`. A space keeps its last rule, and "Keep sorted"
     decides whether it holds as items come and go. A lens is always kept
@@ -718,7 +725,7 @@ A native, lightweight, offline Windows desktop organizer that:
     does.
   - Lenses are unreleased (2026-10-21), so `FolderView`'s sort fields may
     move into `SortRule` without a migration.
-  - Work items: `TASKS.md` section W, phase 4 (W8-W23).
+  - Work items: done (W8-W23, `archive/TASKS-done.md` section W).
 
 - **D18. Lens and view extras, M4 phase 5 (2026-10-21, maintainer).**
   Builds on D17. It was planned to ship after v0.3 so it would never hold
@@ -771,7 +778,7 @@ A native, lightweight, offline Windows desktop organizer that:
   - *The rest of F-40:* Explorer's desktop offers only icon views, which
     the default view already follows. A check confirms this, then F-40
     closes.
-  - Work items: `TASKS.md` section W, phase 5 (W24-W49).
+  - Work items: done (W24-W49, `archive/TASKS-done.md` section W).
 
 - **D19. A lens follows its folder (2026-10-29, maintainer).** Resolves
   open question 5 and decides F-67.
@@ -952,9 +959,12 @@ checks collect in `TASKS.md` section V and no longer block work):
    Fluent set is published (`icons-fluent-r1`, S5).
 3. **v0.3.0** (decided 2026-11-05, maintainer: release before starting more
    work; `TASKS.md` section Z is the plan). Until it is tagged, only section
-   Z's tasks, the fixes it names, docs, and log-only tasks land; new features,
-   effects, and refactors wait. The gate:
-   - *Fixes:* the fixed views' cell (P14b, P14c, before a saved space needs a
+   Z's tasks, the fixes it names, docs, and log-only tasks land, plus (added
+   2026-11-09, maintainer) the compiler-proven neutral ones: a lint and the
+   fixes it asks for (P43), comment-only sweeps (Q8), and deleting code
+   nothing calls. New features, effects, and refactors, file splits
+   included, wait. The gate:
+   - *Fixes:* the fixed views' cell (P14c, before a saved space needs a
      migration), a config that cannot be read is never replaced (P35), one
      DeskSpace per config (P36), no file replaced when moving into storage
      (P37), and the shell's dialogs in front (P46). The icon picker's
@@ -1064,85 +1074,11 @@ menu can show and hide spaces and open settings.
 
 ### M4 - Lenses (folder views)  **[done]**
 
-Goal: spaces that mirror a folder live. Each phase lands green.
-
-- **[done] Phase 0 - resize and scroll.**
-  - `ResizeSpace` / `FitToContents`, and `Space::user_sized`; the columns
-    follow the width.
-  - Wheel scrolling with an indicator.
-  - Scenes carry only the visible items.
-  - An LRU-bounded `IconCache` (F-03).
-- **Phase 1 - core model. [done]**
-  - A source on each space:
-    `Space.source: SpaceSource { Items, Folder(FolderView) }`, with
-    `#[serde(default)]`.
-  - The view settings: `FolderView { path, show_hidden, include, exclude }`,
-    and `SpaceView { mode, sort }` since W14.
-  - Entries come from the platform, so `core` does no IO: `FolderEntry { path,
-    label, kind, size, modified, hidden }`.
-  - New commands: `CreateLens`, `SetLensFolder`, `SetLensView`, and
-    `SyncLens { id, items }`. A `LensBuilder` on the watch worker filters,
-    sorts by the space's `SortRule`, and reconciles by path, so `ItemId`s
-    survive refreshes (B37).
-  - `AddItem` / `MoveItem` into a lens are `Rejected`.
-  - Lens items are not persisted (F-07, F-08).
-- **Phase 2 - platform. [done]**
-  - Folder listing with `FindFirstFileExW`.
-  - A watcher (shared with M2) using `ReadDirectoryChangesW`:
-    - keyed, so the Desktop folder and every lens are watched at once, all
-      on one worker thread (an I/O completion port; decided 2026-10-20);
-    - debounced (150 ms);
-    - a full rescan on the worker, never the UI thread, then a `WM_APP`
-      wake posted to the controller.
-  - `Event::FolderChanged { key, listing: Listed | Unavailable }`, with a
-    periodic retry on the worker.
-  - New `Ui` calls:
-    - `Ui::watch_folder(key, path)` and `unwatch_folder(key)`;
-    - `pick_folder` (`IFileOpenDialog`);
-    - `transfer_files` with `OnCollision::Ask` (`IFileOperation` with undo
-      and Explorer's Replace or Skip dialog). It pumps messages, so no
-      runtime borrow may be held across it.
-- **Phase 3 - app. [done]**
-  - "New lens..." in the space, tray, and desktop layer menus.
-  - Drops onto a lens move files into its folder. Items already there are
-    skipped, and a folder cannot be dropped into itself.
-  - A lens menu: Open folder, Change folder..., and Sort by, which holds
-    Folders first and Show hidden files.
-  - A placeholder when the folder is unavailable.
-  - Deleting a lens removes only the view; its folder and the files in it
-    are never deleted or moved (D3). The delete confirmation says so.
-  - Double-click to open already works through `Ui::open_path`.
-- **Phase 4 - views and kept sort rules. [done]** Decided in D17;
-  `TASKS.md` W8-W23.
-  - Lens markers: kind glyphs in the scopes pane, the folder's icon in a
-    lens's title bar.
-  - Explorer's eight views and icon sizes, for every space (F-09), and
-    their Ctrl+Shift+1..8 keys. Under "Match Explorer", the desktop's own
-    view needs no mapping: its View menu offers only the three icon views,
-    which the default view already follows (F-40, W41).
-  - A kept sort rule for lenses and normal spaces, with Explorer's Sort by
-    shape (F-08, F-31).
-  - Explorer's status bar: item and selection counts, the Details and
-    Large icons buttons.
-  - A lens's title from its folder name, profile path, full path, or
-    custom text.
-  - A View page for every space, a Lens page for each lens, and a Global
-    Lenses page with defaults (F-17).
-- **Phase 5 - extras. [done]** Decided in D18;
-  `TASKS.md` W24-W49.
-  - Two fixes first: a listing carries the folder it read, and the
-    storage check moves off the UI thread.
-  - Browse into subfolders inside the lens, with a back control (F-64).
-  - Group by (F-65); Details columns: choose, resize, reorder, and Date
-    created (F-63).
-  - Lens filters (part of F-22), per-space file name extensions, compact
-    view, the path tip, Ctrl+wheel through the views, and the default
-    view for new spaces.
-  - F-40 closed: the desktop offers only the three icon views, so no
-    view-mode mapping is needed (W41).
-
-Exit criteria: creating, renaming, or deleting a file in a lens's folder
-updates the lens within about 150 ms, and the sort and view settings persist.
+Goal: spaces that mirror a folder live: resize and scroll, the folder model,
+the watch worker, the lens menus and drops (D3), Explorer's views and kept
+sort rules (D17), and browsing, grouping, Details columns, and filters
+(D18). `CONTEXT.md` describes how they work now; the phase-by-phase plan is
+archived (`archive/ROADMAP-progress-log.md`, "Moved from the main docs").
 
 ### M5 - Visibility and flow
 
@@ -1465,6 +1401,90 @@ Resolve each one during the milestone that raises it.
 5. **A lens whose folder is renamed or moved (M4).** *Resolved:* D19.
 
 Every other question raised so far is answered by a decision in section 2.
+
+### Ideas waiting for a decision
+
+Brainstormed 2026-11-05: features and small delights that no ROADMAP entry
+covers yet. None is ready to build. Each says what it is, where it would
+plug in, how big it is, and a recommendation. Once the maintainer approves
+one, it gets an `F-xx` row (and a `Dx` decision if it needs one) in
+this file, and its tasks are written in the `TASKS.md` section it belongs
+to; then it leaves this list. A rejected idea is deleted with the reason in the
+commit.
+
+#### Features
+
+- **Y1. Find anything.** **[needs decision]** A hotkey opens a search box
+  over every space and lens; typing narrows a list of items by name, and
+  Enter opens the chosen one, or Shift+Enter scrolls its space to it and
+  selects it. Fit: the icon picker's `SearchIndex` (B46) is the matcher, a
+  `HOTKEY_BINDINGS` row is the hotkey, and the box is a never-activated
+  pop-up like the zoom pop-up's. Large. Recommended for M7 (keyboard): it is
+  the biggest step toward "a full workflow without a mouse".
+- **Y2. Smart lenses.** **[needs decision]** A lens that is a query: "the 20
+  newest files in Downloads", "changed this week". Fit: two
+  `#[serde(default)]` fields on `FolderView`, a limit and a modified-within,
+  applied by `LensBuilder` after its filter and sort. Small. Recommended
+  first: it reuses the most and asks the least design.
+- **Y3. What's new in a lens.** **[needs decision]** Items that arrived since
+  you last looked carry a small dot that fades once seen, and a folded lens's
+  title says "3 new". Fit: the listing already reconciles by path (B37), so
+  "new" is a path not in the last seen set, kept per lens in session state. A
+  scene field draws the dot. Medium.
+- **Y4. Shell-folder lenses.** **[needs decision]** Lenses on the Recycle
+  Bin, This PC (drives with a free-space bar), and Quick access. Fit: a
+  `SpaceSource` variant whose listing comes from `IShellFolder` on the
+  worker; D3's file rules need a line for each (Delete in the Recycle Bin
+  deletes for good). Large; seniors only.
+- **Y5. Step aside while presenting.** **[needs decision]** When a
+  full-screen app runs, or Windows reports presentation mode
+  (`SHQueryUserNotificationState`), the spaces hide with Startup's Out and
+  return with its In afterwards. Fit: `app/visibility.rs` and one
+  `WindowSettings` switch. Small. Recommended: it removes a reason to quit
+  DeskSpace before a meeting.
+- **Y6. Light and dark themes.** **[needs decision]** A scope can name two
+  theme files, one for light and one for dark, and switches when Windows
+  does. Fit: C10's theme files and `Event::SystemThemeChanged`, which
+  exists. Small.
+- **Y7. Tint from the wallpaper.** **[needs decision]** A tint choice "From
+  the wallpaper": the average colour of the wallpaper under the space,
+  softened, so spaces sit in any desktop. Fit: T22's spike already reads the
+  wallpaper and its placement (`IDesktopWallpaper`); a colour source like
+  `border_source`. Medium; take it after T22 decides.
+- **Y8. Colour labels.** **[needs decision]** Tag an item with a colour, drawn
+  as a dot beside its label; a lens keeps its labels by path, capped. Fit: an
+  `Item` field, a `Command`, a scene field, and an item-menu entry. Medium.
+- **Y9. An undo history.** **[needs decision]** "Undo ▸" lists the last
+  entries by label, and choosing one undoes back to it, one entry at a time,
+  stopping at a stale one as undo does. Fit: `UndoStack` already labels every
+  entry; one menu entry by the recipe. Small; a junior task once approved.
+- **Y10. Portable mode.** **[needs decision]** A `deskspace.portable` file
+  beside the exe keeps the config and the store beside it, and writes no Run
+  value, desktop verb, or registry entry. Fit: `ConfigStore`'s paths and
+  `bootstrap.rs`; opt-in, so no user's install changes. Small to medium.
+- **Y11. Spaces per virtual desktop.** **[needs decision]** A space shows on
+  every virtual desktop, as now, or on one. Fit: `IVirtualDesktopManager`
+  (documented: `IsWindowOnCurrentVirtualDesktop`, `MoveWindowToDesktop`).
+  Whether it works on DeskSpace's never-activated tool windows needs a spike
+  first. Medium; it touches F-12 (pages), so decide them together.
+
+#### Quirks
+
+- **Y12. Items glide.** **[needs decision]** After a sort, Arrange, or a
+  lens change, items glide from their old cells to their new ones instead of
+  jumping; a deleted item crumples away. Fit: a transition between two
+  `PreparedScene`s keyed by item id, played by the platform from pure frame
+  math as space effects are, so the app still pushes one scene. Large;
+  seniors only, after section T's groundwork.
+- **Y13. Shake to tidy.** **[needs decision]** Shake a space by its title
+  while dragging it, and it arranges itself (the Arrange the menu runs),
+  with one undo entry. Fit: a pure gesture check over the drag's recent
+  points in `app/pointer/`, then the existing `arrange_space`. Small.
+- **Y14. Peek into a folded space.** **[needs decision]** Holding the pointer
+  over a folded space's title shows its items in a pop-up below it, without
+  unfolding it or moving its neighbours. Fit: a pop-up window drawing the
+  space's own scene. Medium; it overlaps F-04's unfold on hover, so decide
+  them together.
 
 ## 9. Risks
 

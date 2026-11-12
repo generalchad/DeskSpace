@@ -11,8 +11,7 @@ use crate::render::{DetailsView, ItemLayout, ItemMetrics};
 const MARQUEE_FILL_ALPHA: u8 = 70;
 /// The selection box border's alpha, close to solid.
 const MARQUEE_BORDER_ALPHA: u8 = 200;
-/// How far an item's highlight and focus rectangle sit inside its cell.
-const CELL_INSET: f32 = 2.0;
+const CELL_INSET: f32 = crate::render::ITEM_FRAME_INSET as f32;
 const HIGHLIGHT_RADIUS: f32 = 4.0;
 /// The space between a label and its cell's sides.
 const LABEL_INSET: f32 = 4.0;
@@ -27,11 +26,11 @@ const TICK_COLOR: Color = Color::rgb(255, 255, 255);
 /// An unchecked box: light, with a dark border that shows on any backdrop.
 const UNCHECKED_FILL: Color = Color::rgba(255, 255, 255, 210);
 const UNCHECKED_BORDER: Color = Color::rgba(0, 0, 0, 150);
-/// The opacity of a tile's type and size lines, dimmed under its name (W21).
+/// The opacity of a tile's type and size lines, dimmed under its name.
 const TILE_META_ALPHA: u8 = 150;
-/// The opacity of a Content row's labelled details (W22).
+/// The opacity of a Content row's labelled details.
 const CONTENT_META_ALPHA: u8 = 170;
-/// The opacity of the separator under a Content row (W22).
+/// The opacity of the separator under a Content row.
 const CONTENT_SEPARATOR_ALPHA: u8 = 40;
 
 /// Draws the rubber-band selection rectangle over empty space.
@@ -204,7 +203,7 @@ unsafe fn draw_item_label(
     }
 }
 
-/// Draws the other columns' text under a Details row's name (W18).
+/// Draws the other columns' text under a Details row's name.
 ///
 /// # Safety
 /// Call between `BeginDraw` and `EndDraw` on `ctx.target`.
@@ -250,7 +249,7 @@ unsafe fn draw_details_cells(
     }
 }
 
-/// Draws a tile's type and size, dimmed under its name (W21).
+/// Draws a tile's type and size, dimmed under its name.
 ///
 /// # Safety
 /// Call between `BeginDraw` and `EndDraw` on `ctx.target`.
@@ -293,7 +292,7 @@ unsafe fn draw_tile_lines(
     }
 }
 
-/// Draws a Content row's labelled details and the separator under it (W22).
+/// Draws a Content row's labelled details and the separator under it.
 ///
 /// # Safety
 /// Call between `BeginDraw` and `EndDraw` on `ctx.target`.
@@ -383,7 +382,7 @@ impl CellLayout {
         let icon_size = metrics.icon_size as f32;
         // A grid centers the icon over its label; every other view puts the
         // check box, then the icon, then the name on one line, vertically
-        // centered (W16).
+        // centered.
         let beside_icon = !matches!(mode, ItemLayout::Grid);
         let (icon_left, icon_top) = if beside_icon {
             let left = cell.left
@@ -404,7 +403,7 @@ impl CellLayout {
         let center_y = (cell.top + cell.bottom) / 2.0;
         let name_left = icon_left + icon_size + metrics.inline_gap as f32;
         // A content row keeps a right-hand area for its labelled details; the
-        // width follows the icon size, so it scales with the display (W22).
+        // width follows the icon size, so it scales with the display.
         let meta_left = if mode == ItemLayout::Content {
             (cell.right - (360.0 * icon_size / 16.0))
                 .max(cell.left + (cell.right - cell.left) * 0.4)
@@ -614,5 +613,28 @@ mod tests {
         assert_eq!(height(100, 1), LABEL_LINE_HEIGHT);
         assert_eq!(height(100, 9), height(100, 2), "two lines at most");
         assert_eq!(height(255, 1), height(LABEL_SIZE_RANGE.1, 1));
+    }
+
+    #[test]
+    fn a_cell_of_the_grid_height_holds_the_whole_label_inside_the_highlight() {
+        for scale in [1.0, 1.5, 2.0] {
+            for icon_size in [48, 144, 256] {
+                for (lines, size) in [(1, 100), (2, 100), (2, LABEL_SIZE_RANGE.1)] {
+                    let metrics = ItemMetrics {
+                        icon_size,
+                        ..ItemMetrics::for_scale(scale)
+                    };
+                    let height = metrics.grid_cell_height(lines, size);
+                    let cell = rect_f(0.0, 0.0, 300.0, height as f32);
+                    let layout =
+                        CellLayout::new(cell, metrics, size, lines, ItemLayout::Grid, None);
+                    let label = layout.label.expect("room for a label");
+                    let whole = label.top + lines as f32 * layout.line_height;
+                    let case = format!("scale {scale}, icon {icon_size}, {lines} x {size} %");
+                    assert!(label.bottom >= whole, "{case}: clipped");
+                    assert!(whole <= layout.frame.bottom, "{case}: past the highlight");
+                }
+            }
+        }
     }
 }

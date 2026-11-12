@@ -1,4 +1,4 @@
-//! `App` info tips: the delayed item tooltip (R1).
+//! `App` info tips: the delayed item tooltip.
 
 use deskspace_core::geometry::Point;
 use deskspace_platform::Ui;
@@ -7,8 +7,8 @@ use super::{App, Surface, Timer};
 
 impl App {
     /// Shows the info tip for the hovered item, once the pointer has rested on
-    /// it, as Explorer does. A status-bar button shows its own tip instead
-    /// (W19), and a lens's title bar the folder it displays (W27).
+    /// it, as Explorer does. A status-bar button shows its own tip instead,
+    /// and a lens's title bar the folder it displays.
     pub(super) fn show_info_tip(&mut self, ui: &mut Ui) {
         Self::clear_timer(ui, Timer::InfoTip);
         if let Some((Surface::Space(id), index)) = self.pointer.status_hover

@@ -61,7 +61,7 @@ pub(super) const PRESETS: [(Preset, &str); 2] = [
     (Preset::Custom, "Custom"),
 ];
 
-/// Explorer's views in menu order, with the Ctrl+Shift digit W13 adds.
+/// Explorer's views in menu order, with each one's Ctrl+Shift digit.
 pub const VIEW_MODES: [(ViewMode, &str, Option<u8>); 9] = [
     (ViewMode::Icons, "Settings icon size", None),
     (ViewMode::ExtraLargeIcons, "Extra large icons", Some(1)),
@@ -74,7 +74,7 @@ pub const VIEW_MODES: [(ViewMode, &str, Option<u8>); 9] = [
     (ViewMode::Content, "Content", Some(8)),
 ];
 
-/// The view Explorer's Ctrl+Shift digit chooses (W13), or `None` for a digit
+/// The view Explorer's Ctrl+Shift digit chooses, or `None` for a digit
 /// no view carries yet.
 pub fn view_for_digit(digit: u8) -> Option<ViewMode> {
     VIEW_MODES
@@ -84,7 +84,7 @@ pub fn view_for_digit(digit: u8) -> Option<ViewMode> {
 }
 
 /// The view `steps` places from `mode` in the View menu's order, stopping at
-/// the ends (W39): Ctrl+wheel and Ctrl+Plus and Minus walk Explorer's views.
+/// the ends: Ctrl+wheel and Ctrl+Plus and Minus walk Explorer's views.
 /// "Settings icon size" is not on the walk — it never steps, and Ctrl+0 is
 /// the way back to it — so the caller zooms a space there as D9 says.
 pub fn step_view(mode: ViewMode, steps: i32) -> ViewMode {
@@ -101,7 +101,7 @@ pub fn step_view(mode: ViewMode, steps: i32) -> ViewMode {
     VIEW_MODES[(current as i32 + steps).clamp(1, last as i32) as usize].0
 }
 
-/// A space's file name extension choices (W28): Explorer's own option under
+/// A space's file name extension choices: Explorer's own option under
 /// `Automatic`, or its own answer.
 pub const EXTENSIONS_OPTIONS: [(Extensions, &str); 3] = [
     (Extensions::Automatic, "Automatic"),
@@ -158,11 +158,11 @@ pub(super) fn group_with_order(current: Option<GroupBy>, index: usize) -> Option
     })
 }
 
-/// Explorer's Details columns (W18): which column it is, its header label,
+/// Explorer's Details columns: which column it is, its header label,
 /// the sort key a click on the header uses, its default width at 96 DPI, and
 /// how its values align. A space's `SpaceView.columns` says which it shows and
 /// in what order. Name takes the width left over, down to `NAME_MIN_WIDTH`.
-/// Widths are provisional until W18's on-screen check measures Explorer's own.
+/// Widths are provisional until the Details view's on-screen check measures Explorer's own.
 pub struct DetailsColumn {
     pub id: Column,
     pub label: &'static str,
@@ -223,10 +223,10 @@ pub fn shown_details_columns(
 /// The narrowest Name column, so a small space keeps a readable name.
 pub const NAME_MIN_WIDTH: i32 = 120;
 
-/// Explorer's Sort by directions, in the View page's order (W20).
+/// Explorer's Sort by directions, in the View page's order.
 pub const VIEW_ORDERS: [&str; 2] = ["Ascending", "Descending"];
 
-/// A view button in Explorer's status bar (W19): the view it switches to, its
+/// A view button in Explorer's status bar: the view it switches to, its
 /// glyph, and Explorer's tip. The tip gains its Ctrl+Shift digit from
 /// `VIEW_MODES`.
 pub struct StatusButton {

@@ -25,6 +25,7 @@ pub use transition::{Content, Geometry, Mask, Play, Side, Transition, Transition
 pub use zoom_bar::ZoomBar;
 
 use deskspace_core::geometry::Rect;
+use deskspace_core::theme::LABEL_SIZE_RANGE;
 
 /// Icon size and top inset within an item cell, at the 96-DPI / 100 % base.
 /// 48 px is Windows' default desktop icon size ("Medium icons" at 100 % DPI),
@@ -33,6 +34,11 @@ pub const ITEM_ICON_SIZE: i32 = 48;
 pub const ITEM_ICON_TOP: i32 = 8;
 /// Gap between the icon and its label at the base size.
 const ITEM_LABEL_GAP: i32 = 6;
+/// One label line at 100 % label size, in pixels; the label font does not
+/// grow with the display scale, so neither does this.
+pub(crate) const ITEM_LABEL_LINE_HEIGHT: f32 = 16.0;
+/// How far an item's highlight and focus rectangle sit inside its cell.
+pub(crate) const ITEM_FRAME_INSET: i32 = 2;
 /// Explorer-style item check box, anchored at the icon's top-left corner.
 pub const ITEM_CHECK_BOX_SIZE: i32 = 13;
 pub const ITEM_CHECK_BOX_MARGIN: i32 = 1;
@@ -40,7 +46,7 @@ pub const ITEM_CHECK_BOX_MARGIN: i32 = 1;
 const ITEM_CHECK_BOX_SLACK: i32 = 2;
 /// Inline cell (Small icons, and List later) at the base size: the inset from
 /// the cell's left edge and the gap after the icon. The check box sits in the
-/// inset, the icon after it, and the label after the icon (W16).
+/// inset, the icon after it, and the label after the icon.
 const INLINE_INSET: i32 = 4;
 const INLINE_GAP: i32 = 4;
 
@@ -73,6 +79,17 @@ impl ItemMetrics {
             inline_inset: scaled(INLINE_INSET),
             inline_gap: scaled(INLINE_GAP),
         }
+    }
+
+    /// The height a grid cell needs to draw this item whole: the icon's inset,
+    /// the icon, the label gap, `label_lines` lines (one or two) at
+    /// `label_size` percent (`LABEL_SIZE_RANGE`), and the highlight's inset
+    /// below them, so the last line ends inside the highlight.
+    pub fn grid_cell_height(&self, label_lines: u8, label_size: u8) -> i32 {
+        let size = label_size.clamp(LABEL_SIZE_RANGE.0, LABEL_SIZE_RANGE.1) as f32 / 100.0;
+        let lines = label_lines.clamp(1, 2) as f32;
+        let label = (lines * ITEM_LABEL_LINE_HEIGHT * size).ceil() as i32;
+        self.icon_top + self.icon_size + self.label_gap + label + ITEM_FRAME_INSET
     }
 }
 

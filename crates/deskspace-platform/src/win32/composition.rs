@@ -1,16 +1,16 @@
-//! Spaces shown through `Windows.UI.Composition` (ROADMAP D12, TASKS T12).
+//! Spaces shown through `Windows.UI.Composition` (ROADMAP D12).
 //!
 //! A space window made with `WS_EX_NOREDIRECTIONBITMAP` has no bitmap of its
 //! own; DWM shows its visual tree instead: a root visual clipped to the
 //! space's corners, a backdrop sprite filled with the host backdrop brush
 //! (the blur, for Acrylic and Blur), and a content sprite showing the
 //! drawing surface the painter draws into. The blur is then a brush
-//! DeskSpace owns, so it follows an animation's opacity and masks (T13),
+//! DeskSpace owns, so it follows an animation's opacity and masks,
 //! which the accent policy (`dwm`) cannot: while a frame leaves the window
 //! see-through, the backdrop is shown through `alpha_mask` with a second
 //! surface, the blur's mask, which the painter draws with the same frame
 //! (`blur_shows` decides which). It renders on a window that is never
-//! activated, as spaces never are (T1, seen on build 26300).
+//! activated, as spaces never are (seen on build 26300).
 //!
 //! The choice is made once, at startup (`start`). Windows 10, "Transparency
 //! effects" off, desktop-hosted or click-through spaces, and a failure to
@@ -175,7 +175,7 @@ pub(crate) struct SpaceVisuals {
     /// What the backdrop shows now, from the three above (`blur_shows`).
     shows: BlurShows,
     surface: CompositionDrawingSurface,
-    /// Where the painter draws how much of the blur shows (T13).
+    /// Where the painter draws how much of the blur shows.
     blur_mask: CompositionDrawingSurface,
     graphics: CompositionGraphicsDevice,
     // Kept alive for as long as the window shows the tree.
@@ -337,7 +337,7 @@ enum BlurShows {
     /// The blur, whole: at rest.
     Whole,
     /// The blur through the painter's mask: while a frame leaves the window
-    /// see-through (T13).
+    /// see-through.
     Masked,
 }
 

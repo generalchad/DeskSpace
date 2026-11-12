@@ -186,7 +186,7 @@ pub fn build_form(
     let grid = space.map_or(config.desktop.layout, |space| {
         space.grid(config.desktop.layout)
     });
-    let editable = space.is_none_or(|space| space.custom());
+    let editable = space.is_none_or(Space::custom);
 
     let mut pages = look_pages(theme, &grid, &session.themes, system_dark, space.is_some());
     if !editable {

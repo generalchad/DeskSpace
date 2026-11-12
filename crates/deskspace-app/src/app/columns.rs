@@ -9,14 +9,14 @@
 //! instead, since Name has no width of its own to set.
 
 use deskspace_core::geometry::Point;
-use deskspace_core::{Column, Command, SpaceId, SpaceView, ViewMode};
+use deskspace_core::{Column, Command, Space, SpaceId, SpaceView, ViewMode};
 use deskspace_platform::{DetailsColumnVisual, DetailsView, Ui, drag_threshold, space_dpi};
 
 use super::drag::Drag;
 use super::{App, RESIZE_BORDER, Surface};
 
 /// How far from a divider a press still grabs it, each way, at 96 DPI.
-/// Provisional until W31's on-screen check compares it with Explorer's.
+/// Provisional until the divider's on-screen check compares it with Explorer's.
 const DIVIDER_SLOP: i32 = 4;
 
 /// The shown column whose right edge is the divider at `x`, relative to the
@@ -435,7 +435,7 @@ impl App {
             return false;
         };
         let id = resize.id;
-        let current = self.config.desktop.space(id).map(|space| space.view());
+        let current = self.config.desktop.space(id).map(Space::view);
         if resize.applied != resize.before && current == Some(&resize.applied) {
             let at = self.space_center(id);
             let view = resize.before.clone();

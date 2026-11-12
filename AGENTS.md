@@ -22,23 +22,24 @@ remove. When unsure, it is destructive.
 
 ## Read first
 
-1. `docs/ENGINEERING.md`: commands, gates, design priorities, architectural
-   rules, comments, commits, and the Win32 gotchas. Read all of it.
-   `docs/TOOLS.md` lists the tools and scripts.
-2. `docs/CONTEXT.md`: architecture and current behavior. Read section 3, then
-   only the sections your change touches.
-3. `docs/TASKS.md`: "How to work a task", the file map, and the recipes;
-   section V lists what still awaits an on-screen check. `docs/ROADMAP.md`
-   is the plan. `docs/archive/` is history; skip it unless a task points
-   there.
+1. `docs/TASKS.md`: "How to work a task", the file map, and the recipe for
+   your kind of change, which names the files and rules that apply.
+   Section V lists what still awaits an on-screen check.
+2. `docs/ENGINEERING.md`: the rules. Read the sections your recipe or task
+   names, and all of it before an architectural change (a new module,
+   crate, dependency, or extension point) or Win32 work. `docs/TOOLS.md`
+   lists the tools and scripts.
+3. `docs/CONTEXT.md`: architecture and current behavior. Read section 3, then
+   only the sections your change touches. `docs/ROADMAP.md` is the plan.
+   `docs/archive/` is history; skip it unless a task points there.
 
 ## Non-negotiables
 
 - Run the gates before calling a change done: `cargo fmt --all`,
-  `cargo clippy --workspace --all-targets -- -D warnings`, and
-  `cargo test --workspace`.
+  `cargo clippy --workspace --all-targets --locked -- -D warnings`, and
+  `cargo test --workspace --locked`.
 - Commit after every change, one logical unit per commit; for a `TASKS.md`
-  task, tick and archive it in the same commit.
+  task, retire it in the same commit (its rule 7).
 - If a task needs a design decision it does not state, or no extension point
   fits, stop and ask. Do not improvise.
 - Follow the four rules at the top of `ENGINEERING.md` section 2: data

@@ -1,6 +1,7 @@
 //! The title bar's drawing: the icon, the title text or rename box, and the
 //! lock glyph at the right.
 
+use deskspace_core::Rect;
 use deskspace_core::space::DEFAULT_TITLE_HEIGHT;
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::Graphics::Direct2D::{
@@ -222,7 +223,7 @@ pub(super) unsafe fn draw_title(
         // is drawn last; an icon still loading leaves the button's edge.
         title_icon
             .map(|title| title.rect.right())
-            .or(scene.back_button.map(|back| back.right()))
+            .or(scene.back_button.map(Rect::right))
             .map(|right| right as f32),
     );
     let text = layout.text;

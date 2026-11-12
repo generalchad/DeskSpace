@@ -475,6 +475,90 @@ Done:
   page "Shortcuts" (an X per item and a + tile, F-53), "Paste shortcut"
   (F-54), and "Add files…" (F-55). CONTEXT section 8 describes them.
 
+### 2026-11-09: M4's phases, moved from ROADMAP.md
+
+#### M4 - Lenses (folder views)  **[done]**
+
+Goal: spaces that mirror a folder live. Each phase lands green.
+
+- **[done] Phase 0 - resize and scroll.**
+  - `ResizeSpace` / `FitToContents`, and `Space::user_sized`; the columns
+    follow the width.
+  - Wheel scrolling with an indicator.
+  - Scenes carry only the visible items.
+  - An LRU-bounded `IconCache` (F-03).
+- **Phase 1 - core model. [done]**
+  - A source on each space:
+    `Space.source: SpaceSource { Items, Folder(FolderView) }`, with
+    `#[serde(default)]`.
+  - The view settings: `FolderView { path, show_hidden, include, exclude }`,
+    and `SpaceView { mode, sort }` since W14.
+  - Entries come from the platform, so `core` does no IO: `FolderEntry { path,
+    label, kind, size, modified, hidden }`.
+  - New commands: `CreateLens`, `SetLensFolder`, `SetLensView`, and
+    `SyncLens { id, items }`. A `LensBuilder` on the watch worker filters,
+    sorts by the space's `SortRule`, and reconciles by path, so `ItemId`s
+    survive refreshes (B37).
+  - `AddItem` / `MoveItem` into a lens are `Rejected`.
+  - Lens items are not persisted (F-07, F-08).
+- **Phase 2 - platform. [done]**
+  - Folder listing with `FindFirstFileExW`.
+  - A watcher (shared with M2) using `ReadDirectoryChangesW`:
+    - keyed, so the Desktop folder and every lens are watched at once, all
+      on one worker thread (an I/O completion port; decided 2026-10-20);
+    - debounced (150 ms);
+    - a full rescan on the worker, never the UI thread, then a `WM_APP`
+      wake posted to the controller.
+  - `Event::FolderChanged { key, listing: Listed | Unavailable }`, with a
+    periodic retry on the worker.
+  - New `Ui` calls:
+    - `Ui::watch_folder(key, path)` and `unwatch_folder(key)`;
+    - `pick_folder` (`IFileOpenDialog`);
+    - `transfer_files` with `OnCollision::Ask` (`IFileOperation` with undo
+      and Explorer's Replace or Skip dialog). It pumps messages, so no
+      runtime borrow may be held across it.
+- **Phase 3 - app. [done]**
+  - "New lens..." in the space, tray, and desktop layer menus.
+  - Drops onto a lens move files into its folder. Items already there are
+    skipped, and a folder cannot be dropped into itself.
+  - A lens menu: Open folder, Change folder..., and Sort by, which holds
+    Folders first and Show hidden files.
+  - A placeholder when the folder is unavailable.
+  - Deleting a lens removes only the view; its folder and the files in it
+    are never deleted or moved (D3). The delete confirmation says so.
+  - Double-click to open already works through `Ui::open_path`.
+- **Phase 4 - views and kept sort rules. [done]** Decided in D17;
+  `TASKS.md` W8-W23.
+  - Lens markers: kind glyphs in the scopes pane, the folder's icon in a
+    lens's title bar.
+  - Explorer's eight views and icon sizes, for every space (F-09), and
+    their Ctrl+Shift+1..8 keys. Under "Match Explorer", the desktop's own
+    view needs no mapping: its View menu offers only the three icon views,
+    which the default view already follows (F-40, W41).
+  - A kept sort rule for lenses and normal spaces, with Explorer's Sort by
+    shape (F-08, F-31).
+  - Explorer's status bar: item and selection counts, the Details and
+    Large icons buttons.
+  - A lens's title from its folder name, profile path, full path, or
+    custom text.
+  - A View page for every space, a Lens page for each lens, and a Global
+    Lenses page with defaults (F-17).
+- **Phase 5 - extras. [done]** Decided in D18;
+  `TASKS.md` W24-W49.
+  - Two fixes first: a listing carries the folder it read, and the
+    storage check moves off the UI thread.
+  - Browse into subfolders inside the lens, with a back control (F-64).
+  - Group by (F-65); Details columns: choose, resize, reorder, and Date
+    created (F-63).
+  - Lens filters (part of F-22), per-space file name extensions, compact
+    view, the path tip, Ctrl+wheel through the views, and the default
+    view for new spaces.
+  - F-40 closed: the desktop offers only the three icon views, so no
+    view-mode mapping is needed (W41).
+
+Exit criteria: creating, renaming, or deleting a file in a lens's folder
+updates the lens within about 150 ms, and the sort and view settings persist.
+
 ### 2026-10-16: on-screen confirmations recorded in CONTEXT.md
 
 Moved verbatim from `docs/CONTEXT.md` section 2 ("Verification").

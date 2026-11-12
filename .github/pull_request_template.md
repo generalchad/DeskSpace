@@ -15,4 +15,4 @@ on what you checked by hand. -->
 - [ ] New logic has tests
 - [ ] `docs/CONTEXT.md` is updated where behavior changed
 - [ ] `CHANGELOG.md` has an "Unreleased" entry for user-visible changes
-- [ ] For a `docs/TASKS.md` task: its box is ticked and it is moved to the archive
+- [ ] For a `docs/TASKS.md` task: it is deleted there and its id is retired (rule 7)

@@ -32,10 +32,10 @@ pub(super) struct Graphics {
     /// Label formats keyed by size percent, so scaling does not create a
     /// format on every paint.
     pub(super) label_formats: HashMap<u8, IDWriteTextFormat>,
-    /// The same sizes for an inline cell's single left-aligned line (W16).
+    /// The same sizes for an inline cell's single left-aligned line.
     pub(super) inline_label_format: IDWriteTextFormat,
     pub(super) inline_label_formats: HashMap<u8, IDWriteTextFormat>,
-    /// The Details row and header text (W18): one left-aligned and one
+    /// The Details row and header text: one left-aligned and one
     /// right-aligned line, centered vertically.
     pub(super) details_format: IDWriteTextFormat,
     pub(super) details_right_format: IDWriteTextFormat,
@@ -180,7 +180,7 @@ impl Graphics {
             }
 
             // An inline cell (Small icons) has one left-aligned line beside its
-            // icon, ellipsized when it runs past the cell (W16).
+            // icon, ellipsized when it runs past the cell.
             let inline_label_format = role_format(&dwrite, Role::ItemLabel, 1.0, default_family)?;
             inline_label_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR)?;
             inline_label_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING)?;
@@ -204,7 +204,7 @@ impl Graphics {
             }
 
             // A Details row and header are single, vertically centered lines;
-            // values can be left or right aligned (W18).
+            // values can be left or right aligned.
             let details_format = role_format(&dwrite, Role::Details, 1.0, default_family)?;
 
             details_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;

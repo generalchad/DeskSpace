@@ -17,6 +17,8 @@ publish = false
 [workspace.lints.clippy]
 # docs/ENGINEERING.md: every `unsafe` block carries a `// SAFETY:` comment.
 undocumented_unsafe_blocks = "deny"
+# `.map(OsStr::to_str)` over `.map(|name| name.to_str())`: the same, with less to read.
+redundant_closure_for_method_calls = "warn"
 
 [workspace.dependencies]
 deskspace-core = { path = "crates/deskspace-core" }

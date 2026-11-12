@@ -119,9 +119,8 @@ impl fmt::Display for Role {
     }
 }
 
-/// The allowed size of a role, at 96 DPI, and the step between sizes.
+/// The allowed size of a role, at 96 DPI.
 pub const FONT_SIZE_RANGE: (f32, f32) = (6.0, 48.0);
-pub const FONT_SIZE_STEP: f32 = 0.5;
 /// The weights a font can take, and their Windows names.
 pub const FONT_WEIGHTS: &[(u16, &str)] = &[(400, "Regular"), (600, "Semibold"), (700, "Bold")];
 
@@ -280,11 +279,6 @@ impl Typography {
                 typography.set(role, self.font(role).clone());
                 typography
             })
-    }
-
-    /// The weight GDI and DirectWrite draw a role at, as a number both take.
-    pub fn weight_of(&self, role: Role) -> u16 {
-        self.font(role).weight
     }
 }
 

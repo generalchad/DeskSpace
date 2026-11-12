@@ -1,0 +1,7 @@
+# Commits that only move text or code, so `git blame` looks past them to the
+# commit that wrote each line. GitHub reads this file by name; locally, run
+# `git config blame.ignoreRevsFile .git-blame-ignore-revs` once.
+# Add a commit here only when it changes nothing but where lines live.
+
+# docs: archive M4's finished phase plan with M0's and M1's
+2183b4577261bccfdef608a8bb7c2717c56d1e7e

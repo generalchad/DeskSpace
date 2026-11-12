@@ -96,7 +96,7 @@ const ID_HEADER_BUTTON: usize = 8;
 const ID_HEADER_ICON: usize = 9;
 const ID_HEADER_TITLE: usize = 10;
 const ID_HEADER_EDIT: usize = 11;
-/// The header title's pause timer (G8); the frames themselves use the frame
+/// The header title's pause timer; the frames themselves use the frame
 /// clock's `messages::FRAME`.
 const TITLE_TIMER: usize = 1;
 /// A muted Windows critical red: the wash and edge of the destructive header
@@ -185,7 +185,7 @@ pub(super) struct SettingsState {
     /// The header's title, switch, and action button, when the form has a rail.
     header: header::HeaderControls,
     header_layout: header::HeaderLayout,
-    /// The header title's scroll, when it overflows (G8).
+    /// The header title's scroll, when it overflows.
     title_motion: Option<header::TitleMotion>,
     /// Space icons drawn for the scopes pane and the header.
     glyphs: crate::win32::glyphs::GlyphCache,

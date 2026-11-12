@@ -259,15 +259,6 @@ impl Ui {
         }
     }
 
-    pub fn close_debug(&mut self) {
-        if let Some(hwnd) = with_runtime(|runtime| runtime.debug.take()).flatten() {
-            // SAFETY: the debug window was created by this runtime.
-            unsafe {
-                let _ = DestroyWindow(hwnd);
-            }
-        }
-    }
-
     pub fn is_debug_open(&self) -> bool {
         debug_hwnd().is_some()
     }
@@ -482,10 +473,6 @@ impl Ui {
         with_runtime(|runtime| runtime.zoom_bar)
             .flatten()
             .is_some_and(zoom_bar::is_hovered)
-    }
-
-    pub fn is_settings_open(&self) -> bool {
-        settings_hwnd().is_some()
     }
 
     pub fn set_tray_tooltip(&mut self, text: &str) {

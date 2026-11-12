@@ -31,7 +31,7 @@ finished product. The direction is decided in `ROADMAP.md` section 2.
 - History: commits `07dba93`..`18ffac2` replace the old overlay together and
   only build as a series; bisect across them as one step.
 - Code health: a non-test file past the ~800-line guideline gets a K task in
-  `TASKS.md` section K; `crates/deskspace-app/tests/file_size.rs` enforces the
+  `TASKS.md` section K; `crates/deskspace-app/tests/guards/file_size.rs` enforces the
   limit and lists the exceptions. Section 3 lists the `app/` modules.
 
 ## 3. Architecture
@@ -115,7 +115,7 @@ platform, data-driven UI) are `ENGINEERING.md` section 3.
 
 - `Point { x, y }`, `Size { width, height }`, and `Rect { x, y, width, height }`
   (with `contains`, `intersects`, `union`, `offset`, `inset`,
-  `with_position`, `with_size`, `center`) are `Copy`, `serde`, `Default`.
+  `with_position`, `center`) are `Copy`, `serde`, `Default`.
 - `SpaceId(u64)` and `ItemId(u64)` are transparent serde newtypes.
   `Desktop::next_space_id` / `next_item_id` give the next id above both the
   ids present and every id handed out this session, so an id freed by a
@@ -697,7 +697,7 @@ one arm in `App::on_event`, whose match is exhaustive.
 ### Space windows (`win32/space_window/`, `win32/dwm.rs`)
 
 - **The desktop layer** (`Ui::create_desktop_layer`,
-  `set_desktop_layer_rect` / `_scene`, `destroy_desktop_layer`) reuses this
+  `set_desktop_layer_rect` / `set_desktop_layer_scene`, `destroy_desktop_layer`) reuses this
   window with a `chrome: false` style. It spans the
   virtual desktop (`system::virtual_desktop_rect`) and is a `WS_CHILD` of the
   host when one is in use, else top-level and kept at the bottom, behind the
@@ -803,6 +803,14 @@ one arm in `App::on_event`, whose match is exhaustive.
   `permanent`. Items whose files are gone are dropped, and `restore_recycled`
   finds the newest matching Recycle Bin entry and restores it with the shell's
   `"undelete"` verb.
+- **The shell's own window** (`win32/file_op.rs`): while a transfer, delete,
+  rename, or restore runs, `RaiseOperationWindows` makes the shell's progress
+  or conflict window topmost once it shows. DeskSpace never holds the
+  foreground, so the shell would otherwise open it behind the foreground app,
+  and a prompt nobody sees looks like a frozen DeskSpace. The shell runs that
+  window on its own thread and keeps it hidden through a quick operation, so
+  the guard looks at this process's top-level windows and leaves a hidden one
+  alone.
 
 ### Rendering (`render/scene.rs`, `render/d2d/`)
 
@@ -1118,8 +1126,10 @@ exact steps, ranges, edge cases, and the code behind them.
 - Appearance presets: tint opacity 100/80/60/40/20 % and icon size Small 75,
   Medium 100, Large 150, Extra large 200 %. "Use global appearance" is greyed
   unless customized and keeps the look for later. View presets set 256, 96,
-  or 48 px at 96 DPI (out of Ctrl+wheel and Match Explorer); Small icons and
-  List draw 16 px inline cells. In Sort by, a key keeps the direction, a
+  or 48 px at 96 DPI (out of Ctrl+wheel and Match Explorer), in a cell as
+  wide as Explorer's column (`fixed_view_cell_width`) and as tall as the item
+  draws; the icon never passes the shell's 256 physical pixels, as Explorer's
+  does not. Small icons and List draw 16 px inline cells. In Sort by, a key keeps the direction, a
   direction keeps the key, Folders first toggles, and Keep sorted is checked
   and greyed on a lens. The tables are `OPACITY_PRESETS`,
   `ICON_SIZE_PRESETS`, `VIEW_PRESETS`, `SORT_MENU_IDS`, and
@@ -1325,6 +1335,17 @@ section numbers stable.
 - **Lens**: a space whose contents mirror a folder live (comparable tools
   call it a Folder Portal); in code, a space with a folder source. Deleting a
   lens removes only the view, never the folder (ROADMAP D3).
+- **Watch**: `ReadDirectoryChangesW` on a lens's folder. It says only that
+  something changed, so the worker lists the folder again.
+- **Debounce**: copying 200 files fires 200 changes, so the worker waits
+  until a folder has been quiet for 150 ms and reacts once (`Coalescer` in
+  `win32/folder_watch.rs`, pure and tested).
+- **I/O completion port**: the queue every watch reports into, each folder
+  under its own completion key; the UI thread posts its own packets to add a
+  folder, remove one, or stop the worker
+  ([overview](https://learn.microsoft.com/en-us/windows/win32/fileio/i-o-completion-ports)).
+- **Shell file operation**: `IFileOperation`, Explorer's copy, move, and
+  delete engine with its progress and conflict dialogs (`win32/file_op.rs`).
 - **User-sized**: a space the user resized; it keeps its size, re-flows items
   to its width, and scrolls instead of growing.
 - **Fold**: collapsing a space to its title bar (called roll-up before D12;

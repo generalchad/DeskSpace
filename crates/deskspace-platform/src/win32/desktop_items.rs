@@ -3,6 +3,7 @@
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::ffi::OsStr;
 use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock, PoisonError};
@@ -237,7 +238,7 @@ fn type_name_key(path: &Path, is_folder: bool) -> String {
         return "<folder>".to_string();
     }
     path.extension()
-        .and_then(|extension| extension.to_str())
+        .and_then(OsStr::to_str)
         .map(str::to_ascii_lowercase)
         .unwrap_or_default()
 }
@@ -390,10 +391,7 @@ fn listed_by_explorer(path: &Path, display: &ShellDisplay) -> bool {
     let Ok(metadata) = std::fs::metadata(path) else {
         return false;
     };
-    let name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or_default();
+    let name = path.file_name().and_then(OsStr::to_str).unwrap_or_default();
     keep_attributes(name, metadata.file_attributes(), display)
 }
 
@@ -444,7 +442,7 @@ fn display_name(path: &Path) -> Option<String> {
 fn fallback_label(path: &Path) -> String {
     path.file_stem()
         .or_else(|| path.file_name())
-        .and_then(|name| name.to_str())
+        .and_then(OsStr::to_str)
         .unwrap_or_default()
         .to_string()
 }

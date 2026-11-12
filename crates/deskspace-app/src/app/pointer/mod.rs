@@ -1,4 +1,4 @@
-//! `App` pointer gestures: selection, drag, resize, and the marquee (R1).
+//! `App` pointer gestures: selection, drag, resize, and the marquee.
 
 mod hover;
 mod space_events;
@@ -77,11 +77,11 @@ pub(super) struct PointerState {
     /// own menu on the next right release.
     pub(super) right_dragged: bool,
     pub(super) hovered: Option<(Surface, ItemId)>,
-    /// The status-bar view button the pointer is over, and its surface (W19).
+    /// The status-bar view button the pointer is over, and its surface.
     pub(super) status_hover: Option<(Surface, usize)>,
     /// The lens whose title bar the pointer is over, when no item or status
     /// button is: it shows the folder on display as a tip after the usual
-    /// delay (W27). A normal space's title shows nothing.
+    /// delay. A normal space's title shows nothing.
     pub(super) title_hover: Option<SpaceId>,
     /// The space whose title icon button the pointer is over, while its title
     /// is being renamed (D16).
@@ -92,7 +92,7 @@ pub(super) struct PointerState {
     /// The space whose Back button took the last left press. The press may
     /// have gone back to the lens's own folder, where the button is gone, so
     /// the double-click that follows finds it here instead of folding the
-    /// space (W43).
+    /// space.
     pub(super) back_press: Option<SpaceId>,
 }
 
@@ -124,7 +124,7 @@ const SPACE_PRESS_TARGETS: [SpacePressTarget; 5] = [
     // A click on a browsed lens's Back button shows the parent folder, before
     // the title bar can start a move.
     App::back_button_clicked,
-    // A click on a status-bar view button switches this space's view (W19).
+    // A click on a status-bar view button switches this space's view.
     App::status_button_clicked,
     // A press on a Details divider resizes its column, so it must not also
     // sort.
@@ -171,7 +171,7 @@ impl App {
     }
 
     /// If `point` is on a status-bar view button, switches the space to that
-    /// view and returns true (W19).
+    /// view and returns true.
     fn status_button_clicked(&mut self, ui: &mut Ui, id: SpaceId, point: Point) -> bool {
         let Some(space) = self.config.desktop.space(id) else {
             return false;

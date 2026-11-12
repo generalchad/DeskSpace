@@ -10,8 +10,8 @@ use crate::theme::{Color, Theme};
 use crate::view::SpaceView;
 
 pub const DEFAULT_TITLE_HEIGHT: i32 = 28;
-/// Explorer's status bar height at 100 %, in pixels. Provisional until W19's
-/// on-screen check measures Explorer's own; it scales with the title bar.
+/// Explorer's status bar height at 100 %, in pixels. Provisional until the
+/// status bar's on-screen check measures Explorer's own; it scales with the title bar.
 pub const STATUS_BAR_HEIGHT: i32 = 24;
 
 /// A space's own look: every look-related setting (the theme, plus the grid's

@@ -35,8 +35,8 @@ const GLYPH_ADD: u16 = 0xE710;
 /// reports its double-click.
 /// https://learn.microsoft.com/en-us/windows/win32/controls/static-control-styles
 const SLOT_STYLE: u32 = 0x000D | SS_NOTIFY;
-/// The title: an owner-drawn label that reports its double-click. G8 draws it
-/// so a long name can scroll.
+/// The title: an owner-drawn label that reports its double-click, drawn
+/// by DeskSpace so a long name can scroll.
 const TITLE_STYLE: u32 = 0x000B | SS_NOPREFIX | SS_NOTIFY;
 const SS_NOTIFY: u32 = 0x0100;
 /// STN_DBLCLK (WinUser.h): a static with SS_NOTIFY was double-clicked.
@@ -287,7 +287,7 @@ pub(super) unsafe fn apply_header(
 /// The header's tooltips, owned by the settings window, so they close with it.
 /// The tools subclass their controls, so they show and hide by themselves. The
 /// icon slot describes its double-click; the title shows the full name while
-/// the name is cut off (G8).
+/// the name is cut off.
 unsafe fn header_tooltip(settings: HWND, icon: Option<HWND>, title: Option<HWND>) -> Option<HWND> {
     // SAFETY: creating a tooltip owned by our live window; TTM_ADDTOOLW
     // copies each tool and its text, which outlive the call.

@@ -1,10 +1,10 @@
-//! `App` settings session: the settings window, its edits, and previews (R1).
+//! `App` settings session: the settings window, its edits, and previews.
 
 use std::path::PathBuf;
 
 use deskspace_config::{IconDownloads, ThemeFile};
 use deskspace_core::geometry::{Point, Rect};
-use deskspace_core::{Command, ItemKind, SpaceId, SpaceLook};
+use deskspace_core::{Command, ItemKind, Space, SpaceId, SpaceLook};
 use deskspace_platform::{
     FieldValue, IconUser, PreviewItem, SettingsEvent, SpacePreview, Ui, windows_build,
 };
@@ -461,15 +461,9 @@ impl App {
         if let Some((id, command, effect)) = edit {
             let view_changed = matches!(&command, Command::SetSpaceView { .. });
             if self.dispatch(command, self.space_center(id)).is_applied() {
-                if view_changed
-                    && self
-                        .config
-                        .desktop
-                        .space(id)
-                        .is_some_and(|space| space.is_lens())
-                {
+                if view_changed && self.config.desktop.space(id).is_some_and(Space::is_lens) {
                     // A lens's worker sorts its list, so it needs the new
-                    // rule (W20).
+                    // rule.
                     self.sync_watches(ui);
                 }
                 match effect {

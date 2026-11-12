@@ -1018,8 +1018,8 @@ mod tests {
 
     fn filter(desktop: &mut Desktop, id: SpaceId, include: &[&str], exclude: &[&str]) {
         let mut view = desktop.space(id).unwrap().folder_view().unwrap().clone();
-        view.include = include.iter().map(|p| p.to_string()).collect();
-        view.exclude = exclude.iter().map(|p| p.to_string()).collect();
+        view.include = include.iter().map(ToString::to_string).collect();
+        view.exclude = exclude.iter().map(ToString::to_string).collect();
         assert!(
             desktop
                 .apply(Command::SetLensView { id, view }, bounds())

@@ -8,6 +8,7 @@ use crate::geometry::Rect;
 use crate::id::{ItemId, SpaceId};
 use crate::item::{Item, ItemFacts};
 use crate::layout::{GridSpec, position_items};
+use crate::space::Space;
 
 impl Desktop {
     pub(super) fn apply_add_item(
@@ -58,7 +59,7 @@ impl Desktop {
             return CommandOutcome::Rejected;
         }
         let source = self.space_containing(id);
-        if source.is_some_and(|source| self.space(source).is_some_and(|space| space.is_lens())) {
+        if source.is_some_and(|source| self.space(source).is_some_and(Space::is_lens)) {
             return CommandOutcome::Rejected;
         }
         if !self.move_item(id, target) {

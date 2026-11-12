@@ -24,8 +24,8 @@ links the `windows` crate under `cfg(windows)`.
 | Build  | `cargo build --workspace` |
 | Run    | `cargo run -p deskspace-app -- --no-icons` |
 | Inspect| `cargo run -p deskspace-app -- --config <scratch.toml> --on-top --settings` |
-| Test   | `cargo test --workspace` |
-| Lint   | `cargo clippy --workspace --all-targets` |
+| Test   | `cargo test --workspace --locked` |
+| Lint   | `cargo clippy --workspace --all-targets --locked -- -D warnings` |
 | Format | `cargo fmt --all` |
 | Deps   | `cargo deny check all` (licenses/advisories, per `deny.toml`) |
 | Release| `cargo build --release`; the checklist is in `RELEASING.md` |
@@ -44,8 +44,8 @@ with or without a `--` before them. `Get-Help ./scripts/dev.ps1` has
 examples.
 
 **The gates.** Before a change is complete, and before every commit, run
-`cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings`, and
-`cargo test --workspace`. CI (`.github/workflows/ci.yml`) fails on clippy
+`cargo fmt --all`, `cargo clippy --workspace --all-targets --locked -- -D warnings`,
+and `cargo test --workspace --locked`. CI (`.github/workflows/ci.yml`) fails on clippy
 warnings, also builds on the minimum supported Rust, and runs
 `cargo deny check all`.
 
@@ -81,7 +81,7 @@ Four rules come first, because the rest follow from them:
   constants instead of magic numbers, one concept per module. When a file
   passes about 800 lines of non-test code, split it along its existing seams
   (`TASKS.md` section K) rather than adding to it. The limit is enforced:
-  `crates/deskspace-app/tests/file_size.rs` fails on a file past it unless
+  `crates/deskspace-app/tests/guards/file_size.rs` fails on a file past it unless
   the file is in its `ALLOWED` table with a reason, and with its task once
   one is written.
 - **Maintainable.** One source of truth per fact. Tables drive menus
@@ -90,8 +90,10 @@ Four rules come first, because the rest follow from them:
   row. Where a table cannot carry the behavior, an enum does (`ButtonAction`,
   `HotkeyAction`), so the compiler or a guard test points at every place still
   to wire up; the `TASKS.md` recipes list them. Delete dead code and branches
-  instead of keeping them "just in case". Keep pure logic (core,
-  `settings.rs`, `scene.rs`, helpers such as `next_in_direction`) apart from
+  instead of keeping them "just in case"; the compiler finds unused private
+  items, and `crates/deskspace-app/tests/guards/dead_pub.rs` a library's unused
+  `pub` ones. Keep pure logic (core,
+  `settings/`, `scene.rs`, helpers such as `next_in_direction`) apart from
   Win32 calls so it can be unit-tested. When code and docs disagree, fix the
   docs in the same commit.
 - **Extensible.** New behavior plugs into an extension point instead of a
@@ -182,10 +184,9 @@ https://stackoverflow.blog/2021/12/23/best-practices-for-writing-code-comments/)
    description and an issue when one exists. Reuse existing markers.
 10. Keep task ids (`W3c`, `T12`) and dates out of new comments: say the why
     in the comment and put the id in the commit message. Ids are decoded
-    only through `TASKS.md` and its archive, and they age as tasks are
-    archived. The ones still in the code are being swept out, and a test
-    will then refuse new ones (decided 2026-11-05; `TASKS.md` Q8); until
-    it lands, take out any you touch.
+    only through `TASKS.md`, its archive, and git history, and they age as
+    tasks finish. `crates/deskspace-app/tests/guards/comment_ids.rs` refuses one
+    in a comment.
 
 Rust specifics: `///` doc comments are expected on non-obvious public library
 items, kept concise. Every `unsafe` block carries a `// SAFETY:` comment saying
@@ -197,7 +198,7 @@ comment must be as correct as the code: change or delete it with the code.
 
 Commit after every change; never leave finished work uncommitted. One logical
 unit per commit; split unrelated edits. Working from `TASKS.md`, make one
-commit per task and tick its box in that commit ("How to work a task", rule
+commit per task and retire it in that commit ("How to work a task", rule
 7). Messages are imperative and lowercase with a type prefix: `feat:`,
 `fix:`, `refactor:`, `docs:`, `test:`, `perf:`, `ci:`, `release:`. The body
 says why; the diff already shows what. Run the gates (section 1) first.
@@ -215,6 +216,13 @@ says why; the diff already shows what. Run the gates (section 1) first.
   not work for them. `DWMWA_SYSTEMBACKDROP_TYPE` (Mica/Acrylic system
   backdrops) renders a flat color on inactive windows; the blur comes from
   the accent policy in `win32/dwm.rs`.
+- **DeskSpace never holds the foreground**, so shell UI it starts opens
+  behind the foreground app unless it is raised. A prompt nobody can see
+  looks like a hang: the user force-quits and the operation is lost.
+  `SetForegroundWindow` fails without the foreground, so
+  `RaiseOperationWindows` (`win32/file_op.rs`) makes the shell's
+  file-operation window topmost instead. Anything new that can open a shell
+  prompt needs the same care.
 - **Seeing a space.** Spaces sit at the bottom of the z-order, behind your
   editor; use `--on-top` with a scratch `--config`. To check the look, run over
   a high-contrast window (bright stripes or text) and take a screenshot: over a
@@ -292,5 +300,7 @@ not own it links to it instead of copying it.
   is fine; a number every commit must update is not.
 - A rule a test can check gets the test, and the doc points at it.
 - Change or delete a sentence in the same commit as the code it describes.
-  When in doubt, delete it.
+  When in doubt, delete it. `crates/deskspace-app/tests/guards/doc_refs.rs` fails
+  on a backticked path or Rust name, or a relative link, that the docs
+  describing the code (not the plans) no longer match.
 - Short sentences, one parenthetical at most, plain words.

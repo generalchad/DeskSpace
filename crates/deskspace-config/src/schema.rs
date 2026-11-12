@@ -67,7 +67,7 @@ pub struct WindowSettings {
     /// The icon a new space starts with.
     #[serde(deserialize_with = "known_or_default")]
     pub new_space_icon: NewSpaceIcon,
-    /// The view settings a new space starts with (W40): its mode, status
+    /// The view settings a new space starts with: its mode, status
     /// bar, and sort rule. The default is today's view, so nothing changes
     /// until the user changes it.
     pub new_space_view: SpaceView,
@@ -88,12 +88,12 @@ pub struct WindowSettings {
     pub skipped_version: Option<String>,
     /// What each kind of moment plays (ROADMAP D12), clamped on load.
     pub animations: Animations,
-    /// The defaults a new lens starts with (D17, W23).
+    /// The defaults a new lens starts with (D17).
     pub new_lens: NewLens,
 }
 
 /// The defaults a new lens starts with: its view, how its title follows its
-/// folder, and whether it lists hidden files (W23).
+/// folder, and whether it lists hidden files.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct NewLens {
@@ -584,8 +584,8 @@ mod tests {
         .unwrap();
         assert_eq!(parsed.window.animations, Animations::default());
 
-        // As written since T3, before Hide and show and New space merged
-        // into Startup: `hide_show` is read as Startup, `new_space` is
+        // As builds wrote it before Hide and show and New space merged into
+        // Startup: `hide_show` is read as Startup, `new_space` is
         // ignored, and Delete's old "same as" falls back to its default.
         let text = r#"
             version = 2

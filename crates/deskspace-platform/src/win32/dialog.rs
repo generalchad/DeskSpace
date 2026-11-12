@@ -381,7 +381,7 @@ unsafe fn open_dialog(
 /// pairs such as `("Log files", "*.log")`; the first is selected, and
 /// `default_name`'s extension is added to a name typed without one. Windows
 /// asks before an existing file is replaced. The debug console's "Save log…"
-/// uses it, and C10b's theme export reuses it.
+/// uses it, and so does the Colors page's theme export.
 /// https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-ifilesavedialog
 pub(crate) unsafe fn pick_save_path(
     owner: HWND,

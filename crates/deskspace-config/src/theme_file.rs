@@ -6,6 +6,7 @@
 //! clamp on load, and unknown keys are ignored. A newer `format` still loads,
 //! with a warning, as the configuration does.
 
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use deskspace_core::SpaceLook;
@@ -137,7 +138,7 @@ impl ThemeFile {
     /// The name a saved theme takes from `path`: its file name without the
     /// theme suffix, or without `.toml`, or the whole name.
     pub fn name_from_path(path: &Path) -> String {
-        let Some(file) = path.file_name().and_then(|name| name.to_str()) else {
+        let Some(file) = path.file_name().and_then(OsStr::to_str) else {
             return String::new();
         };
         strip_ascii_suffix(file, FILE_SUFFIX)
@@ -150,7 +151,7 @@ impl ThemeFile {
     /// as a theme the Colors page lists. A trailing `.toml` is replaced; any
     /// other dot in the name stays.
     pub fn with_suffix(path: &Path) -> PathBuf {
-        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        let Some(name) = path.file_name().and_then(OsStr::to_str) else {
             return path.to_owned();
         };
         if strip_ascii_suffix(name, FILE_SUFFIX).is_some() {
@@ -166,7 +167,7 @@ fn is_theme_file(path: &Path) -> bool {
     path.is_file()
         && path
             .file_name()
-            .and_then(|name| name.to_str())
+            .and_then(OsStr::to_str)
             .is_some_and(|name| strip_ascii_suffix(name, FILE_SUFFIX).is_some())
 }
 

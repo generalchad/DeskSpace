@@ -6,7 +6,7 @@
 
 use std::collections::VecDeque;
 use std::fmt::{Debug, Write as _};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use deskspace_platform::{LogLevel, LogLine};
 use tracing::field::{Field, Visit};
@@ -62,9 +62,7 @@ impl LogBuffer {
     /// A panic while the lock was held leaves the ring usable: at worst one
     /// line is missing.
     fn lock(&self) -> MutexGuard<'_, Ring> {
-        self.ring
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.ring.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 

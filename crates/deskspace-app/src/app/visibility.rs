@@ -1,5 +1,5 @@
 //! `App` visibility: showing and hiding spaces, the desktop entry, and
-//! start-with-Windows (R1).
+//! start-with-Windows.
 
 use deskspace_core::animation::Kind;
 use deskspace_platform::{

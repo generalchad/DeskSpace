@@ -93,7 +93,7 @@ pub(super) fn taskbars_text(taskbars: &[TaskbarRow]) -> String {
 
 fn table(columns: &[&str], rows: Vec<Vec<String>>) -> DebugControlKind {
     DebugControlKind::Table {
-        columns: columns.iter().map(|column| column.to_string()).collect(),
+        columns: columns.iter().map(ToString::to_string).collect(),
         rows,
     }
 }

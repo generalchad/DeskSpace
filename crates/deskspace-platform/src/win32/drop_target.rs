@@ -602,7 +602,7 @@ fn drop_files_format() -> FORMATETC {
 /// drag can carry both, and a real file should move, not become a shortcut.
 /// The Start menu also puts a `CF_HDROP` on its drags, but it names apps by
 /// their AppUserModelID (for example `com.squirrel.element-desktop.Element`),
-/// not by path, so such a list counts as shell items (`TASKS.md` L1).
+/// not by path, so such a list counts as shell items.
 fn drag_kind(data: Option<&IDataObject>) -> DragKind {
     let Some(data) = data else {
         return DragKind::None;

@@ -457,7 +457,7 @@ impl Field {
             id,
             label,
             FieldKind::Choice {
-                options: options.iter().map(|option| option.to_string()).collect(),
+                options: options.iter().map(ToString::to_string).collect(),
                 selected,
             },
         )

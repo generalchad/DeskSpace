@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -25,7 +26,7 @@ impl ItemKind {
         }
         match path
             .extension()
-            .and_then(|ext| ext.to_str())
+            .and_then(OsStr::to_str)
             .map(str::to_ascii_lowercase)
             .as_deref()
         {
@@ -125,14 +126,14 @@ impl Item {
     }
 
     pub fn file_name(&self) -> Option<&str> {
-        self.path.file_name().and_then(|name| name.to_str())
+        self.path.file_name().and_then(OsStr::to_str)
     }
 }
 
 fn default_label(path: &Path) -> String {
     path.file_stem()
         .or_else(|| path.file_name())
-        .and_then(|name| name.to_str())
+        .and_then(OsStr::to_str)
         .unwrap_or("Unknown")
         .to_string()
 }

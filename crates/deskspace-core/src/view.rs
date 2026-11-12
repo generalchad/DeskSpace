@@ -7,7 +7,7 @@ use crate::item::SortKey;
 use crate::lenient::{Lenient, known_or_default};
 use crate::sort::SortRule;
 
-/// Whether a space's labels show filename extensions (D18, W28).
+/// Whether a space's labels show filename extensions (D18).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Extensions {
@@ -175,9 +175,9 @@ pub struct SpaceView {
     /// rule. A lens always does; a normal space only when this is set (D17).
     pub keep_sorted: bool,
     /// Whether the space shows Explorer's status bar along its bottom edge
-    /// with the item counts and view buttons (W19).
+    /// with the item counts and view buttons.
     pub status_bar: bool,
-    /// Whether the space's labels show filename extensions (W28).
+    /// Whether the space's labels show filename extensions.
     #[serde(
         skip_serializing_if = "Extensions::is_default",
         deserialize_with = "known_or_default"
@@ -326,32 +326,20 @@ pub enum ViewMode {
     LargeIcons,
     /// 48 px at 96 DPI.
     MediumIcons,
-    /// 16 px at 96 DPI, in an inline cell (W16).
+    /// 16 px at 96 DPI, in an inline cell.
     SmallIcons,
     /// 16 px at 96 DPI, in columns that fill top to bottom and scroll
-    /// sideways (W17).
+    /// sideways.
     List,
-    /// One row per item at full width, under a header row (W18).
+    /// One row per item at full width, under a header row.
     Details,
-    /// 48 px icons in wrapping tiles with three lines beside them (W21).
+    /// 48 px icons in wrapping tiles with three lines beside them.
     Tiles,
-    /// One row per item with a separator and its details on the right (W22).
+    /// One row per item with a separator and its details on the right.
     Content,
 }
 
 impl ViewMode {
-    /// The fixed icon size of a grid view at 96 DPI, or `None` when the look
-    /// decides or the view places items by order.
-    pub fn icon_px(self) -> Option<i32> {
-        match self {
-            Self::Icons => None,
-            Self::ExtraLargeIcons => Some(EXTRA_LARGE_ICON_PX),
-            Self::LargeIcons => Some(LARGE_ICON_PX),
-            Self::MediumIcons => Some(MEDIUM_ICON_PX),
-            Self::SmallIcons | Self::List | Self::Details | Self::Tiles | Self::Content => None,
-        }
-    }
-
     /// The icon size the view draws at 96 DPI, or `None` when the look decides.
     pub fn item_icon_px(self) -> Option<i32> {
         match self {
@@ -364,8 +352,16 @@ impl ViewMode {
         }
     }
 
+    /// The icon size the view draws on a display of `display_scale` (1.0 is
+    /// 96 DPI), in physical pixels, or `None` when the look decides. It never
+    /// passes the shell's largest icon, as Explorer's Extra large does not.
+    pub fn item_icon_at(self, display_scale: f32) -> Option<i32> {
+        let scaled = (self.item_icon_px()? as f32 * display_scale).round() as i32;
+        Some(scaled.clamp(1, SHELL_MAX_ICON_PX))
+    }
+
     /// Whether the view places items by their order instead of on the icon
-    /// grid, so it never writes `Item.position` (D17, W16).
+    /// grid, so it never writes `Item.position` (D17).
     pub fn places_by_order(self) -> bool {
         matches!(
             self,
@@ -386,8 +382,12 @@ const EXTRA_LARGE_ICON_PX: i32 = 256;
 const LARGE_ICON_PX: i32 = 96;
 const MEDIUM_ICON_PX: i32 = 48;
 pub const SMALL_ICON_PX: i32 = 16;
-/// Explorer's Tiles icon at 96 DPI (W21).
+/// Explorer's Tiles icon at 96 DPI.
 pub const TILE_ICON_PX: i32 = 48;
+/// The shell's largest icon (`SHIL_JUMBO`), in physical pixels. Explorer
+/// draws Extra large icons this size at 150 % as at 100 % (measured on
+/// Windows 11), since the shell has no larger image to give it.
+const SHELL_MAX_ICON_PX: i32 = 256;
 
 #[cfg(test)]
 mod tests {
@@ -400,7 +400,7 @@ mod tests {
     fn the_default_view_follows_the_look() {
         assert_eq!(ViewMode::default(), ViewMode::Icons);
         assert_eq!(SpaceView::default().mode, ViewMode::Icons);
-        assert_eq!(ViewMode::Icons.icon_px(), None);
+        assert_eq!(ViewMode::Icons.item_icon_px(), None);
         assert_eq!(SpaceView::default().sort, SortRule::default());
     }
 
@@ -666,20 +666,27 @@ mod tests {
 
     #[test]
     fn the_icon_views_have_fixed_sizes() {
-        assert_eq!(ViewMode::ExtraLargeIcons.icon_px(), Some(256));
-        assert_eq!(ViewMode::LargeIcons.icon_px(), Some(96));
-        assert_eq!(ViewMode::MediumIcons.icon_px(), Some(48));
-        assert_eq!(ViewMode::SmallIcons.icon_px(), None);
-        assert_eq!(ViewMode::List.icon_px(), None);
-        assert_eq!(ViewMode::Details.icon_px(), None);
+        assert_eq!(ViewMode::ExtraLargeIcons.item_icon_px(), Some(256));
+        assert_eq!(ViewMode::LargeIcons.item_icon_px(), Some(96));
+        assert_eq!(ViewMode::MediumIcons.item_icon_px(), Some(48));
         assert_eq!(ViewMode::SmallIcons.item_icon_px(), Some(16));
         assert_eq!(ViewMode::List.item_icon_px(), Some(16));
         assert_eq!(ViewMode::Details.item_icon_px(), Some(16));
         assert_eq!(ViewMode::Tiles.item_icon_px(), Some(48));
         assert_eq!(ViewMode::Content.item_icon_px(), Some(16));
-        assert_eq!(ViewMode::Tiles.icon_px(), None);
-        assert_eq!(ViewMode::Content.icon_px(), None);
         assert_eq!(ViewMode::Icons.item_icon_px(), None);
+    }
+
+    #[test]
+    fn a_view_icon_scales_with_the_display_up_to_the_shells_largest() {
+        assert_eq!(ViewMode::MediumIcons.item_icon_at(1.5), Some(72));
+        assert_eq!(ViewMode::LargeIcons.item_icon_at(1.5), Some(144));
+        assert_eq!(ViewMode::SmallIcons.item_icon_at(1.25), Some(20));
+        // Explorer keeps Extra large at 256 physical pixels at 150 %.
+        assert_eq!(ViewMode::ExtraLargeIcons.item_icon_at(1.0), Some(256));
+        assert_eq!(ViewMode::ExtraLargeIcons.item_icon_at(1.5), Some(256));
+        assert_eq!(ViewMode::LargeIcons.item_icon_at(3.0), Some(256));
+        assert_eq!(ViewMode::Icons.item_icon_at(1.5), None);
     }
 
     #[test]

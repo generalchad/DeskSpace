@@ -19,7 +19,7 @@ pub struct SpaceSnapshot {
     pub title: String,
     pub custom: bool,
     pub look: Option<SpaceLook>,
-    /// The space's view settings (W20).
+    /// The space's view settings.
     pub view: SpaceView,
     /// A lens's folder view; `None` for a normal space.
     pub folder: Option<FolderView>,
@@ -85,7 +85,7 @@ pub struct Session {
     pub hotkey_texts: [String; HOTKEY_BINDINGS.len()],
     pub hotkey_errors: [Option<String>; HOTKEY_BINDINGS.len()],
     /// A lens filter field's text as typed, by space and field id, so the
-    /// form shows it back unchanged; the lens holds the parsed list (W35).
+    /// form shows it back unchanged; the lens holds the parsed list.
     pub filter_texts: HashMap<(SpaceId, u32), String>,
     /// The theme files found in `themes_dir` when the window opened, for the
     /// Colors page's list.

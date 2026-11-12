@@ -1,5 +1,5 @@
 //! `App` selection: the item selection, keyboard navigation, and
-//! type-to-select (R1), plus the `Selection` state they share (R2).
+//! type-to-select, plus the `Selection` state they share.
 
 use std::collections::HashSet;
 

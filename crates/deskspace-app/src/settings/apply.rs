@@ -246,7 +246,7 @@ pub fn apply_field(
                     .map_or(config.window.new_space_icon, |entry| entry.0);
                 FieldEffect::Pending
             }
-            // The New spaces page's view defaults (W40) apply to the next
+            // The New spaces page's view defaults apply to the next
             // new space.
             (field::NEW_SPACE_VIEW_MODE, FieldValue::Choice(index)) => {
                 if let Some((mode, ..)) = VIEW_MODES.get(index) {
@@ -286,7 +286,7 @@ pub fn apply_field(
                     .map_or(config.window.icon_downloads, |entry| entry.0);
                 FieldEffect::Pending
             }
-            // The Lenses page's defaults (W23) apply to the next new lens.
+            // The Lenses page's defaults apply to the next new lens.
             (field::LENSES_VIEW_MODE, FieldValue::Choice(index)) => {
                 if let Some((mode, ..)) = VIEW_MODES.get(index) {
                     config.window.new_lens.view.mode = *mode;
@@ -499,7 +499,7 @@ fn lens_edit(
     Some((space.id, command, effect))
 }
 
-/// The command for an edit on a space's View page (W20). It works on any
+/// The command for an edit on a space's View page. It works on any
 /// space, customized or not, because a view is not part of the look. A lens
 /// cannot turn Keep sorted off, since it always holds its order.
 fn view_edit(
