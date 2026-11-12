@@ -23,8 +23,8 @@ meanwhile.
 are collected in section V instead of blocking:
 - section P's "Juniors and interns" list, the best place for a first task,
   ranked most severe first, so take one from the top;
-- section B's icon picker tasks: B48 next, then B49; then B51, B53,
-  and B55 from "Measure and trim the UI thread";
+- section B's icon picker tasks: B49 next; then B53 from "Measure and trim
+  the UI thread";
 - section G (settings window polish): the pure half of G13;
 - section K (K10-K13, K15, K16, K18), each a pure move with rules that
   leave nothing to design; K18 first, since `undo.rs` is at the limit;
@@ -373,8 +373,8 @@ check that section against what lands after it. It is also R12's first
 install (Z7). The 0.3.0 section gathers the alpha sections into one.
 
 The gate's fixes are in section P, marked **[urgent] (v0.3.0)**: P14c,
-P35, P36, P37, P46, P49, and P50. B45 has landed; B47 and B48 (section B) join if
-they are ready in time. P32 does not; Z6 lists it as a known issue.
+P35, P36, P37, P46, P49, and P50. B45, B47, and B48 have landed. P32 does
+not; Z6 lists it as a known issue.
 
 Who takes what (split 2026-11-07, so juniors and interns can carry most of
 the gate):
@@ -510,28 +510,6 @@ Rules for every task here:
    `win32/icon_picker.rs` but no `unsafe` block's reasoning. Keep every
    `with_state` borrow as short as it is now (no Win32 call inside one), and
    keep each `// SAFETY:` comment true. A senior reviews B47 and B48.
-
-- [ ] **B48. Draw each icon once while the picker is open (platform).**
-  After: B45. Senior review (rule 3).
-  - Why: a `Cell` holds its own image index (`Cell.image`), and a search
-    makes new cells, so every search draws its icons again and adds each one
-    to the image list again. The list only grows while the window is open.
-  - Replace `Cell.image` with `images: HashMap<String, i32>` on
-    `PickerState`, keyed by `<prefix>:<name>` (the key `on_display_info`
-    already makes), so an icon drawn once is never drawn or added again,
-    in any search or set. Remove `image` from `Cell` and its tests.
-  - `on_display_info` looks the key up first and draws only on a miss,
-    keeping its three short borrows. A failed draw stores `-1`, as now, so it
-    is not retried on every repaint.
-  - Tests: a pure helper that takes the map and a key and says whether to
-    draw, if you find one that reads well; otherwise say in the commit body
-    that the change is covered by the human check.
-  - Measure with B45's "drew icons" line: search "a", clear it, and search
-    "a" again, then close. Before this task the count grows with each
-    search; after it, the second "a" adds nothing.
-  - **[needs human]** check: search "arrow", clear it, and search "arrow"
-    again: the second time the icons are there at once. Every cell shows its
-    own icon, never another's, after switching sets and searching.
 
 - [ ] **B49. Measure the pickers on screen and decide (no code).**
   **[needs human]** After: B45-B48.
@@ -2451,6 +2429,7 @@ for a machine that has it.
 | G11, G12 (F-68) | With `--debug`, the Typography section lists every role. Scroll the section with the wheel, with the pointer passing over the drop-downs: the page scrolls and no value changes; an open drop-down's list still scrolls itself. Change Body to another family and size: nothing changes until "Apply fonts", which lights up and the status line says there are unapplied changes. Press it: the Debug window takes the new font in place, still on Typography at the same scroll, with no flicker of a closed window; reopen Settings and a picker, and each follows. Arrow through an open family list: nothing applies until Apply fonts. Give Space title another family and apply: every space's title bar follows at once, and so do item labels, Details cells, and placeholders when their roles change; the label-size setting still scales item labels. Choose a size at either end of the list; text stays inside its row and window. "Reset to saved fonts" returns every role to the saved fonts, and the status line says so. Switch Language to the pseudo one: both sample lines gain accents and brackets, and Settings and the Debug window still lay out. |
 | B44 (part script) | Release build, scratch config, with the icon set downloaded: F2 on a space and click its icon. The picker opens within about half a second with its first page of icons drawn; scrolling to the end of the grid and back stays smooth; a search draws its results within a moment of each key (the remaining per-key cost is B47 and B48). With five or more spaces that have icons, Settings opens with their icons in the scopes pane and header at once. At 150 % the icons are sharp, and after Windows switches between dark and light they redraw in the new color. |
 | B47 | Open the icon picker: type "arrow", one letter at a time, then delete it: the grid follows each key; switch sets if there are two. |
+| B48 | Open the icon picker, search "arrow", clear it, and search "arrow" again: the second time the icons are there at once; every cell shows its own icon, never another's, after switching sets and searching. With `./scripts/dev.ps1 -Release -Verbosity 1`, search "a", clear it, search "a" again, and close: the second "a" adds nothing to the "icon picker: drew icons" count. |
 | S9, S10 (part script) (D16) | On the desktop at 100 % and 150 %: outside a rename, the icon shows no hand and a click does what the title bar does. F2 on a space, then hover the icon: hand and hover fill. A click opens the picker in front, with the rename still showing behind it. Search "pho", pick an icon, then OK: the icon changes at once, and you can type more of the name and press Enter. Esc in the picker changes nothing. "Automatic" and "No icon" work; a space without an icon shows the placeholder. Clicking in the picker never ends the rename. With downloads declined, the picker opens with the note and its two buttons. |
 | Flames follow | With Startup and Delete set to Burn at 1000 ms (or `--debug` at ¼×), change a space's rect while it burns: move or resize it in Settings and Apply mid-hide, and change the display layout mid-show. The flames stay on the space's burning edge at its new place, never left where it was; a resized space's flames stand on its new edge. No flame window is left after the burn ends. |
 | Frame clock | On a 60 Hz and a 144 Hz display, and on a space moved to a second monitor with another refresh: Roll, Fade, Fly, Bounce, CRT, and Burn on hide and show at 1000 ms are smooth, with no hitch or jump; `--debug` at ⅒× speed is smooth too; hiding during the startup stagger, and the hotkey twice mid-animation, behave as before. With no animation running, Task Manager shows no "frame clock" thread busy and idle CPU is as before. Lock the session mid-animation: it finishes, and the app stays responsive after unlocking. |

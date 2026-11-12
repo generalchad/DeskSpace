@@ -2,6 +2,7 @@
 //! dropdown, a search box, and Automatic / No icon / OK. Modal, like the
 //! installed-apps picker (`app_picker.rs`), whose structure it copies.
 
+use std::collections::HashMap;
 use std::time::Instant;
 
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
@@ -59,8 +60,6 @@ struct Cell {
     name: String,
     /// The label the grid shows: the name with hyphens as spaces.
     label: String,
-    /// Its image's index in the image list, once drawn.
-    image: Option<i32>,
 }
 
 /// One set the picker offers, borrowed from the request for the call.
@@ -84,7 +83,6 @@ impl PickerSpec<'_> {
             .map(|name| Cell {
                 label: cell_label(name),
                 name: name.to_owned(),
-                image: None,
             })
             .collect()
     }
@@ -98,7 +96,10 @@ struct PickerState<'a> {
     shown: usize,
     /// The cells the search finds in the shown set, in grid order.
     cells: Vec<Cell>,
-    images: HIMAGELIST,
+    image_list: HIMAGELIST,
+    /// Image-list index per `<prefix>:<name>` drawn while the picker is open
+    /// (`-1` when drawing failed, so it is not retried on every repaint).
+    images: HashMap<String, i32>,
     glyphs: GlyphCache,
     /// How many cell icons were drawn while the picker was open, and their
     /// total draw time.
@@ -118,7 +119,7 @@ impl Drop for PickerState<'_> {
         // SAFETY: the list view that used the image list is destroyed before
         // the state is dropped (after the modal loop ends).
         unsafe {
-            let _ = ImageList_Destroy(Some(self.images));
+            let _ = ImageList_Destroy(Some(self.image_list));
         }
     }
 }
@@ -148,7 +149,8 @@ pub(crate) unsafe fn pick_icon(
             sets,
             shown,
             cells,
-            images: ImageList_Create(icon_px, icon_px, ILC_COLOR32, 64, 64),
+            image_list: ImageList_Create(icon_px, icon_px, ILC_COLOR32, 64, 64),
+            images: HashMap::new(),
             glyphs: GlyphCache::new(),
             icons_drawn: 0,
             icon_draw_micros: 0,
@@ -408,7 +410,7 @@ unsafe fn configure_list(list: HWND, state: &PickerState<'_>) {
             list,
             LVM_SETIMAGELIST,
             Some(WPARAM(LVSIL_NORMAL as usize)),
-            Some(LPARAM(state.images.0)),
+            Some(LPARAM(state.image_list.0)),
         );
         for message in [LVM_SETBKCOLOR, LVM_SETTEXTBKCOLOR] {
             SendMessageW(
@@ -535,6 +537,17 @@ unsafe fn set_ok_enabled(window: HWND) {
     }
 }
 
+/// The key under which an icon is cached and saved: `<prefix>:<name>`.
+fn icon_key(prefix: &str, name: &str) -> String {
+    format!("{prefix}:{name}")
+}
+
+/// The image-list index already drawn for `key`, or `None` when it still
+/// needs drawing.
+fn cached_image(images: &HashMap<String, i32>, key: &str) -> Option<i32> {
+    images.get(key).copied()
+}
+
 /// Supplies a cell's label and icon the first time the grid draws it.
 unsafe fn on_display_info(window: HWND, info: &mut NMLVDISPINFOW) {
     let index = usize::try_from(info.item.iItem).ok().unwrap_or(usize::MAX);
@@ -543,16 +556,23 @@ unsafe fn on_display_info(window: HWND, info: &mut NMLVDISPINFOW) {
     // SAFETY: the cell is cloned out under the borrow; the image is rendered
     // after it, and the label is copied into the control's own buffer.
     unsafe {
-        let Some(Some((cell, prefix, color, images, size))) = with_state(window, |state| {
-            let cell = state.cells.get(index)?.clone();
-            Some((
-                cell,
-                state.sets[state.shown].prefix.to_owned(),
-                state.chrome.colors.text,
-                state.images,
-                state.chrome.s(ICON_SIZE),
-            ))
-        }) else {
+        let Some(Some((cell, key, cached, color, image_list, size))) =
+            with_state(window, |state| {
+                let cell = state.cells.get(index)?.clone();
+                let key = wants_image.then(|| icon_key(state.sets[state.shown].prefix, &cell.name));
+                let cached = key
+                    .as_deref()
+                    .and_then(|key| cached_image(&state.images, key));
+                Some((
+                    cell,
+                    key,
+                    cached,
+                    state.chrome.colors.text,
+                    state.image_list,
+                    state.chrome.s(ICON_SIZE),
+                ))
+            })
+        else {
             return;
         };
         if wants_text && !info.item.pszText.is_null() {
@@ -562,13 +582,12 @@ unsafe fn on_display_info(window: HWND, info: &mut NMLVDISPINFOW) {
             std::ptr::copy_nonoverlapping(label.as_ptr(), info.item.pszText.0, copy);
             info.item.pszText.0.add(copy).write(0);
         }
-        if wants_image {
-            let image = match cell.image {
+        if let Some(key) = key {
+            let image = match cached {
                 Some(image) => image,
                 None => {
                     let draw = Instant::now();
-                    let key = format!("{prefix}:{}", cell.name);
-                    let name = cell.name.clone();
+                    let name = cell.name;
                     let icon: Option<Icon> = with_state(window, |state| {
                         let set = state.sets[state.shown].set;
                         state
@@ -579,14 +598,12 @@ unsafe fn on_display_info(window: HWND, info: &mut NMLVDISPINFOW) {
                     let image = icon
                         .and_then(|icon| dib(&icon, false))
                         .map_or(-1, |bitmap| {
-                            let image = ImageList_Add(images, bitmap, None);
+                            let image = ImageList_Add(image_list, bitmap, None);
                             let _ = DeleteObject(HGDIOBJ(bitmap.0));
                             image
                         });
                     with_state(window, |state| {
-                        if let Some(cell) = state.cells.get_mut(index) {
-                            cell.image = Some(image);
-                        }
+                        state.images.insert(key, image);
                         state.icons_drawn += 1;
                         state.icon_draw_micros += draw.elapsed().as_micros();
                     });
@@ -625,7 +642,7 @@ unsafe fn on_ok(window: HWND) {
             let list = state.list?;
             let row = selected_cell(list)?;
             let cell = state.cells.get(row)?;
-            let text = format!("{}:{}", state.sets[state.shown].prefix, cell.name);
+            let text = icon_key(state.sets[state.shown].prefix, &cell.name);
             let choice = IconChoice::Icon(IconRef::parse(&text)?);
             state.result = Some(choice.clone());
             Some((state.owner, choice))
@@ -773,7 +790,6 @@ mod tests {
         Cell {
             name: name.to_owned(),
             label: cell_label(name),
-            image: None,
         }
     }
 
@@ -828,5 +844,21 @@ mod tests {
             let expected: Vec<&str> = index.search(query);
             assert_eq!(names, expected);
         }
+    }
+
+    #[test]
+    fn drawn_icons_are_reused_by_set_and_name() {
+        let mut images = HashMap::new();
+        let fluent_home = icon_key("fluent", "home");
+        let other_home = icon_key("other", "home");
+
+        assert_eq!(cached_image(&images, &fluent_home), None);
+        images.insert(fluent_home.clone(), 3);
+        assert_eq!(cached_image(&images, &fluent_home), Some(3));
+        assert_eq!(cached_image(&images, &other_home), None);
+
+        // Failed draws store -1 so repaints do not retry them.
+        images.insert(other_home.clone(), -1);
+        assert_eq!(cached_image(&images, &other_home), Some(-1));
     }
 }
