@@ -69,16 +69,16 @@ struct PickerSpec<'a> {
     label: &'a str,
     note: Option<&'a str>,
     set: Option<&'a IconSet>,
-    words: &'a [(&'a str, &'a str)],
+    index: Option<icon_match::SearchIndex<'a>>,
 }
 
 impl PickerSpec<'_> {
     /// The cells `query` finds in this set.
     fn cells(&self, query: &str) -> Vec<Cell> {
-        let Some(set) = self.set else {
+        let Some(index) = &self.index else {
             return Vec::new();
         };
-        icon_match::SearchIndex::new(set, self.words)
+        index
             .search(query)
             .into_iter()
             .map(|name| Cell {
@@ -202,7 +202,9 @@ impl<'a> PickerSpec<'a> {
             label: set.label,
             note: set.note,
             set: set.set,
-            words: set.words,
+            index: set
+                .set
+                .map(|icons| icon_match::SearchIndex::new(icons, set.words)),
         }
     }
 }
@@ -797,11 +799,34 @@ mod tests {
             label: prefix,
             note: None,
             set: None,
-            words: &[],
+            index: None,
         };
         let sets = [spec("fluent"), spec("other")];
         let icon = IconRef::parse("other:games").unwrap();
         assert_eq!(opening_set(&sets, None), 0);
         assert_eq!(opening_set(&sets, Some(&icon)), 1);
+    }
+
+    #[test]
+    fn cells_match_search_index_results() {
+        let mut set = IconSet::default();
+        for name in ["arrow-left", "arrow-right", "folder", "games"] {
+            set.icons.insert(name.to_owned(), Default::default());
+        }
+        let words = [("dir", "arrow-right")];
+        let picker_set = PickerSet {
+            prefix: "fluent",
+            label: "Fluent",
+            note: None,
+            set: Some(&set),
+            words: &words,
+        };
+        let spec = PickerSpec::of(&picker_set);
+        let index = icon_match::SearchIndex::new(&set, &words);
+        for query in ["", "arrow", "dir", "missing"] {
+            let names: Vec<String> = spec.cells(query).into_iter().map(|c| c.name).collect();
+            let expected: Vec<&str> = index.search(query);
+            assert_eq!(names, expected);
+        }
     }
 }

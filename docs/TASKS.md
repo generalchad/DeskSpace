@@ -23,7 +23,7 @@ meanwhile.
 are collected in section V instead of blocking:
 - section P's "Juniors and interns" list, the best place for a first task,
   ranked most severe first, so take one from the top;
-- section B's icon picker tasks: B47 and B48 next, then B49; then B51, B53,
+- section B's icon picker tasks: B48 next, then B49; then B51, B53,
   and B55 from "Measure and trim the UI thread";
 - section G (settings window polish): the pure half of G13;
 - section K (K10-K13, K15, K16, K18), each a pure move with rules that
@@ -510,18 +510,6 @@ Rules for every task here:
    `win32/icon_picker.rs` but no `unsafe` block's reasoning. Keep every
    `with_state` borrow as short as it is now (no Win32 call inside one), and
    keep each `// SAFETY:` comment true. A senior reviews B47 and B48.
-
-- [ ] **B47. Keep the search index while the picker is open (platform).**
-  After: B46. Senior review (rule 3).
-  - Why: after B46, the picker still builds the index on every keystroke.
-  - `PickerSpec` (`win32/icon_picker.rs`) gets `index: Option<SearchIndex<'a>>`,
-    built in `PickerSpec::of` when the set is loaded. `PickerSpec::cells`
-    queries it. Switching sets in the dropdown then costs nothing to build.
-  - Tests: `PickerSpec::cells` with a small set from
-    `deskspace_core::icon_set` (build one by hand, as the `icon_match` tests
-    do) gives the same names `SearchIndex::search` gives.
-  - **[needs human]** check: type "arrow", one letter at a time, then delete
-    it: the grid follows each key; switch sets if there are two.
 
 - [ ] **B48. Draw each icon once while the picker is open (platform).**
   After: B45. Senior review (rule 3).
@@ -2462,6 +2450,7 @@ for a machine that has it.
 | Font pages (F-68) | At 100 % and 150 %, in light and dark: Global lists Spaces and Windows under Fonts; a space's scopes do not. The pane shows Look, Fonts, New items, DeskSpace, and Animations for Global, and Look and This space for a space or lens. Each page has a card per role with Family, Size, and Weight, and both scroll (G10) where the screen is short. Space fonts: give Space title another family, size, and weight; every space's title bar follows at once, and so do Item label, Details (Details, Tiles, Content), Placeholder, and Zoom. Cancel puts every change back; OK or Apply keeps it, and a restart still shows it (the config gains a `[typography.<role>]` table only for changed roles). Window fonts: change Body and Heading 1, press OK, reopen Settings: it uses them, as do the Debug window, the pickers, and the shortcut dialog. Each page's "Reset to defaults" resets only its own roles. Hand-edit a config to a size of 12.5 and a family that is not installed: both drop-downs show those values, and picking another entry shows the right one. With `--debug`, apply a session font in the Debug box, then change the same role in Settings: the Debug override stays in force until "Reset to saved fonts". |
 | G11, G12 (F-68) | With `--debug`, the Typography section lists every role. Scroll the section with the wheel, with the pointer passing over the drop-downs: the page scrolls and no value changes; an open drop-down's list still scrolls itself. Change Body to another family and size: nothing changes until "Apply fonts", which lights up and the status line says there are unapplied changes. Press it: the Debug window takes the new font in place, still on Typography at the same scroll, with no flicker of a closed window; reopen Settings and a picker, and each follows. Arrow through an open family list: nothing applies until Apply fonts. Give Space title another family and apply: every space's title bar follows at once, and so do item labels, Details cells, and placeholders when their roles change; the label-size setting still scales item labels. Choose a size at either end of the list; text stays inside its row and window. "Reset to saved fonts" returns every role to the saved fonts, and the status line says so. Switch Language to the pseudo one: both sample lines gain accents and brackets, and Settings and the Debug window still lay out. |
 | B44 (part script) | Release build, scratch config, with the icon set downloaded: F2 on a space and click its icon. The picker opens within about half a second with its first page of icons drawn; scrolling to the end of the grid and back stays smooth; a search draws its results within a moment of each key (the remaining per-key cost is B47 and B48). With five or more spaces that have icons, Settings opens with their icons in the scopes pane and header at once. At 150 % the icons are sharp, and after Windows switches between dark and light they redraw in the new color. |
+| B47 | Open the icon picker: type "arrow", one letter at a time, then delete it: the grid follows each key; switch sets if there are two. |
 | S9, S10 (part script) (D16) | On the desktop at 100 % and 150 %: outside a rename, the icon shows no hand and a click does what the title bar does. F2 on a space, then hover the icon: hand and hover fill. A click opens the picker in front, with the rename still showing behind it. Search "pho", pick an icon, then OK: the icon changes at once, and you can type more of the name and press Enter. Esc in the picker changes nothing. "Automatic" and "No icon" work; a space without an icon shows the placeholder. Clicking in the picker never ends the rename. With downloads declined, the picker opens with the note and its two buttons. |
 | Flames follow | With Startup and Delete set to Burn at 1000 ms (or `--debug` at ¼×), change a space's rect while it burns: move or resize it in Settings and Apply mid-hide, and change the display layout mid-show. The flames stay on the space's burning edge at its new place, never left where it was; a resized space's flames stand on its new edge. No flame window is left after the burn ends. |
 | Frame clock | On a 60 Hz and a 144 Hz display, and on a space moved to a second monitor with another refresh: Roll, Fade, Fly, Bounce, CRT, and Burn on hide and show at 1000 ms are smooth, with no hitch or jump; `--debug` at ⅒× speed is smooth too; hiding during the startup stagger, and the hotkey twice mid-animation, behave as before. With no animation running, Task Manager shows no "frame clock" thread busy and idle CPU is as before. Lock the session mid-animation: it finishes, and the app stays responsive after unlocking. |

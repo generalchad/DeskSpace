@@ -7094,3 +7094,4 @@ takes an id listed here or used anywhere above
 - **P14b.** Measure Explorer's fixed-view cells (no code).
 - **P14c.** Give the fixed icon views their own cell (fix).
 - **P14.** Give the fixed icon views their own cell.
+- **B47.** Keep the search index while the picker is open (platform).
