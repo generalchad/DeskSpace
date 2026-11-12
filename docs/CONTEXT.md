@@ -1126,8 +1126,10 @@ exact steps, ranges, edge cases, and the code behind them.
 - Appearance presets: tint opacity 100/80/60/40/20 % and icon size Small 75,
   Medium 100, Large 150, Extra large 200 %. "Use global appearance" is greyed
   unless customized and keeps the look for later. View presets set 256, 96,
-  or 48 px at 96 DPI (out of Ctrl+wheel and Match Explorer); Small icons and
-  List draw 16 px inline cells. In Sort by, a key keeps the direction, a
+  or 48 px at 96 DPI (out of Ctrl+wheel and Match Explorer), in a cell as
+  wide as Explorer's column (`fixed_view_cell_width`) and as tall as the item
+  draws; the icon never passes the shell's 256 physical pixels, as Explorer's
+  does not. Small icons and List draw 16 px inline cells. In Sort by, a key keeps the direction, a
   direction keeps the key, Folders first toggles, and Keep sorted is checked
   and greyed on a lens. The tables are `OPACITY_PRESETS`,
   `ICON_SIZE_PRESETS`, `VIEW_PRESETS`, `SORT_MENU_IDS`, and

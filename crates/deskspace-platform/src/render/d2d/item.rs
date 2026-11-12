@@ -11,8 +11,7 @@ use crate::render::{DetailsView, ItemLayout, ItemMetrics};
 const MARQUEE_FILL_ALPHA: u8 = 70;
 /// The selection box border's alpha, close to solid.
 const MARQUEE_BORDER_ALPHA: u8 = 200;
-/// How far an item's highlight and focus rectangle sit inside its cell.
-const CELL_INSET: f32 = 2.0;
+const CELL_INSET: f32 = crate::render::ITEM_FRAME_INSET as f32;
 const HIGHLIGHT_RADIUS: f32 = 4.0;
 /// The space between a label and its cell's sides.
 const LABEL_INSET: f32 = 4.0;
@@ -614,5 +613,28 @@ mod tests {
         assert_eq!(height(100, 1), LABEL_LINE_HEIGHT);
         assert_eq!(height(100, 9), height(100, 2), "two lines at most");
         assert_eq!(height(255, 1), height(LABEL_SIZE_RANGE.1, 1));
+    }
+
+    #[test]
+    fn a_cell_of_the_grid_height_holds_the_whole_label_inside_the_highlight() {
+        for scale in [1.0, 1.5, 2.0] {
+            for icon_size in [48, 144, 256] {
+                for (lines, size) in [(1, 100), (2, 100), (2, LABEL_SIZE_RANGE.1)] {
+                    let metrics = ItemMetrics {
+                        icon_size,
+                        ..ItemMetrics::for_scale(scale)
+                    };
+                    let height = metrics.grid_cell_height(lines, size);
+                    let cell = rect_f(0.0, 0.0, 300.0, height as f32);
+                    let layout =
+                        CellLayout::new(cell, metrics, size, lines, ItemLayout::Grid, None);
+                    let label = layout.label.expect("room for a label");
+                    let whole = label.top + lines as f32 * layout.line_height;
+                    let case = format!("scale {scale}, icon {icon_size}, {lines} x {size} %");
+                    assert!(label.bottom >= whole, "{case}: clipped");
+                    assert!(whole <= layout.frame.bottom, "{case}: past the highlight");
+                }
+            }
+        }
     }
 }

@@ -22,6 +22,11 @@ Notable changes to DeskSpace, newest first. The format follows
 
 ### Fixed
 
+- Medium, Large, and Extra large icons now lay items out in columns as wide
+  as Explorer's, so three Extra large columns fit where Explorer's do. Before,
+  each cell grew with the icon, and three Extra large columns needed about
+  1,500 pixels. As in Explorer, an Extra large icon stays 256 pixels on a
+  high-DPI display.
 - Windows' "Replace or Skip Files", progress, and error windows for a drop,
   paste, delete, or rename that DeskSpace started now open in front of other
   apps. Before, one could open behind the app in use, and DeskSpace looked

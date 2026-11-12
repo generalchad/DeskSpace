@@ -49,6 +49,47 @@ const NORMAL_CELLS: OrderedCells = OrderedCells {
     gap: 2,
 };
 
+/// Explorer's narrowest column in a fixed icon view, in physical pixels at
+/// 100 % and 150 % display scale: the pitch from one item's left edge to the
+/// next, measured in Explorer on Windows 11. A wider Explorer window shares its
+/// spare width out among the columns; a space's width snaps to whole cells
+/// instead, so the narrowest pitch is the cell.
+struct ExplorerPitch {
+    at_100: i32,
+    at_150: i32,
+}
+
+impl ExplorerPitch {
+    fn of(mode: ViewMode) -> Option<Self> {
+        let (at_100, at_150) = match mode {
+            ViewMode::ExtraLargeIcons => (272, 277),
+            ViewMode::LargeIcons => (106, 160),
+            ViewMode::MediumIcons => (75, 113),
+            ViewMode::Icons
+            | ViewMode::SmallIcons
+            | ViewMode::List
+            | ViewMode::Details
+            | ViewMode::Tiles
+            | ViewMode::Content => return None,
+        };
+        Some(Self { at_100, at_150 })
+    }
+}
+
+/// A fixed icon view's cell width on a display of `display_scale` (1.0 is 96
+/// DPI), in physical pixels, or `None` for any other view. It is the view's
+/// icon plus Explorer's margin beside it. The margin was measured at two
+/// scales and follows the line through them at the others, so both measured
+/// scales match Explorer exactly; it does not grow by the scale alone, nor
+/// does the Extra large icon (`ViewMode::item_icon_at`).
+pub fn fixed_view_cell_width(mode: ViewMode, display_scale: f32) -> Option<i32> {
+    let pitch = ExplorerPitch::of(mode)?;
+    let margin_at_100 = (pitch.at_100 - mode.item_icon_at(1.0)?) as f32;
+    let margin_at_150 = (pitch.at_150 - mode.item_icon_at(1.5)?) as f32;
+    let margin = margin_at_100 + (margin_at_150 - margin_at_100) * (display_scale - 1.0) / 0.5;
+    Some(mode.item_icon_at(display_scale)? + margin.round().max(0.0) as i32)
+}
+
 /// Explorer's Compact view tightens only these views; the icon views keep the
 /// Layout page's spacing, so there is one spacing control per view (D18).
 const COMPACT_CELLS: OrderedCells = OrderedCells {
@@ -1084,6 +1125,48 @@ mod tests {
             layout_of(ViewMode::SmallIcons, 360, 0).drop_index(Point::ZERO),
             None
         );
+    }
+
+    #[test]
+    fn a_fixed_view_is_as_wide_as_explorers_column_at_both_measured_scales() {
+        let width = |mode, scale| fixed_view_cell_width(mode, scale).unwrap();
+        assert_eq!(width(ViewMode::MediumIcons, 1.0), 75);
+        assert_eq!(width(ViewMode::LargeIcons, 1.0), 106);
+        assert_eq!(width(ViewMode::ExtraLargeIcons, 1.0), 272);
+        assert_eq!(width(ViewMode::MediumIcons, 1.5), 113);
+        assert_eq!(width(ViewMode::LargeIcons, 1.5), 160);
+        assert_eq!(width(ViewMode::ExtraLargeIcons, 1.5), 277);
+    }
+
+    #[test]
+    fn a_fixed_view_grows_with_the_display_between_and_past_the_measured_scales() {
+        for mode in [
+            ViewMode::MediumIcons,
+            ViewMode::LargeIcons,
+            ViewMode::ExtraLargeIcons,
+        ] {
+            let widths: Vec<i32> = [1.0, 1.25, 1.5, 1.75, 2.0]
+                .iter()
+                .map(|scale| fixed_view_cell_width(mode, *scale).unwrap())
+                .collect();
+            assert!(widths.is_sorted(), "{mode:?}: {widths:?}");
+            let icon = mode.item_icon_at(2.0).unwrap();
+            assert!(widths[4] > icon, "{mode:?} leaves room beside its icon");
+        }
+    }
+
+    #[test]
+    fn only_the_fixed_icon_views_have_their_own_width() {
+        for mode in [
+            ViewMode::Icons,
+            ViewMode::SmallIcons,
+            ViewMode::List,
+            ViewMode::Details,
+            ViewMode::Tiles,
+            ViewMode::Content,
+        ] {
+            assert_eq!(fixed_view_cell_width(mode, 1.0), None, "{mode:?}");
+        }
     }
 
     #[test]

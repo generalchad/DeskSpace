@@ -96,7 +96,7 @@ pub(crate) use graphics::rebuild_text_formats;
 use graphics::{GRAPHICS, Graphics, graphics};
 use item::{draw_item, draw_marquee};
 
-const LABEL_LINE_HEIGHT: f32 = 16.0;
+const LABEL_LINE_HEIGHT: f32 = crate::render::ITEM_LABEL_LINE_HEIGHT;
 const SCROLL_THUMB_ALPHA: u8 = 110;
 /// The placeholder text's alpha factor: about 60 % of the label color.
 const PLACEHOLDER_ALPHA: u8 = 153;

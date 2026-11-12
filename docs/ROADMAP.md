@@ -682,11 +682,16 @@ A native, lightweight, offline Windows desktop organizer that:
     `Item.position`, so switching back to an icon view restores a hand
     arrangement. (Amended 2026-11-02: Small icons places items by order too,
     since W16; the three larger icon views keep the grid.) (Amended 2026-11-02,
-    maintainer; lands with `TASKS.md` P14c: those three views use Explorer's
+    maintainer; landed with `TASKS.md` P14c: those three views use Explorer's
     measured cell and never the look's, so the look's spacing applies only to
     "Settings icon size". Scaling the whole cell by icon size made three Extra
     large columns about 1,500 px wide. No release has these views yet, so this
     lands before the next one, and no saved space needs a migration.)
+    (Amended 2026-11-11, maintainer: the cell is as wide as Explorer's narrowest
+    column and as tall as the item draws with the space's label lines and
+    size. Explorer's rows grow to their longest label, which one row height per
+    space cannot copy, and its row would clip DeskSpace's looser label. The
+    icon stops at 256 physical pixels, as Explorer's Extra large does.)
   - *One sort rule for both kinds:* `SortRule { key, descending,
     folders_first }`. A space keeps its last rule, and "Keep sorted"
     decides whether it holds as items come and go. A lens is always kept

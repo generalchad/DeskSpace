@@ -7,11 +7,11 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use deskspace_core::animation::Kind;
-use deskspace_core::geometry::{Point, Rect};
+use deskspace_core::geometry::{Point, Rect, Size};
 use deskspace_core::grouping::{Grouping, LocalDay};
 use deskspace_core::layout::GridSpec;
 use deskspace_core::theme::ICON_SIZE_RANGE;
-use deskspace_core::view_layout::{ViewLayout, ViewMetrics};
+use deskspace_core::view_layout::{ViewLayout, ViewMetrics, fixed_view_cell_width};
 use deskspace_core::{
     Color, Command, Extensions, GroupBy, Item, ItemId, ItemKind, Palette, Space, SpaceId,
     SpaceView, Theme, ViewMode,
@@ -284,11 +284,11 @@ impl LayerState {
     }
 }
 
-/// Whether a grid takes its cell from the look, or from a fixed view's own
-/// icon size.
+/// Whether a grid takes its cell from the look, or is a fixed view's own
+/// cell, in physical pixels.
 pub(super) enum Cells {
     Look,
-    FixedView,
+    FixedView(Size),
 }
 
 /// What `base_layout` scales a grid by, and where its cell comes from.
@@ -470,14 +470,11 @@ impl App {
         theme.icon_size.clamp(ICON_SIZE_RANGE.0, ICON_SIZE_RANGE.1) as f32 / 100.0
     }
 
-    /// The full icon factor for one space: the icon-size factor times the
-    /// monitor's DPI. Explorer's own icon size is already in physical pixels,
-    /// so mirroring does not multiply by DPI again. A fixed icon view ignores
-    /// both the look and Explorer, and scales only for DPI.
+    /// The full icon factor for a space that follows the look's icon size:
+    /// the icon-size factor times the monitor's DPI. Explorer's own icon size
+    /// is already in physical pixels, so mirroring does not multiply by DPI
+    /// again. A view with its own icon size never asks (`metrics_for`).
     pub(super) fn space_scale(&self, id: SpaceId) -> f32 {
-        if let Some(scale) = self.fixed_icon_scale(id) {
-            return scale * space_dpi(id.0);
-        }
         let theme = self.theme_for(id);
         let scale = self.icon_scale(theme);
         if theme.match_explorer() && self.system.shell().icon_size.is_some() {
@@ -486,19 +483,25 @@ impl App {
         scale * space_dpi(id.0)
     }
 
-    /// The icon factor a fixed view asks for, without DPI, or `None` when the
-    /// space follows the look's icon size.
-    fn fixed_icon_scale(&self, id: SpaceId) -> Option<f32> {
-        let px = self.config.desktop.space(id)?.view().mode.icon_px()?;
-        Some(px as f32 / ITEM_ICON_SIZE as f32)
+    /// A fixed icon view's cell, in physical pixels, or `None` when the space
+    /// follows the look's grid. The width is Explorer's column; the height is
+    /// what the item draws, with the space's label lines and size.
+    fn fixed_view_cell(&self, id: SpaceId) -> Option<Size> {
+        let width = fixed_view_cell_width(self.view_mode(id), space_dpi(id.0))?;
+        let theme = self.theme_for(id);
+        let height = self
+            .metrics_for(id)
+            .grid_cell_height(theme.label_lines, theme.label_size);
+        Some(Size::new(width, height))
     }
 
     /// `grid` scaled by `scale`, with the title bar scaled by `scale.title`.
     /// When `scale.cells` is `Cells::Look` and `theme` mirrors Explorer, its
     /// item spacing (the full cell size in physical pixels) replaces the cell
     /// and gap, so the grid step matches the desktop exactly. A fixed icon view
-    /// keeps its own scaled grid. The stored grids are never scaled, so the
-    /// settings form keeps editing logical values.
+    /// puts in its own cell, with no gap, as Explorer's cells touch. The
+    /// stored grids are never scaled, so the settings form keeps editing
+    /// logical values.
     pub(super) fn base_layout(
         &self,
         theme: &Theme,
@@ -506,30 +509,34 @@ impl App {
         scale: LayoutScale,
     ) -> GridSpec {
         let mut layout = grid.scaled_with_title(scale.icon, scale.title);
-        if matches!(scale.cells, Cells::Look)
-            && theme.match_explorer()
-            && let Some(spacing) = self.system.shell().icon_spacing
-        {
-            layout.cell_width = spacing.width.max(1);
-            layout.cell_height = spacing.height.max(1);
+        let cell = match scale.cells {
+            Cells::FixedView(cell) => Some(cell),
+            Cells::Look if theme.match_explorer() => self.system.shell().icon_spacing,
+            Cells::Look => None,
+        };
+        if let Some(cell) = cell {
+            layout.cell_width = cell.width.max(1);
+            layout.cell_height = cell.height.max(1);
             layout.gap = 0;
         }
         layout
     }
 
-    /// The scaled grid for one space, including its monitor's DPI.
+    /// The scaled grid for one space, including its monitor's DPI. A fixed
+    /// icon view scales the rest of the grid, its padding and snap, for the
+    /// DPI alone, so neither the look's icon size nor its own grows them.
     pub(super) fn layout_for(&self, id: SpaceId) -> GridSpec {
-        let cells = if self.fixed_icon_scale(id).is_some() {
-            Cells::FixedView
-        } else {
-            Cells::Look
+        let dpi = space_dpi(id.0);
+        let (icon, cells) = match self.fixed_view_cell(id) {
+            Some(cell) => (dpi, Cells::FixedView(cell)),
+            None => (self.space_scale(id), Cells::Look),
         };
         self.base_layout(
             self.theme_for(id),
             self.grid_for(id),
             LayoutScale {
-                icon: self.space_scale(id),
-                title: space_dpi(id.0),
+                icon,
+                title: dpi,
                 cells,
             },
         )
@@ -550,20 +557,18 @@ impl App {
         )
     }
 
-    /// Scaled icon, label, and check-box sizes for one space. An order-placed
-    /// view draws its own fixed icon size and scales the rest for the display
-    /// alone, so the look and a zoom leave it alone.
+    /// Scaled icon, label, and check-box sizes for one space. A view with its
+    /// own icon size (every view but Icons) draws that icon and scales the
+    /// rest for the display alone, so the look and a zoom leave it alone.
     pub(super) fn metrics_for(&self, id: SpaceId) -> ItemMetrics {
-        let mode = self.view_mode(id);
-        if mode.places_by_order() {
-            let dpi = space_dpi(id.0);
-            let icon_px = mode.item_icon_px().unwrap_or(ITEM_ICON_SIZE);
-            return ItemMetrics {
-                icon_size: ((icon_px as f32 * dpi).round() as i32).max(1),
+        let dpi = space_dpi(id.0);
+        match self.view_mode(id).item_icon_at(dpi) {
+            Some(icon_size) => ItemMetrics {
+                icon_size,
                 ..ItemMetrics::for_scale(dpi)
-            };
+            },
+            None => ItemMetrics::for_scale(self.space_scale(id)),
         }
-        ItemMetrics::for_scale(self.space_scale(id))
     }
 
     /// The space's view mode, or the default when it is gone.
@@ -1216,10 +1221,7 @@ impl App {
     fn keep_size_on_zoom(&mut self, id: SpaceId) {
         let mode = self.view_mode(id);
         let factor = mode.item_icon_px().map_or_else(
-            || {
-                self.fixed_icon_scale(id)
-                    .unwrap_or_else(|| self.icon_scale(self.theme_for(id)))
-            },
+            || self.icon_scale(self.theme_for(id)),
             |px| px as f32 / ITEM_ICON_SIZE as f32,
         );
         let previous = self.view_cache.record_icon_scale(id, factor);
@@ -1308,7 +1310,6 @@ mod tests {
     use super::*;
     use crate::fixtures::{apply, create_space};
     use deskspace_config::{Config, ConfigStore};
-    use deskspace_core::geometry::Size;
     use deskspace_core::{Extensions, SpaceView, ViewMode};
     use deskspace_core::{ItemFacts, Preset};
     use deskspace_platform::ShellDisplay;
@@ -1823,6 +1824,19 @@ mod tests {
         assert_eq!(app.metrics_for(SpaceId(1)).icon_size, 24);
     }
 
+    /// A space in `mode`, in `app`'s model.
+    fn space_in_view(app: &mut App, mode: ViewMode) -> SpaceId {
+        let id = create_space(&mut app.config.desktop, "Work", Rect::new(0, 0, 300, 300));
+        apply(
+            &mut app.config.desktop,
+            Command::SetSpaceView {
+                id,
+                view: SpaceView::default().with_mode(mode),
+            },
+        );
+        id
+    }
+
     #[test]
     fn a_fixed_icon_view_ignores_the_look_and_explorer() {
         let mut app = app_with_display(ShellDisplay {
@@ -1830,24 +1844,76 @@ mod tests {
             icon_spacing: Some(Size::new(120, 130)),
             ..ShellDisplay::default()
         });
-        let id = create_space(&mut app.config.desktop, "Work", Rect::new(0, 0, 300, 300));
-        apply(
-            &mut app.config.desktop,
-            Command::SetSpaceView {
-                id,
-                view: SpaceView::default().with_mode(ViewMode::LargeIcons),
-            },
-        );
-        // Large icons are 96 px at 96 DPI; the grid cell is twice the base
-        // 48 px icon, so 192 px wide.
-        assert_eq!(app.metrics_for(id).icon_size, 96);
-        assert_eq!(app.layout_for(id).cell_width, 192);
+        let id = space_in_view(&mut app, ViewMode::LargeIcons);
+        // Large icons are 96 px at 96 DPI, in Explorer's 106 px column.
+        let fixed = (app.metrics_for(id), app.layout_for(id));
+        assert_eq!(fixed.0.icon_size, 96);
+        assert_eq!(fixed.1.cell_width, 106);
         // Neither the look's size nor Explorer's spacing overrides a fixed
         // icon view.
         app.config.theme.preset = Preset::Custom;
         app.config.theme.icon_size = 50;
-        assert_eq!(app.metrics_for(id).icon_size, 96);
-        assert_eq!(app.layout_for(id).cell_width, 192);
+        assert_eq!((app.metrics_for(id), app.layout_for(id)), fixed);
+    }
+
+    #[test]
+    fn a_fixed_view_cell_is_explorers_column_over_what_the_item_draws() {
+        let mut app = app_with_display(ShellDisplay::default());
+        let id = space_in_view(&mut app, ViewMode::ExtraLargeIcons);
+        let metrics = app.metrics_for(id);
+        let layout = app.layout_for(id);
+        let theme = app.theme_for(id);
+        assert_eq!(metrics.icon_size, 256);
+        assert_eq!(layout.cell_width, 272);
+        assert_eq!(
+            layout.cell_height,
+            metrics.grid_cell_height(theme.label_lines, theme.label_size)
+        );
+        assert_eq!(layout.gap, 0, "Explorer's cells touch");
+        // The rest of the item, and the grid around it, scale for the display
+        // alone, not by the 256 px icon over the 48 px base.
+        assert_eq!(
+            metrics,
+            ItemMetrics {
+                icon_size: 256,
+                ..ItemMetrics::for_scale(1.0)
+            }
+        );
+        assert_eq!(layout.padding, app.config.desktop.layout.padding);
+        assert_eq!(layout.snap, app.config.desktop.layout.snap);
+    }
+
+    #[test]
+    fn a_looks_spacing_changes_settings_icon_size_and_no_fixed_view() {
+        let mut app = app_with_display(ShellDisplay::default());
+        app.config.theme.preset = Preset::Custom;
+        let follows = space_in_view(&mut app, ViewMode::Icons);
+        let fixed = space_in_view(&mut app, ViewMode::MediumIcons);
+        let before = (app.layout_for(follows), app.layout_for(fixed));
+        app.config.desktop.layout.cell_width += 40;
+        app.config.desktop.layout.cell_height += 40;
+        app.config.desktop.layout.gap += 4;
+        assert_ne!(app.layout_for(follows), before.0);
+        assert_eq!(app.layout_for(fixed), before.1);
+    }
+
+    #[test]
+    fn a_fixed_view_row_holds_the_label_lines_the_look_asks_for() {
+        let mut app = app_with_display(ShellDisplay::default());
+        app.config.theme.preset = Preset::Custom;
+        let id = space_in_view(&mut app, ViewMode::MediumIcons);
+        app.config.theme.label_lines = 2;
+        let two = app.layout_for(id).cell_height;
+        app.config.theme.label_lines = 1;
+        let one = app.layout_for(id).cell_height;
+        assert!(one < two, "{one} < {two}");
+        app.config.theme.label_size = 150;
+        assert!(app.layout_for(id).cell_height > one, "a larger label");
+        assert_eq!(
+            app.layout_for(id).cell_width,
+            75,
+            "the width stays Explorer's"
+        );
     }
 
     #[test]

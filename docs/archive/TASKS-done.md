@@ -7092,3 +7092,5 @@ takes an id listed here or used anywhere above
 - **P46b.** The timer and the Win32 calls that raise the file-operation window.
 - **P46.** Bring the shell's file-operation windows to the front (fix; Win32).
 - **P14b.** Measure Explorer's fixed-view cells (no code).
+- **P14c.** Give the fixed icon views their own cell (fix).
+- **P14.** Give the fixed icon views their own cell.

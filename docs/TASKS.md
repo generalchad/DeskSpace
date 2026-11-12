@@ -1756,7 +1756,7 @@ moves.
     to `refresh_desktop_layer` (the desktop layer and takeover), with their tests.
   - `mod.rs` keeps `sync_windows*`, `view_for`, grouping, the refresh, restyle,
     and reflow methods, the view changes, and `changed_in_place`.
-  - Collides with: P14c (`base_layout`, `Cells`) and P15f.
+  - Collides with: P15f.
   - Done when: `mod.rs` is under about 600 lines and the K rules above hold.
 
 - [ ] **K12. Split `scene.rs`.** 1,163 lines. Turn it into `scene/mod.rs` plus:
@@ -1914,55 +1914,6 @@ task goes into its tier, not at the end.
 
 A user can lose their layout, an attacker could reach every install, or the next release waits on it.
 
-- [ ] **P14c. Give the fixed icon views their own cell (fix).** **[urgent] (v0.3.0)** Part of
-  P14. In `view_layout.rs`, beside `NORMAL_CELLS`, `pub fn fixed_view_cell(mode) ->
-  Option<Size>`, measured in 96-DPI pixels with a comment saying so and when. If the
-  150 % numbers are not 1.5 times the 100 % ones, stop and ask. `Cells::FixedView`
-  carries that `Size`, which `layout_for` fills in from the space's mode. In
-  `base_layout` (`app/view.rs`), give it its own arm, shaped like the `Cells::Look`
-  arm: the cell times `scale.title`, which is the DPI alone, and `gap = 0`.
-  - `ViewMetrics::for_view` needs no change: it hands an icon view the `GridSpec`,
-    and `arrange_space` reads that too, so `base_layout` is the one place.
-  - Tests: each view's cell, DPI scaling, and a look's spacing changes "Settings icon
-    size" and no fixed view.
-  - **[needs human]** check: three Extra large columns fit where Explorer's do.
-    Update W12's row.
-  - Explorer's cells (P14b), measured 2026-11-11 on Windows 11 (build 26300), Folder
-    Options at their defaults except item check boxes, which were on. Physical
-    pixels, each the pitch from one item's edge to the next one's, read through UI
-    Automation from each item's rect while the window's width was stepped one pixel
-    at a time:
-
-    | View | 100 % | 150 % | Item box at 100 % / 150 % |
-    |------|-------|-------|---------------------------|
-    | Medium | 75 × 69 | 113 × 107 | 74 × 68 / 111 × 105 |
-    | Large | 106 × 117 | 160 × 179 | 105 × 116 / 158 × 177 |
-    | Extra large | 272 × 277 | 277 × 291 | 271 × 276 / 275 × 289 |
-
-    - The 150 % numbers are not 1.5 times the 100 % ones. A row is the icon, a
-      one-line label band (21 px at 100 %, 35 at 150 %), and nothing else. The
-      icon scales with the DPI except in Extra large, which stays 256 physical
-      pixels, the shell's largest icon, so its cell barely grows.
-    - The width is a minimum. n columns show once the list is n cells wide plus
-      its margins (30 px at 100 %, 45 at 150 %), and Explorer shares the spare
-      width out among them. A space's width already snaps to whole cells
-      (`ViewMetrics::fit_width`), so the minimum is the cell to copy.
-    - A row grows to the longest label in it, up to four lines: 15 px a line at
-      100 %, 25 at 150 %. The other rows keep the one-line height. Measured with
-      short names, then with one long name among them.
-  - Decided 2026-11-11 (maintainer), replacing the 96-DPI cell times the DPI above:
-    build the cell from parts. Its width is Explorer's minimum pitch, the icon plus
-    a side margin per view, fitted to both columns of the table. Its height is what
-    DeskSpace draws: the icon inset, the icon, the label gap, and the space's label
-    lines at the label size, all at the DPI alone. In both, the icon is the view's
-    size times the DPI, at most 256 physical pixels, and a fixed view draws its icon
-    at that size too. One row height per space stays: Explorer's rows taller than
-    one line are not copied.
-  - `metrics_for` (`app/view.rs`) changes too: it scales a fixed view's icon inset,
-    label gap, and check box by the icon factor (5.33 in Extra large), which would
-    not fit any measured cell. A fixed view takes its icon size from the view and
-    the rest for the DPI alone, as an order-placed view already does.
-
 #### Medium
 
 A rare loss of a user's file, memory that only grows, a broken install's shell entries, or groundwork a senior's fix needs.
@@ -2079,15 +2030,6 @@ These are in the order we would take them. Each lands alone.
   - `CONTEXT.md` section 10: update the sentence. **[needs human]** check: start
     on a config with a few hundred items on a slow disk: no stall, and sorting by
     Date created orders an old item correctly.
-
-- [ ] **P14. Give the fixed icon views their own cell.** A fixed view scales the
-  whole grid by icon size over 48 px (`fixed_icon_scale`, `app/view.rs`). With the
-  default 96 × 104 cell, Large icons gets a 192 × 208 cell and Extra large about
-  512 × 555, so three Extra large columns need about 1,500 px. W12's check does not
-  mention this. The behavior is decided (ROADMAP D17, amended 2026-11-02). P14c is
-  in the junior list. **Land it before the next release:** W12 is in no
-  release tag (the newest is v0.2.4, checked 2026-11-02), so no saved space needs a
-  migration until one ships.
 
 - [ ] **P15. Scroll Details sideways.** Columns past the space's width are cut off
   (`scene.rs` `details_columns`), and W30 makes that easy to reach: every column on
@@ -2626,7 +2568,7 @@ for a machine that has it.
 | W8 (v0.3) (D17) | In light and dark mode, at 100 % and 150 %, on Windows 11 and 10: every scopes row shows its kind's glyph (Global, a space, a lens), the labels line up, a dimmed row's glyph is dimmed, and the selection covers the glyph. |
 | W9 (v0.3) (D17) | Lenses on Downloads, Documents, and a plain folder show each folder's own icon left of the title; rename the folder away and the generic folder icon shows; F2's rename box starts after the icon; the same folded, at 100 % and 150 %, on every backdrop; a normal space's title bar is unchanged. |
 | W11 (v0.3) (part script) (D17) | On a lens in the user's profile: each "Show as" entry retitles it at once, and Cancel puts the title back; Change folder… retitles it under Folder name and keeps a custom title; F2 on the title, then the Lens page shows Custom. |
-| W12 (v0.3) (script) (D17) | Each View ▸ entry resizes only that space, on a normal space and a lens. "Settings icon size" gives back the look's size. Ctrl+wheel does not move a space with a fixed size. The view survives a restart. |
+| W12 (v0.3) (part script) (D17) | Each View ▸ entry resizes only that space, on a normal space and a lens. "Settings icon size" gives back the look's size. Ctrl+wheel does not move a space with a fixed size. The view survives a restart. Beside Explorer on the same folder, at 100 % and 150 %: Medium, Large, and Extra large columns are as wide as Explorer's, so three Extra large columns fit where Explorer's do, and an Extra large icon is no bigger at 150 % than at 100 %. With one label line, with two, and with Label size at its largest, no label is cut off and no row overlaps the next. |
 | W13 (v0.3) (script) (D17) | After clicking a space, Ctrl+Shift+1, 2, and 3 change it to Extra large, Large, and Medium icons; Ctrl+Shift+4 through 8 change nothing yet; with Explorer in front, Explorer's own Ctrl+Shift+1 still works. |
 | W15 (v0.3) (part script) (D17) | Turning Sort by ▸ Keep sorted on sorts the space at once. With it on, a dropped file lands in order and a renamed item moves to its place; a drag inside does not rearrange, while a drag out still moves the file. Turned off, the space rearranges freely again and keeps the order it had. On a lens the entry is checked and greyed, and its order holds. |
 | W16 (v0.3) (part script) (D17) | Small icons on a space and on a lens, at 100 % and 150 %: 16 px icons with one label line beside them, rows wrapping and scrolling down; click, Ctrl and Shift click, the marquee, the arrow keys, and type-to-select all hit the inline cells; F2's box sits over the label; drag out works, and a drag to rearrange reorders a normal space (not one kept sorted). Back in Medium icons, the hand arrangement is as it was. |
