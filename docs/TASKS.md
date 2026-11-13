@@ -619,6 +619,85 @@ drop side is `win32/drop_target.rs` (`DragKind`, `drag_kind`, `DropPlan`,
     It grows with the remaining Explorer item settings (hidden/protected
     files once F-22 exists).
 
+### Draw a space on the desktop (ROADMAP F-69, D27)
+
+A right-drag lasso on the desktop, then "New space here" or "New lens here…"
+at the drawn rectangle. D27 holds the rules; read it first. Nothing here is
+scheduled yet (ROADMAP M3 item 6), and C14-C16 wait for C13: D27 wants the
+design for Explorer's desktop settled before any of the code lands.
+
+- **C13. Design the lasso on Explorer's desktop (senior, design).**
+  **[needs decision]** With takeover off, Explorer draws the lasso and shows
+  its own menu, and DeskSpace is told neither. Answer these, with a spike
+  where a claim needs measuring, and propose one design to the maintainer:
+  - *Learning the rectangle.* The candidate is a `WH_MOUSE_LL` hook that
+    records a right drag over the desktop's window. `win32/outside_click.rs`
+    holds one only while a pop-up is open; this one would stay for as long
+    as DeskSpace runs, so every mouse event in the session would cross the
+    hook's thread, and Windows can drop a low-level hook after a stall, as
+    P32 found for the keyboard's (`win32/keyboard.rs`). Say which thread
+    runs it, what it costs, how a dropped hook is noticed and put back, and
+    whether anything cheaper gives the rectangle.
+  - *The menu.* Explorer's desktop menu shows DeskSpace's registry verbs
+    (`desktop_verbs` in `app/visibility.rs`), which have fixed labels and no
+    lens entry, and each re-launches DeskSpace with a flag (`--new-space`)
+    that signals the running copy. Say how "New space here", "New lens
+    here…", and "New space with these N items" reach that menu, or what
+    stands in for them, how the rectangle gets from the hook to the copy
+    that creates the space, and for how long after the drag it still counts.
+  - *The icons inside.* Say how DeskSpace learns which of Explorer's icons
+    the lasso held, for the count and for the move.
+  - *Safety.* The hook must never swallow or delay a mouse event, and must
+    do nothing while takeover is on (C15 covers that desktop).
+  - Done when: the maintainer has chosen, D27 is amended with the choice,
+    and C16 below is rewritten as tasks that leave nothing to design.
+
+- [ ] **C14. The rectangle of a drawn space (pure; core).** After: C13.
+  - Add one pure function beside `drop_space_origin` in
+    `deskspace-core/src/placement.rs`. It takes the drawn rectangle, the
+    monitor's work area, `snap`, whether `fit_to_grid` is on, and the new
+    space's `ViewMetrics` and chrome height, and returns the space's rect by
+    D27's "The rectangle" rule.
+  - A lasso can be drawn in any direction, so normalize the rectangle first.
+    Snap with `snap_rect`; fit whole cells with `ViewMetrics::fit_rect`, and
+    take the smallest size from `ViewMetrics::min_size`, both as a resize
+    does (`app/pointer/`), so a drawn space and a resized one agree.
+  - Tests: a lasso drawn up and to the left; one smaller than the minimum;
+    one that crosses the work area's edge; `fit_to_grid` on and off; a view
+    whose rows fill the width (Details), where only the height fits.
+  - Done when: the gates pass with the new tests. No caller yet.
+
+- [ ] **C15. The lasso on the taken-over desktop (app).** After: C13, C14.
+  - A right-button drag from an empty spot of the layer starts the same
+    `Drag::Marquee` a left drag does there (`app/pointer/mod.rs`,
+    `Surface::Desktop`) and selects the loose icons it covers. A right
+    press on an item, or a right click that never becomes a drag, behaves
+    as today.
+  - On release, `show_desktop_menu` (`app/menus.rs`) is given the drawn
+    rectangle. Its first entries become "New space here" and "New lens
+    here…", plus "New space with these N items" when the lasso selected
+    loose icons; the rest of the menu, Explorer's part included, is
+    unchanged. Each is a `MenuId` with its row in the menu tables, by the
+    recipe for a menu entry.
+  - "Here" skips `new_space_spot`: the rect comes from C14, on the monitor
+    that holds most of the lasso, and goes to `open_new_space` or, for a
+    lens, the `Command::CreateLens` that `create_lens` builds. "With these
+    N items" then moves the selected loose icons in by the path a loose
+    item dropped on a space takes (ROADMAP D7), inside the same undo entry.
+  - Tests: the menu's entries with and without a lasso and with and without
+    icons in it; undo of each new entry puts the desktop back, icons
+    included.
+  - `CHANGELOG.md` gets its line when C16 lands too (D27: both desktops).
+  - **[needs human]** Add a section V row: with takeover on, right-drag on
+    the desktop, in each direction and across a monitor edge, with the snap
+    setting on and off; each entry; Ctrl+Z after each; a plain right click
+    still shows the old menu and places a new space by D10.
+
+- **C16. The lasso on Explorer's desktop (platform, app).** After: C13,
+  C14. Still to design: C13 rewrites this entry as ready tasks. It ends
+  F-69: the ROADMAP section 7 row, `CONTEXT.md`, and the `CHANGELOG.md` line
+  for the whole feature land with its last task.
+
 ## N. Packs and automation (extensions)
 
 How people extend DeskSpace without forking it (review, 2026-11-03). There are

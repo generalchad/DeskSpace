@@ -906,6 +906,34 @@ A native, lightweight, offline Windows desktop organizer that:
     page, which it describes.
   - Work items: `TASKS.md` section G, and S11 and S12 (amended the same day).
 
+- **D27. Draw a space on the desktop (2026-11-13, maintainer).** Decides
+  F-69.
+  - *The gesture.* A right-button drag that starts on an empty spot of the
+    desktop draws a lasso rectangle, as it does in Explorer. The menu that
+    opens on release offers "New space here" and "New lens here…", and the
+    new space or lens takes the drawn rectangle. A right click without a
+    drag is unchanged: the plain entries, placed by D10.
+  - *The rectangle.* The space takes the drawn position and size, snapped
+    to `snap`. With "Snap resized spaces to whole columns and rows" on
+    (`GridSpec::fit_to_grid`), its size fits whole cells of the new space's
+    view, as a resize does (D22). It is never smaller than that view's
+    smallest size and stays inside its monitor's work area. D10's placement
+    does not apply, so it may overlap another space: the user drew it there.
+  - *Icons inside.* "New space here" makes an empty space. When the lasso
+    holds desktop icons, a second entry, "New space with these N items",
+    also moves them in, as a drop into a space does. A lens never takes
+    them, since it shows a folder.
+  - *Undo.* One entry each, as a new space or lens is today (D11); "with
+    these N items" is still one entry.
+  - *Both desktops, as one piece of work.* It works on the taken-over
+    desktop, where DeskSpace owns the right button and the menu, and on
+    Explorer's own (takeover off, the default). F-69 is done only when it
+    works on both. On Explorer's desktop DeskSpace has to learn the
+    rectangle from outside, and Explorer's menu carries only DeskSpace's
+    registry verbs (F-52), so that half needs a design: `TASKS.md` C13,
+    settled before any of the code lands.
+  - Work items: `TASKS.md` C13-C16.
+
 ## 3. Guiding principles
 
 - **Keep the domain pure.** All new behavior is a `Command` variant in
@@ -1053,6 +1081,10 @@ Remaining:
 5. Settings window polish (F-68, D26): the highlight fades, a space's
    header pairs its icon and name, long names scroll, and pages group their
    fields on cards (`TASKS.md` section G).
+6. Draw a space on the desktop (F-69, D27): a right-drag lasso, then "New
+   space here" or "New lens here…" at the drawn rectangle, on the taken-over
+   desktop and on Explorer's (`TASKS.md` C13-C16). Not scheduled: it is not
+   in section 4's "Next" list.
 
 Exit criteria: every runtime setting can be edited in the UI, and the tray
 menu can show and hide spaces and open settings.
@@ -1375,6 +1407,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-66 | Measuring guides while moving or resizing a space: alignment lines, gaps in pixels, and equal-gap and equal-size marks (optional) | M6 | Open; decided in D21 (M6 item 4) |
 | F-67 | A lens follows its folder when it is renamed or moved | M4 | Done; check pending (`TASKS.md` V: W45); decided in D19 |
 | F-68 | Settings window polish: a fading highlight, a one-line icon and name header, scrolling long names, and cards | M3 | Open; decided in D26; S11, S12, G1-G6, and G10-G12 are built; G7 and G8 are built and confirmed; G9 is `TASKS.md` section G |
+| F-69 | Draw a space or lens on the desktop: a right-drag lasso, then "New space here" or "New lens here…" at the drawn rectangle, fitted to the grid | M3 | Open; decided in D27; its design for Explorer's desktop comes first (`TASKS.md` C13) |
 
 
 ## 8. Open questions
