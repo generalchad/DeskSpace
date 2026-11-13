@@ -7,6 +7,12 @@ Notable changes to DeskSpace, newest first. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-13
+
+"Lenses": a space can show a folder's live contents, and every space gets
+Explorer's eight views. It follows `0.3.0-alpha.1` (2026-11-05); the first
+seven entries under "Fixed" are new since that pre-release.
+
 ### Upgrading from 0.2.x
 
 - v0.2.4 has no update feed, so install v0.3.0 by hand, from the installer
@@ -19,74 +25,6 @@ Notable changes to DeskSpace, newest first. The format follows
   every space is left.
 - The builds are not code-signed yet, so Windows SmartScreen warns before
   the first run.
-
-### Fixed
-
-- Medium, Large, and Extra large icons now lay items out in columns as wide
-  as Explorer's, so three Extra large columns fit where Explorer's do. Before,
-  each cell grew with the icon, and three Extra large columns needed about
-  1,500 pixels. As in Explorer, an Extra large icon stays 256 pixels on a
-  high-DPI display.
-- Windows' "Replace or Skip Files", progress, and error windows for a drop,
-  paste, delete, or rename that DeskSpace started now open in front of other
-  apps. Before, one could open behind the app in use, and DeskSpace looked
-  frozen until it was found and answered.
-- On Windows 11 with transparency effects on, clicking an item no longer
-  leaves a space showing an old picture of itself, another space's items, or
-  nothing. Selected items now show as selected again.
-- Ctrl+clicking or Shift+clicking an item in a second space starts a new
-  selection there, as clicking in another Explorer window does. Before, the
-  first space's items stayed selected out of sight, and Delete, Copy, or Cut
-  acted on them too. Check-box ticks also stay with their space.
-- Starting DeskSpace while it is already running, for example from the Start
-  menu, shows the running copy's spaces instead of starting a second copy over
-  it. Each settings file is one instance, so a scratch `--config` still runs
-  beside the real one.
-- If the settings file exists but cannot be read when DeskSpace starts
-  (another program holds it open, or a roaming profile has not synced yet),
-  DeskSpace waits a moment, then shows a message naming the file and does
-  not start, rather than start with a new layout that could later be saved
-  over yours. The file is left unchanged.
-- Moving a file into DeskSpace's storage, back out to the desktop, or back
-  again with Undo never replaces a file that appears at the same name at the
-  same moment. A drop picks the next free name instead, and Undo says it
-  cannot undo.
-
-## [0.3.0-alpha.1] - 2026-11-05
-
-The first pre-release of 0.3, "Lenses". It is for testing: much of it has
-not yet been checked on screen, and the known issues below are fixed before
-0.3.0.
-
-### Upgrading from 0.2.x
-
-- 0.2.x cannot update itself to this version (its update channel was never
-  configured), so install it by hand, from the installer or the zip. Your
-  spaces and settings carry over. Because this is a pre-release, keep a copy of
-  your settings file first:
-  `%APPDATA%\DeskSpace\DeskSpace\config\deskspace.toml`.
-- From this version on, the in-app updater can find and install new releases.
-  It looks only at full releases, so this pre-release finds no update until
-  0.3.0 is out.
-
-### Known issues
-
-- Starting DeskSpace again while it runs, for example from the Start menu,
-  starts a second copy over the first. Exit one from its tray icon.
-- If the settings file exists but cannot be read when DeskSpace starts (another
-  program holds it open, or a roaming profile has not synced yet), DeskSpace
-  starts with a new layout and can later save it over your old one. Keep the
-  copy suggested above.
-- A Replace or Skip window, or a copy's progress window, can open behind other
-  windows, so DeskSpace looks stuck. Alt+Tab finds it.
-- After DeskSpace stalls for a second or more, keys such as Delete, F2, and the
-  arrows can stop working on spaces. Restarting DeskSpace brings them back.
-- Large and Extra large icons use cells bigger than Explorer's; their size
-  changes in 0.3.0.
-- In a rare race, a file moved into DeskSpace's storage can replace one that
-  appears there with the same name at the same moment.
-- The builds are not code-signed yet, so Windows SmartScreen warns before the
-  first run.
 
 ### Added
 
@@ -209,6 +147,35 @@ not yet been checked on screen, and the known issues below are fixed before
 
 ### Fixed
 
+- Medium, Large, and Extra large icons now lay items out in columns as wide
+  as Explorer's, so three Extra large columns fit where Explorer's do. Before,
+  each cell grew with the icon, and three Extra large columns needed about
+  1,500 pixels. As in Explorer, an Extra large icon stays 256 pixels on a
+  high-DPI display.
+- Windows' "Replace or Skip Files", progress, and error windows for a drop,
+  paste, delete, or rename that DeskSpace started now open in front of other
+  apps. Before, one could open behind the app in use, and DeskSpace looked
+  frozen until it was found and answered.
+- On Windows 11 with transparency effects on, clicking an item no longer
+  leaves a space showing an old picture of itself, another space's items, or
+  nothing. Selected items now show as selected again.
+- Ctrl+clicking or Shift+clicking an item in a second space starts a new
+  selection there, as clicking in another Explorer window does. Before, the
+  first space's items stayed selected out of sight, and Delete, Copy, or Cut
+  acted on them too. Check-box ticks also stay with their space.
+- Starting DeskSpace while it is already running, for example from the Start
+  menu, shows the running copy's spaces instead of starting a second copy over
+  it. Each settings file is one instance, so a scratch `--config` still runs
+  beside the real one.
+- If the settings file exists but cannot be read when DeskSpace starts
+  (another program holds it open, or a roaming profile has not synced yet),
+  DeskSpace waits a moment, then shows a message naming the file and does
+  not start, rather than start with a new layout that could later be saved
+  over yours. The file is left unchanged.
+- Moving a file into DeskSpace's storage, back out to the desktop, or back
+  again with Undo never replaces a file that appears at the same name at the
+  same moment. A drop picks the next free name instead, and Undo says it
+  cannot undo.
 - A lens on a very large folder no longer stalls every space when it refreshes
   or when its sort or filters change: its list is built in the background.
 - A locked lens places its items instead of stacking them.
@@ -391,8 +358,8 @@ The first public release (preceded by `0.2.0-alpha.1` the same day).
   settings window with live preview.
 - A portable zip and an NSIS installer.
 
-[Unreleased]: https://github.com/generalchad/DeskSpace/compare/v0.3.0-alpha.1...HEAD
-[0.3.0-alpha.1]: https://github.com/generalchad/DeskSpace/compare/v0.2.4...v0.3.0-alpha.1
+[Unreleased]: https://github.com/generalchad/DeskSpace/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/generalchad/DeskSpace/compare/v0.2.4...v0.3.0
 [0.2.4]: https://github.com/generalchad/DeskSpace/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/generalchad/DeskSpace/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/generalchad/DeskSpace/compare/v0.2.1...v0.2.2
