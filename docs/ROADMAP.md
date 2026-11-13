@@ -933,10 +933,14 @@ A native, lightweight, offline Windows desktop organizer that:
 **Released:** v0.2.0 (2026-10-13, the first public release), v0.2.1 (in-app
 update checking, F-45), v0.2.2 (adding shortcuts to spaces, F-50/F-53), v0.2.3
 (the space menu's Add files, F-55, and the right-button drag, F-36), and
-v0.2.4 (animations, F-33, and the debug window, F-61). Takeover ships opt-in
-(D8, D9). Pre-release: v0.3.0-alpha.1 (2026-11-05, decided by the
-maintainer ahead of the v0.3.0 gate in item 3 below), everything built since
-v0.2.4, with the gate's open issues listed as known issues.
+v0.2.4 (animations, F-33, and the debug window, F-61), and v0.3.0
+(2026-11-13, "Lenses": M4 and everything else built since v0.2.4, and the
+first release with an update feed; section 6 lists it). Takeover ships
+opt-in (D8, D9). v0.3.0 followed the pre-release v0.3.0-alpha.1
+(2026-11-05). It was tagged (maintainer) with every fix of its gate landed
+and the gate's checks still open: the lens, file, undo, install, and update
+rows of `TASKS.md` section V, which section Z now runs against the release.
+The keyboard hook's stall (P32) shipped as a known issue.
 
 **Done:** M0 (foundations), M1 (renderer and Windows 11 look), and M4
 (lenses, phases 0-5).
@@ -944,8 +948,8 @@ v0.2.4, with the gate's open issues listed as known issues.
 **In progress:** M2 (only the stored-file watch remains), M3 (entries that
 wait on later milestones or design), and M5's space icons (built, the picker
 and the settings header included; their checks are pending).
-Undo (D11), drawn shadows (D15), and lenses (M4 phases 1-5) have landed since
-v0.2.4 and ship in the next release. Section 5 lists what each has done.
+Undo (D11), drawn shadows (D15), and lenses (M4 phases 1-5) shipped in
+v0.3.0. Section 5 lists what each has done.
 
 **Next, in order** (decided 2026-10-31, maintainer: performance first, then
 the release path; amended the same day: the icon picker moves after v0.3.0,
@@ -957,35 +961,16 @@ checks collect in `TASKS.md` section V and no longer block work):
 2. **[done] The signing key and the icon set** (2026-11-02): the minisign key
    is an Actions secret and its public half is compiled in (D6), and the
    Fluent set is published (`icons-fluent-r1`, S5).
-3. **v0.3.0** (decided 2026-11-05, maintainer: release before starting more
-   work; `TASKS.md` section Z is the plan). Until it is tagged, only section
-   Z's tasks, the fixes it names, docs, and log-only tasks land, plus (added
-   2026-11-09, maintainer) the compiler-proven neutral ones: a lint and the
-   fixes it asks for (P43), comment-only sweeps (Q8), and deleting code
-   nothing calls. New features, effects, and refactors, file splits
-   included, wait. The gate:
-   - *Fixes:* the fixed views' cell (P14c, before a saved space needs a
-     migration), a config that cannot be read is never replaced (P35), one
-     DeskSpace per config (P36), no file replaced when moving into storage
-     (P37), and the shell's dialogs in front (P46). The icon picker's
-     remaining freezes (B45, B47, B48) land if they are ready. The keyboard
-     hook's stall (P32) waits for its design and ships as a known issue.
-   - *Checks:* the lens rows of `TASKS.md` section V, every row about files,
-     undo, install, or update, and the gate fixes' own rows. The rest ship
-     as "check pending" in section 7, as v0.2.x did.
-   - *Users:* a config written by v0.2.4 loads unchanged. v0.2.4 has no
-     update feed (its key was empty), so its users install v0.3.0 by hand;
-     v0.3.0 is the first release the in-app updater can reach, and the dry
-     run (R12) checks that feed before the tag.
-4. **The human test compendium** (`TASKS.md` section V, R7) for the rows the
-   release did not need, starting with the checks a script can make
-   (section O). L1's findings (section L) join it.
-5. **Code signing** (R10), when SignPath approves it.
-6. **After v0.3.0, the planned work** (`TASKS.md`, 2026-11-05): the UI
-   thread's measurements and trims (B51-B55), the file splits (K10-K18) and
-   the comment sweep (Q8), and the animations (section T, with Burn's
-   groundwork T41 first). Section Y holds brainstormed ideas awaiting a
-   decision.
+3. **The human test compendium** (`TASKS.md` section V, R7): first the rows
+   v0.3.0 shipped ahead of (`TASKS.md` section Z, with the dry run on clean
+   machines, R12, and the first update through the feed, v0.3.0 to v0.3.1),
+   then the rest, starting with the checks a script can make (section O).
+   L1's findings (section L) join it.
+4. **Code signing** (R10), when SignPath approves it.
+5. **The planned work** (`TASKS.md`, 2026-11-05): the UI thread's
+   measurements and trims (B51-B55), the file splits (K10-K18), and the
+   animations (section T, with Burn's groundwork T41 first). Section 8
+   holds brainstormed ideas awaiting a decision.
 
 Not next: mapping Explorer's desktop view mode. The desktop offers only the
 three icon views, and its Small icons keep labels below, so F-40 closes with
@@ -1298,10 +1283,10 @@ catalog.
   of M2 and M3, with takeover opt-in (D8, D9). The rest of M2 and M3 (the
   stored-file watch, the desktop verbs) ships in a v0.2.x release or with
   v0.3, as the maintainer decides. Undo (D11) landed after v0.2.4.
-- **v0.3 "Lenses"**: M4, phases 0-5 (D18, amended 2026-10-31). It also
-  ships everything else built since v0.2.4: undo (D11), drawn shadows
-  (D15), theme files (F-58), space icons (D16), the settings window's
-  polish (D26), and the first update feed (D6).
+- **v0.3 "Lenses"** (v0.3.0, section 4): M4, phases 0-5 (D18, amended
+  2026-10-31). It also ships everything else built since v0.2.4: undo (D11),
+  drawn shadows (D15), theme files (F-58), space icons (D16), the settings
+  window's polish (D26), and the first update feed (D6).
 - **v0.4 "Flow"**: M5.
 - **v0.5 "Rooms"**: M6, M7.
 - **v1.0**: M8.
@@ -1313,7 +1298,9 @@ catalog.
 
 This is the single list of features, which also serves as the feature parity
 checklist. "Check pending" means the feature is implemented and unit-tested
-or smoke-tested, but has not yet been confirmed on screen. Global settings
+or smoke-tested, but has not yet been confirmed on screen. Every row that
+was Done, Built, or Partial on 2026-11-13 shipped in v0.3.0 as its status
+describes it, pending checks included. Global settings
 belong in `Theme` / `WindowSettings` (a look setting in `Theme` is per space too,
 through `SpaceLook`), and other per-space state in `Space`, as
 `#[serde(default)]` fields changed through `Command`s.
@@ -1364,7 +1351,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-42 | Rubber-band, Ctrl+A, multi-item drag | M2 | Done within one space; check pending |
 | F-43 | Info tips, compressed/encrypted colors, Explorer spacing | M2 | Done; check pending |
 | F-44 | Title bar style (duplicate) | - | Merged into F-28 |
-| F-45 | Auto-update from GitHub Releases | M8 | Done (D6; `TASKS.md` E8-E11); check pending; the minisign key is a maintainer setup step |
+| F-45 | Auto-update from GitHub Releases | M8 | Done (D6; `TASKS.md` E8-E11); v0.3.0 is the first release with a signed feed, so the first update through it is v0.3.0 to v0.3.1; check pending (`TASKS.md` Z7c) |
 | F-46 | Per-space looks in the settings window (scopes pane, Customize switch, highlight) | M3 | Done; check pending (`TASKS.md` H5, H4) |
 | F-47 | Desktop overview map (monitors, wallpaper, miniature spaces) | M6 | Open; after F-19 and F-12 |
 | F-48 | Item display presets (Match Explorer / Custom; more presets and import/export later) | M3, M6 | Partial: `Match Explorer's display` / `Custom` dropdown (`TASKS.md` C5); named presets open (C6), sharing through theme files (C10) |
@@ -1467,6 +1454,13 @@ commit.
   (documented: `IsWindowOnCurrentVirtualDesktop`, `MoveWindowToDesktop`).
   Whether it works on DeskSpace's never-activated tool windows needs a spike
   first. Medium; it touches F-12 (pages), so decide them together.
+- **Y15. A pre-release channel.** **[needs decision]** A setting lets an
+  install follow pre-releases too, so one pre-release can update to the
+  next and a release's update can be rehearsed before it is cut (found
+  2026-11-05: GitHub's "latest" never names a pre-release). Fit: a second
+  feed beside `UPDATE_ENDPOINT` in `deskspace-update`, which `release.yml`
+  would publish for every tag, and one `WindowSettings` field. Small to
+  medium. Recommended before v0.4.0's first pre-release.
 
 #### Quirks
 

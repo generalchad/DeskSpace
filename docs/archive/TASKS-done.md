@@ -7096,3 +7096,5 @@ takes an id listed here or used anywhere above
 - **P14.** Give the fixed icon views their own cell.
 - **B47.** Keep the search index while the picker is open (platform).
 - **B48.** Draw each icon once while the picker is open (platform).
+- **Z7b.** Decide how the first update feed is tested (maintainer).
+- **Z8.** Cut v0.3.0 (maintainer).

@@ -13,14 +13,10 @@ Built-but-unconfirmed work is listed in section V.
 **Urgent first:** a task marked **[urgent]** goes ahead of everything else in
 its section.
 
-**Release first:** until v0.3.0 is tagged, take section Z's tasks and the
-fixes it names, and land nothing else but docs, log-only tasks, and the
-neutral work ROADMAP section 4 item 3 lists (decided 2026-11-05, widened
-2026-11-09). The list below is for after the tag, or for that work
-meanwhile.
-
 **Pick a task:** these are ready for any contributor, now that human checks
 are collected in section V instead of blocking:
+- section Z's check batches (Z5a-Z5g), for anyone with a screen, and Z7a
+  and Z7c, for anyone with a clean VM: v0.3.0 shipped before them;
 - section P's "Juniors and interns" list, the best place for a first task,
   ranked most severe first, so take one from the top;
 - section B's icon picker tasks: B49 next; then B53 from "Measure and trim
@@ -358,45 +354,33 @@ ROADMAP D16, amendments included, is the spec.
 
 ---
 
-## Z. Release v0.3.0 (ROADMAP section 4, decided 2026-11-05)
+## Z. v0.3.0's checks, after the tag (ROADMAP section 4)
 
-The maintainer chose to release before starting more work. ROADMAP section
-4, item 3, holds the gate; this section is the plan. **Until v0.3.0 is
-tagged, take these first**, and land only them, the gate's fixes, and what
-"Release first" above allows; every other task waits. When the tag is out, retire this
-section and lift the freeze in the same commit (Z8).
+v0.3.0 was tagged on 2026-11-13 (maintainer) with every fix of its gate
+landed and the gate's checks, Z5 and Z7, not yet run. They stay open here
+and run against the released v0.3.0. Nothing waits for them: the freeze on
+other work ended with the tag.
 
-v0.3.0-alpha.1 went out first, as a pre-release (maintainer, 2026-11-05),
-with the gate still open. Its `CHANGELOG.md` section already has the upgrade
-note, the known issues, and the entries Z2 found missing, so Z2 and Z6 now
-check that section against what lands after it. It is also R12's first
-install (Z7). The 0.3.0 section gathers the alpha sections into one.
+A check that fails becomes a fix task in section P for v0.3.1, unless the
+maintainer keeps it as a known issue; then it joins "Known issues" in
+`CHANGELOG.md`'s "Unreleased" section. P32 shipped as one.
 
-The gate's fixes are in section P, marked **[urgent] (v0.3.0)**: P14c,
-P35, P36, P37, P46, P49, and P50. B45, B47, and B48 have landed. P32 does
-not; Z6 lists it as a known issue.
+Who takes what:
 
-Who takes what (split 2026-11-07, so juniors and interns can carry most of
-the gate):
-
-- **Juniors:** Z2, Z3, Z6, and P14c.
 - **Interns with a screen:** the Z5 batches, Z7a, and Z7c.
-- **A senior:** P36 and P46, both landed, each with its junior half.
-- **The maintainer:** what Z5's failures become, Z7b, and Z8.
+- **The maintainer:** what the failures become.
 
-- [ ] **Z5. Pass the marked rows (maintainer).** **[needs human]** After: Z4
-  and the gate's fixes. R7, limited to the `(v0.3)` rows, scripted ones
-  first (section O). Rule 8 and section V's rules hold: a passing row is
-  deleted, a failing one becomes a fix task here that joins the gate, unless
-  the maintainer ships it as a known issue (then Z6 lists it).
+- [ ] **Z5. Pass the marked rows (maintainer).** **[needs human]** R7,
+  limited to the `(v0.3)` rows, scripted ones first (section O). Rule 8 and
+  section V's rules hold: a passing row is deleted, and a failing one is
+  handled as above.
   - Split into batches, one intern and one sitting each, grouped by the
-    setup they share. A batch can start once the fixes its rows depend on
-    have landed; the rest of the gate need not wait. Rows for P36 and P46
-    join batches Z5g and Z5d when those fixes land; P49 and P50 join Z5d.
+    setup they share. The rows for P36 and P46 are in batches Z5g and Z5d;
+    those for P49 and P50 are in Z5d.
   - Until P49 (found 2026-11-08), a space drawn through composition could
     show an old frame, another space's, or nothing after a click. Any row a
     batch passed on a build without it, where the picture matters, is run
-    again.
+    again. v0.3.0 has the fix; v0.3.0-alpha.1 does not.
   - Rules for every batch:
     - Run `./scripts/dev.ps1` for a scratch config, never the real one.
       Never pass `-Fresh` without asking the maintainer first: it deletes the
@@ -433,41 +417,25 @@ the gate):
     Update install failure) need an installed build, so they go with Z7a and
     Z7c.
 
-- [ ] **Z7. The dry run on clean machines (maintainer).** After: Z1-Z6 and
-  the gate's fixes. R12 (section D) is the checklist, with
-  `0.3.0-alpha.1` (the version in `Cargo.toml` today) and then
-  `0.3.0-alpha.2`. It is the first release with an update feed, so the
-  alpha.1 to alpha.2 update is the check that matters most. Record the
-  findings as R12 says; a failure is a fix task here.
-  - **[needs decision]** Found 2026-11-05, after alpha.1 shipped: the
-    updater reads `releases/latest/download/latest.json` (`UPDATE_ENDPOINT`
-    constant in `deskspace-update/src/lib.rs`), and GitHub's "latest" never
-    names a pre-release, so no alpha can update to another alpha. Options:
-    (a) publish alpha.2 as a full release for the test, then mark it a
-    pre-release again (simple, but every v0.3 install sees it meanwhile);
-    (b) test the feed with the final v0.3.0 itself, and keep a v0.3.0
-    install updating to a v0.3.1 as the first real check; (c) a pre-release
-    channel the updater can opt into (a setting and a second feed: new work,
-    after v0.3.0). Recommended: (b) now, (c) as an idea in ROADMAP section 8.
+- [ ] **Z7. The dry run on clean machines (maintainer).** R12 (section D)
+  is the checklist, with v0.3.0. It is the first release with an update
+  feed, so the update to v0.3.1 is the check that matters most. Record the
+  findings as R12 says.
+  - Decided 2026-11-13 (maintainer): the feed is tested with v0.3.0
+    itself, and a v0.3.0 install updating to v0.3.1 is its first real
+    check. The updater reads `releases/latest/download/latest.json`
+    (`UPDATE_ENDPOINT` constant in `deskspace-update/src/lib.rs`), and
+    GitHub's "latest" never names a pre-release, so no pre-release can
+    update to another. A pre-release channel is ROADMAP section 8's Y15.
   - [ ] **Z7a (intern; clean VMs). Install, run, uninstall.** On clean
-    Windows 10 and 11 VMs, with the latest pre-release the maintainer has
-    published, every R12 check except the update itself: the zip's
-    contents, the extracted exe, the installer, the uninstall, and what
-    SmartScreen shows. Add the rows E5-E7, E12, and Update install failure
-    as far as they go without a newer release. Record the findings as R12
-    says. A first pass on `0.3.0-alpha.1` may start now, to find install
-    problems early; repeat it once the gate's fixes are in a pre-release.
-    alpha.1 has P49's bug, so judge nothing visual on it.
-  - [ ] **Z7b (maintainer).** The **[needs decision]** above.
-  - [ ] **Z7c (intern; clean VM). The update.** After Z7b, the check it
-    chose. With (b): install v0.3.0 and keep the VM for v0.3.1. Also E10,
-    E11, and F-45 automatic install.
-
-- [ ] **Z8. Cut v0.3.0 (maintainer).** After: Z7. Follow `RELEASING.md`'s
-  checklist, version `0.3.0`. Then, in one `docs:` commit: ROADMAP section 4
-  lists v0.3.0 as released and drops item 3 from "Next"; section 7's feature
-  statuses say what shipped; this section's tasks are retired as rule 7
-  says, and the freeze sentence in "Pick a task" goes.
+    Windows 10 and 11 VMs, with v0.3.0, every R12 check except the update
+    itself: the zip's contents, the extracted exe, the installer, the
+    uninstall, and what SmartScreen shows. Add the rows E5-E7, E12, and
+    Update install failure as far as they go without a newer release.
+    Record the findings as R12 says.
+  - [ ] **Z7c (intern; clean VM). The update.** Install v0.3.0 and keep
+    the VM until v0.3.1 is out, then update to it. Also E10, E11, and F-45
+    automatic install.
 
 ## B. Code health (any contributor)
 
@@ -2200,8 +2168,10 @@ the ROADMAP decision ids (`D1`-`D9`).
     Start-menu shortcut;
   - uninstalling removes the install root, the Run value, and the desktop
     verb, and leaves the storage folder and the config (E7);
-  - install `alpha.1`, publish `alpha.2`: the manual tray check offers it and
-    the update restarts into `alpha.2` with the same spaces (E10/E11);
+  - install one full release and publish the next: the manual tray check
+    offers it and the update restarts into it with the same spaces
+    (E10/E11). A pre-release cannot stand in for either, since the feed
+    never names one (Z7);
   - what SmartScreen shows.
 
   Record the findings in `CONTEXT.md` section 10.
@@ -2461,7 +2431,7 @@ for a machine that has it.
 | C7 (part script) (F-18) | Each hotkey fires once bound; a conflicting binding is reported beside its field and the window stays open; clearing a binding stops it. |
 | C8 (script) (F-17) | A space created from the space menu, the tray, and the hotkey uses the configured title, size, lock state, icon, and view (set the New spaces page's Show as to List with the status bar on); a locked new space keeps its size and scrolls. |
 | E1, E2 (part script) | `deskspace.exe` shows the icon in Explorer's small, medium, and extra-large views and the version under Properties > Details; the tray, settings title bar, and Shift+right-click desktop verb show the icon at 100 % and 150 %. Run with `./scripts/dev.ps1 -RealConfig` so the desktop verb is the installed build's. |
-| E5-E7, E10-E12 (v0.3) (part script) | Covered by the R12 dry run (installer, uninstall, the watchdog in the zip, update from one pre-release to the next). |
+| E5-E7, E10-E12 (v0.3) (part script) | Covered by the R12 dry run (installer, uninstall, the watchdog in the zip, update from one release to the next). |
 | F-45 automatic install (v0.3) (part script) | Installed build with a feed: turn on both update toggles; after a check finds a newer release, the tray shows "Restart to update to X"; 10 minutes without input (no full-screen app) installs silently and DeskSpace comes back with the same spaces, with takeover on the desktop icons are never left blank; the tray entry installs at once with a progress window; a portable copy greys the install toggle. |
 | Update install failure (v0.3) (part script) | Installed build with a feed and a newer release: in PowerShell set `$env:TEMP` and `$env:TMP` to a missing drive (`Z:\none`), start `%LocalAppData%\DeskSpace.App\deskspace.exe --hidden`, then "Check for updates…" → "Update and restart": DeskSpace quits, comes back hidden on the old version with the same spaces, and a "DeskSpace was not updated" box in front of other windows names the error. With takeover on, the desktop icons are never left blank. |
 | F1-F5 (v0.3) (part script) | F2 with no item selected renames the space title, with one selected the file; Alt+Enter opens Properties, or Settings with nothing selected; Enter opens the item; Esc clears the selection and still closes an open menu; Shift+Delete bypasses the Recycle Bin. With takeover on, Delete and Shift+Delete on one and on several selected loose desktop icons do the same, and the icons leave the layer at once. |
