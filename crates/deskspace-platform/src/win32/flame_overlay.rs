@@ -25,7 +25,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{PCWSTR, w};
 
 use crate::render::burn::{BurnField, FlameBase};
-use crate::render::flames::{self, MARGIN_SIDE, MARGIN_TOP, SPACING, Tongue};
+use crate::render::flames::{self, MARGIN_SIDE, MARGIN_TOP, Rows, SPACING, Tongue};
 use crate::win32::space_window;
 use crate::win32::window_class::{self, WindowClass};
 
@@ -48,6 +48,8 @@ pub(crate) struct FlameOverlay {
     field: BurnField,
     bases: Vec<FlameBase>,
     tongues: Vec<Tongue>,
+    /// The rows of `bits` the last frame drew, which the next one clears.
+    drawn: Rows,
     space_height: f32,
 }
 
@@ -117,6 +119,7 @@ impl FlameOverlay {
                 field: BurnField::for_size((rect.width as f32, rect.height as f32), detail),
                 bases: Vec::new(),
                 tongues: Vec::new(),
+                drawn: Rows::ALL,
                 space_height: rect.height as f32,
             })
         }
@@ -144,7 +147,7 @@ impl FlameOverlay {
         // nothing else touches them.
         let pixels =
             unsafe { std::slice::from_raw_parts_mut(self.bits, (width * height) as usize) };
-        flames::paint(pixels, width, height, &self.tongues, time);
+        flames::paint(pixels, width, height, &self.tongues, time, &mut self.drawn);
         // Per-pixel alpha from premultiplied source pixels.
         // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-updatelayeredwindow
         let blend = BLENDFUNCTION {

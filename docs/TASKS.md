@@ -19,8 +19,8 @@ are collected in section V instead of blocking:
   and Z7c, for anyone with a clean VM: v0.3.0 shipped before them;
 - section P's "Juniors and interns" list, the best place for a first task,
   ranked most severe first, so take one from the top;
-- section B's icon picker tasks: B49 next; then B53 from "Measure and trim
-  the UI thread";
+- section B's icon picker tasks: B49 next; then B54 from "Measure and trim
+  the UI thread", once T41b has landed;
 - section G (settings window polish): the pure half of G13;
 - section K (K10-K13, K15, K16, K18), each a pure move with rules that
   leave nothing to design; K18 first, since `undo.rs` is at the limit;
@@ -534,30 +534,16 @@ section 3, "Performance".
   - While an animation plays, a patch changes only the stored scene; the frame
     it draws keeps its snapshot.
 
-- [ ] **B53. Shade the flames with less work per pixel (platform).** Any
-  contributor; pure code.
-  - Why: `flames::paint` (`render/flames.rs`) runs on the UI thread for every
-    frame of a Burn. `paint_tongue` works out `below.powf(TIP_FALLOFF)` and
-    `brightness` for every pixel, though both depend only on the row and the
-    tongue, and `paint` clears the whole overlay (`pixels.fill(0)`), about
-    4.7 MB for a 1200 × 900 space, though the tongues cover a small part.
-  - Hoist the row and tongue constants out of the pixel loop. Have `paint`
-    clear only the rows the previous frame drew: it takes a `&mut Rows` (a new
-    pure type in `flames.rs`, the range of rows last drawn) that the overlay
-    keeps, and returns the rows it drew this time.
-  - Tests: copy today's `paint` into the test module as `reference_paint`. Over
-    several times, sets of tongues, and a frame of other tongues before each,
-    the new `paint` gives the same pixels. Keep every existing test.
-  - Measure a 1200 × 900 overlay over 60 frames with a throwaway `#[ignore]`
-    test, before and after.
-  - Collides with T29, which rewrites `paint_tongue`: take B53 first.
-
 - [ ] **B54. Upload only the rows the flames changed (platform; Win32).**
-  After: B53 and T41b. Senior review: `unsafe` Win32.
+  After: T41b. Senior review: `unsafe` Win32.
   - Why: `UpdateLayeredWindow` copies the whole overlay every frame.
   - Call `UpdateLayeredWindowIndirect` with `prcDirty` set to the union of this
-    frame's and the last frame's rows from B53, linked beside the call
+    frame's and the last frame's `Rows` (`render/flames.rs`), linked beside
+    the call
     (https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-updatelayeredwindowindirect).
+    `flames::paint` replaces the overlay's `Rows` with the frame's own, so copy
+    the last frame's before the call. `Rows` has no accessors yet; add the
+    ones the rect needs.
     The first frame, and the first after the overlay moves (`follow`), still
     send the whole window.
   - Measure the call with a `trace` line, before and after.
@@ -1210,7 +1196,7 @@ Rules for these, on top of section T's:
   branch's T22 row, rewritten for `main`.
 
 - [ ] **T46. A glow around the flames, on the CPU (platform).** **(junior)**
-  **[needs human]** After: T29 and B53.
+  **[needs human]** After: T29.
   - Why: T32 plans bloom on the GPU, and Windows 10 and the accent path will
     never have it. A cheap glow makes the CPU flames read as light, not paint.
   - In `flames::paint`, after the tongues: a quarter-size copy of the flame
@@ -1492,7 +1478,9 @@ ash, and looks the same at every DPI. One commit each, in order.
   - In a release build, a frame of flames for a 1200 × 900 space shades
     in under 4 ms. Measure it, log it at `trace`, and put the timing in
     the commit body.
-  - Tests: keep today's; the same seed and time give identical pixels,
+  - Tests: keep today's, except `reference_paint` and the two tests that
+    compare a frame with it: they pin the pixels this task changes on
+    purpose, so delete them; the same seed and time give identical pixels,
     and two times differ; `add` of two half-alpha pixels is brighter
     than either and stays premultiplied; two seeds give different tongue
     heights for the same bases.

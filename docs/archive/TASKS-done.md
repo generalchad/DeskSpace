@@ -7098,3 +7098,4 @@ takes an id listed here or used anywhere above
 - **B48.** Draw each icon once while the picker is open (platform).
 - **Z7b.** Decide how the first update feed is tested (maintainer).
 - **Z8.** Cut v0.3.0 (maintainer).
+- **B53.** Shade the flames with less work per pixel (platform).
