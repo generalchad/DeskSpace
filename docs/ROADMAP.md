@@ -999,7 +999,8 @@ opt-in (D8, D9). v0.3.0 followed the pre-release v0.3.0-alpha.1
 (2026-11-05). It was tagged (maintainer) with every fix of its gate landed
 and the gate's checks still open: the lens, file, undo, install, and update
 rows of `TASKS.md` section V, which section Z now runs against the release.
-The keyboard hook's stall (P32) shipped as a known issue.
+The keyboard hook's stall (P32) shipped as a known issue, and was fixed
+after the tag.
 
 **Done:** M0 (foundations), M1 (renderer and Windows 11 look), and M4
 (lenses, phases 0-5).

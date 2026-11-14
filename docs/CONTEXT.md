@@ -628,7 +628,7 @@ Everything with `unsafe` is under `win32/`:
 |------|---------|
 | Runtime and controller | `runtime`, `controller`, `tray`, `console`, `hotkey`, `outside_click` |
 | Windows | `window_class` and `window_state` (class registration and `GWLP_USERDATA` state; every window class uses both), `space_window`, `dwm`, `composition`, `drag_ghost`, `info_tip`, `menu`, `settings_window`, `icon_picker`, `debug_window`, `color_picker`, `dark_mode`, `dialog`, `app_picker`, `app_catalog`, `shortcut_dialog`, `zoom_bar` |
-| Input | `keyboard` (the low-level hook), `drop_target` |
+| Input | `keyboard` (the low-level hook), `key_modes` (what the hook is on for), `hook_thread` (the thread both hooks run on), `drop_target` |
 | Shell | `desktop_items`, `icons`, `glyphs`, `shell_items`, `shell_view`, `shell_selection`, `display_settings`, `clipboard`, `file_op`, `drag_image`, `folder_watch`, `shortcuts` |
 | Desktop takeover | `desktop_shell`, `desktop_icons`, `watchdog`, `desktop_entry` |
 | System | `system`, `dpi`, `autostart`, `file_move` (a move that never replaces a file) |
@@ -798,6 +798,11 @@ one arm in `App::on_event`, whose match is exhaustive.
   runs only while the desktop has the foreground, so another app keeps
   Ctrl+C/V. New keys join the `SELECTION_KEY` message or get their own when
   they carry data.
+- **The hook thread** (`win32/hook_thread.rs`): the keyboard hook and the
+  outside-press hook run on a thread that only waits for messages, so a
+  stall on the UI thread cannot make Windows drop them. The UI thread says
+  which hooks it wants and never waits for that thread; a hook procedure
+  reads atomics and posts to the controller. The module doc has the why.
 - **Clipboard** (`win32/clipboard.rs`, `win32/file_op.rs`): Ctrl+C/X write a
   `CF_HDROP` and "Preferred DropEffect" (`MOVE` for cut); cut items are drawn
   ghosted. Ctrl+V moves a listed item or copies external files through

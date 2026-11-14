@@ -119,7 +119,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | `Ui` methods, the message loop | `deskspace-platform/src/win32/runtime/` (`mod.rs`, `ui_spaces.rs`, `ui_input.rs`, `ui_shell.rs`, `ui_chrome.rs`) |
 | Controller window (tray, hotkeys, timers, `WM_APP` dispatch) | `deskspace-platform/src/win32/controller.rs` |
 | `WM_APP` message ids | `deskspace-platform/src/win32/messages.rs` |
-| Keys (spaces are never focused) | `deskspace-platform/src/win32/keyboard.rs` (`fn watched_key`) |
+| Keys (spaces are never focused) | `deskspace-platform/src/win32/keyboard.rs` (`fn watched_key`), `win32/key_modes.rs` (the hook's flags), `win32/hook_thread.rs` (the thread the keyboard and mouse hooks run on) |
 | Space window procedure, DWM, shadow window | `deskspace-platform/src/win32/space_window/` (`mod.rs`, `zorder.rs`, `mouse.rs`, `frame.rs`, `paint.rs`), `dwm.rs`, `shadow_window.rs`, `render/shadow.rs` |
 | An animation effect | `deskspace-core/src/animation.rs` (the tables), `deskspace-platform/src/render/transition.rs` (frame math), `render/d2d/` (drawing), `win32/space_animation.rs` (playing it on a window), `win32/overlay.rs` and `win32/layered_overlay.rs` (windows beside the space); the recipe is section T |
 | Drawing | `deskspace-platform/src/render/scene.rs`, `render/d2d/` (`mod.rs` the `Painter`, `chrome.rs` headers and the status bar, `effects.rs` an animation's resources, `prepared.rs` the `PreparedScene`, `drag_image.rs` the drag image) |
@@ -602,10 +602,10 @@ design for Explorer's desktop settled before any of the code lands.
     records a right drag over the desktop's window. `win32/outside_click.rs`
     holds one only while a pop-up is open; this one would stay for as long
     as DeskSpace runs, so every mouse event in the session would cross the
-    hook's thread, and Windows can drop a low-level hook after a stall, as
-    P32 found for the keyboard's (`win32/keyboard.rs`). Say which thread
-    runs it, what it costs, how a dropped hook is noticed and put back, and
-    whether anything cheaper gives the rectangle.
+    hook's thread, and Windows drops a low-level hook whose thread stalls,
+    which is why both hooks now run on `win32/hook_thread.rs`'s thread. Say
+    whether it joins them there, what it costs, how a dropped hook is
+    noticed and put back, and whether anything cheaper gives the rectangle.
   - *The menu.* Explorer's desktop menu shows DeskSpace's registry verbs
     (`desktop_verbs` in `app/visibility.rs`), which have fixed labels and no
     lens entry, and each re-launches DeskSpace with a flag (`--new-space`)
@@ -1848,32 +1848,6 @@ Logs, tooling, readability, docs, and checks that may close a task.
 
 These are in the order we would take them. Each lands alone.
 
-- [ ] **P32. Keep the keyboard hook alive through a stall (fix; key hook).** Windows
-  removes a low-level hook, and does not tell it, when the hook's thread does not
-  answer within `LowLevelHooksTimeout` (about a second). The hook runs on the UI
-  thread (`win32/keyboard.rs`). It stays installed while any space is current, and
-  `App::on_event` sets the flags after every event, so that is most of the time.
-  `HOOK` still holds the dead handle, so `refresh` never installs it again. After one
-  stall of a second or more, Delete, F2, Ctrl+C, the arrows, and type-to-select stop
-  working on spaces until every flag clears. A slow network lens, a save to a
-  redirected profile (P38), or a debug build at startup can each cause such a stall.
-  `outside_click.rs`'s mouse hook has the same weakness.
-  - P32a, in the junior list, adds the button that reproduces it: select an item,
-    press the button, then press F2.
-  - Design, then bring it to the maintainer:
-    - (a) Recommended: run both hooks on a thread of their own that only pumps
-      messages, so a stall on the UI thread can never time them out. The flags
-      become atomics that the UI thread sets. The hook already posts to the
-      controller, which works from any thread. Check that `typeahead_char` reads the
-      foreground thread's keyboard layout, not the hook thread's.
-    - (b) Cheaper: unhook and hook again on every press on a space, so the next
-      click mends it. Keys are still lost between the stall and that click.
-  - Tests for whatever becomes pure. `ENGINEERING.md` section 6, Keys, gets a line
-    saying which thread the hook runs on.
-  - **[needs human]** check, with P32a's button: after a stall, F2 and Delete still
-    work, at once with (a) or after one click with (b). The Keys-table rows in
-    section V still pass.
-
 - [ ] **P12. Mask a swallowed Alt combination, if it matters (fix; key hook).**
   Swallowing Alt+Enter, Alt+Left, or Alt+Up leaves the foreground window a lone
   Alt tap (`handle_watched`, `win32/keyboard.rs`). The original note worried
@@ -2007,7 +1981,9 @@ These are in the order we would take them. Each lands alone.
   serializes and writes the whole config on the UI thread 700 ms after the last
   change, and `write_atomic` waits for `sync_all`. That is quick on a local SSD. Many
   companies redirect roaming AppData to a network share, though. There, each save can
-  stall the spaces for longer than the keyboard hook's timeout (P32).
+  stall the spaces for a second or more. The hooks have their own thread
+  (`win32/hook_thread.rs`), so keys pressed meanwhile are kept, but the spaces
+  still freeze.
   - Measure first: log each save's duration at `debug`, and `warn` above 250 ms. If
     no report or measurement shows a slow save, record that here and stop.
   - If it is needed: serialize on the UI thread, which is cheap, and hand the text to
@@ -2495,6 +2471,7 @@ for a machine that has it.
 | P15c (part script) (Details sideways) | Shift+wheel over a Details space with every column on, at 100 % and 150 %: the columns scroll sideways and the header stays with them. |
 | P15e (part script) (Details sideways) | On a mouse with a tilt wheel, over a Details space with every column on at 100 % and 150 %: tilting right scrolls the columns right and tilting left scrolls them left, with the header following. In other views the tilt does nothing. |
 | P22 (part script) | Open "From installed apps…" from a space's Shortcuts page and from the custom shortcut dialog: it lists apps with icons. Close it, wait for the background refresh (with `--debug`, "cached the installed apps"), and open it again: the apps and icons still show, with no failure or stall. Do it twice in a row. |
+| P32 (hook thread) | With `./scripts/dev.ps1 --debug`: select an item on a space, press "Block the UI thread 2 s" in the debug window, and type a few keys and move the pointer during the block: the pointer does not stutter. When the block ends, click the item and press F2: the rename opens (before the fix, keys on spaces stayed dead until every space was left). Esc, then Delete on a throwaway item, the arrows, Ctrl+C, and typing to select all work. Repeat the block during a rename and go on typing after it. Then the plain paths, on a space and a lens: every key of `ENGINEERING.md`'s Keys table; a rename typed with Caps Lock on and off and with Shift; a second keyboard layout, switched to with the desktop in the foreground, gives its own letters in a rename and in type-to-select; Esc, the arrows, and Enter in a popup menu go to the menu; Ctrl+C in another app is not taken; a click outside every space clears the selection and a click on a popup menu does not. The debug window's Hooks readout shows the flags as before, with "Outside clicks: on" while an item is selected and off a moment after the selection clears. Exit still ends the process at once. |
 | P21 | In a debug build with `--debug` open, preview Bounce repeatedly on a space: the animation stays smooth (no hitch once a second), and the debug panel updates again once it stops. |
 | P10 (v0.3) (part script) | U5's and U7's rows still pass: undo and redo of deletes, pastes, moves, and renames behave as before. The rollback itself is test-carried, because the gap between the check and the failing step is too short to hit by hand. |
 | C10c (part script) (F-58) | With a scratch config, customize a space's look, then Colors > "Save theme…" and name the file (with or without the suffix). Load it on Global and on another space, once through "Load theme…" and once from the Themes list after closing and reopening Settings: the look, icon spacing, and padding change, and the Dark/Light setting does not. A load on a space that follows Global turns its "Customize this space" switch on. Cancel puts the old look back; Apply keeps it over a restart. With no theme files the Themes list is disabled and says so; a broken or oversized file is reported and changes nothing; saving over an existing theme asks before replacing it. |

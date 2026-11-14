@@ -15,6 +15,13 @@ Notable changes to DeskSpace, newest first. The format follows
   closer together to match. On upgrade, a space that sizes itself gets
   shorter, and a space you sized keeps its size and fits more rows.
 
+### Fixed
+
+- Keys on spaces (F2, Delete, the arrows, Ctrl+C, typing to select) keep
+  working after DeskSpace stalls for a second or more. They used to stop
+  until every space was left; this was a known issue of 0.3.0. The pointer
+  and the keyboard also no longer wait for DeskSpace while it is busy.
+
 ## [0.3.0] - 2026-11-13
 
 "Lenses": a space can show a folder's live contents, and every space gets

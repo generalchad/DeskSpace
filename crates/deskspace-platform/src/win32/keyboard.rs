@@ -7,31 +7,36 @@
 //! focused app. Outside a rename the same hook can watch keys for the current
 //! selection or space instead of editing; `fn watched_key` is the source of truth
 //! for which key needs which flag, and the docs/ENGINEERING.md "Keys" table repeats it. The
-//! hook runs for every key in the session and Windows drops it if this thread is
-//! slow to pump messages (`LowLevelHooksTimeout`), so it is installed only
-//! while one of those modes is active.
+//! hook runs for every key in the session, so it is installed only while one
+//! of those modes is active, and it runs on `hook_thread`'s thread, not the UI
+//! thread: Windows drops a hook whose thread is slow to answer
+//! (`LowLevelHooksTimeout`). Everything the hook procedure reads is therefore
+//! an atomic the UI thread sets, and it reaches the app only by posting.
 //! https://learn.microsoft.com/en-us/windows/win32/winmsg/lowlevelkeyboardproc
 
-use std::cell::Cell;
+use std::sync::atomic::{AtomicIsize, Ordering};
 
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetAsyncKeyState, GetKeyState, GetKeyboardLayout, GetKeyboardState, ToUnicodeEx, VIRTUAL_KEY,
-    VK_0, VK_1, VK_2, VK_3, VK_4, VK_5, VK_6, VK_7, VK_8, VK_A, VK_ADD, VK_APPS, VK_BACK, VK_C,
-    VK_CAPITAL, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_F2, VK_F5, VK_F10, VK_HOME,
-    VK_LEFT, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU, VK_NEXT, VK_NUMPAD0, VK_OEM_MINUS, VK_OEM_PLUS,
-    VK_PRIOR, VK_RETURN, VK_RIGHT, VK_RMENU, VK_RSHIFT, VK_RWIN, VK_SHIFT, VK_SUBTRACT, VK_UP,
-    VK_V, VK_X, VK_Y, VK_Z,
+    GetAsyncKeyState, GetKeyState, GetKeyboardLayout, GetKeyboardState, HKL, ToUnicodeEx,
+    VIRTUAL_KEY, VK_0, VK_1, VK_2, VK_3, VK_4, VK_5, VK_6, VK_7, VK_8, VK_A, VK_ADD, VK_APPS,
+    VK_BACK, VK_C, VK_CAPITAL, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_F2, VK_F5,
+    VK_F10, VK_HOME, VK_LEFT, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU, VK_NEXT, VK_NUMPAD0,
+    VK_OEM_MINUS, VK_OEM_PLUS, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_RMENU, VK_RSHIFT, VK_RWIN,
+    VK_SHIFT, VK_SUBTRACT, VK_UP, VK_V, VK_X, VK_Y, VK_Z,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, GA_ROOT, GetAncestor, GetForegroundWindow, HHOOK, KBDLLHOOKSTRUCT,
-    PostMessageW, SetWindowsHookExW, UnhookWindowsHookEx, WH_KEYBOARD_LL, WM_KEYDOWN,
-    WM_SYSKEYDOWN,
+    CallNextHookEx, GA_ROOT, GetAncestor, GetForegroundWindow, GetWindowThreadProcessId,
+    KBDLLHOOKSTRUCT, PostMessageW, WM_KEYDOWN, WM_SYSKEYDOWN,
 };
 
 use crate::edit::{EditKey, MoveDir};
 use crate::input::{ClipboardAction, NavDir, NavKey, SelectionKey};
+use crate::win32::hook_thread::{self, Hook};
+use crate::win32::key_modes::{
+    EDITING, Handling, MENU_OPEN, Modes, WATCH_BACK, WATCH_PASTE, WATCH_SELECTION, WATCHES, Watch,
+    handling, mode_bits, wants_hook,
+};
 use crate::win32::{desktop_shell, messages};
 
 pub(crate) const SEL_OPEN: usize = 0;
@@ -94,114 +99,67 @@ const KIND_WORD_RIGHT: usize = 17;
 const KIND_SELECT_WORD_LEFT: usize = 18;
 const KIND_SELECT_WORD_RIGHT: usize = 19;
 
-thread_local! {
-    // Process state: the low-level keyboard hook, while one is installed. A
-    // hook procedure gets no context; `refresh` installs it and `stop` removes
-    // it.
-    static HOOK: Cell<Option<HHOOK>> = const { Cell::new(None) };
-    // Process state: the controller window key messages are posted to. A hook
-    // procedure gets no context; `refresh` sets it and `stop` clears it.
-    static CONTROLLER: Cell<Option<HWND>> = const { Cell::new(None) };
-    // Process state: whether inline editing consumes every key. A hook
-    // procedure gets no context; `capture` sets it and `stop` clears it.
-    static EDITING: Cell<bool> = const { Cell::new(false) };
-    // Process state: whether the selection keys are watched. A hook procedure
-    // gets no context; `watch_selection` sets it and `stop` clears it.
-    static WATCH_SELECTION: Cell<bool> = const { Cell::new(false) };
-    // Process state: whether the keys that need a current space are watched.
-    // `watch_selection` sets it and `stop` clears it.
-    static WATCH_PASTE: Cell<bool> = const { Cell::new(false) };
-    // Process state: whether the keys that go back are watched, while a lens
-    // is shown below its own folder. `watch_selection` sets it; `stop` clears
-    // it.
-    static WATCH_BACK: Cell<bool> = const { Cell::new(false) };
-    // Process state: whether a popup menu is being tracked, so the hook passes
-    // every key through. `set_menu_open` sets it and the menu's owner clears
-    // it when tracking ends.
-    static MENU_OPEN: Cell<bool> = const { Cell::new(false) };
-}
+// Process state: the hook's modes. A hook procedure gets no context;
+// `capture`, `watch_selection`, and `set_menu_open` set them, and `stop`
+// clears all but the menu's, which the menu's owner clears.
+static MODES: Modes = Modes::new();
+// Process state: the controller window key messages are posted to, as the
+// handle's value, or 0. A hook procedure gets no context; `refresh` sets it
+// and `stop` clears it.
+static CONTROLLER: AtomicIsize = AtomicIsize::new(0);
 
 /// The hook's flags now: editing, watching a selection, watching a current
 /// space (`WATCH_PASTE`), and watching the Back keys (`WATCH_BACK`), for the
 /// debug window.
 pub(crate) fn flags() -> (bool, bool, bool, bool) {
+    let modes = MODES.load();
     (
-        EDITING.get(),
-        WATCH_SELECTION.get(),
-        WATCH_PASTE.get(),
-        WATCH_BACK.get(),
+        modes & EDITING != 0,
+        modes & WATCH_SELECTION != 0,
+        modes & WATCH_PASTE != 0,
+        modes & WATCH_BACK != 0,
     )
 }
 
 /// Marks a popup menu as open, so the hook stops consuming keys (Esc, Enter,
 /// arrows) that belong to the menu while it is tracked.
 pub(crate) fn set_menu_open(open: bool) {
-    MENU_OPEN.set(open);
+    MODES.replace(MENU_OPEN, mode_bits(MENU_OPEN, open));
 }
 
 /// Starts or stops capturing keys for `controller` for inline editing.
 /// Idempotent.
 pub(crate) fn capture(controller: HWND, enabled: bool) {
-    EDITING.set(enabled);
-    refresh(controller);
+    let modes = MODES.replace(EDITING, mode_bits(EDITING, enabled));
+    refresh(controller, modes);
 }
 
 /// Watches the selection keys while `selection` is true, the keys that need
 /// a current space while `paste` is true, and the keys that go back while
 /// `back` is true. Idempotent.
 pub(crate) fn watch_selection(controller: HWND, selection: bool, paste: bool, back: bool) {
-    WATCH_SELECTION.set(selection);
-    WATCH_PASTE.set(paste);
-    WATCH_BACK.set(back);
-    refresh(controller);
+    let watches = mode_bits(WATCH_SELECTION, selection)
+        | mode_bits(WATCH_PASTE, paste)
+        | mode_bits(WATCH_BACK, back);
+    let modes = MODES.replace(WATCHES, watches);
+    refresh(controller, modes);
 }
 
-/// Installs or removes the hook so it is on exactly when a mode needs it.
-fn refresh(controller: HWND) {
-    let wanted = EDITING.get() || WATCH_SELECTION.get() || WATCH_PASTE.get();
-    if wanted == HOOK.get().is_some() {
-        if wanted {
-            CONTROLLER.set(Some(controller));
-        }
-        return;
+/// Asks for the hook exactly while a mode needs it.
+fn refresh(controller: HWND, modes: u8) {
+    let wanted = wants_hook(modes);
+    if wanted {
+        CONTROLLER.store(controller.0 as isize, Ordering::SeqCst);
     }
-    if !wanted {
-        stop();
-        return;
-    }
-    CONTROLLER.set(Some(controller));
-    // SAFETY: the hook procedure lives in this module for the life of the
-    // process; a low-level hook runs on the installing thread, which pumps
-    // messages for the whole run.
-    let hook = unsafe {
-        GetModuleHandleW(None).and_then(|module| {
-            SetWindowsHookExW(
-                WH_KEYBOARD_LL,
-                Some(hook_proc),
-                Some(HINSTANCE(module.0)),
-                0,
-            )
-        })
-    };
-    match hook {
-        Ok(hook) => HOOK.set(Some(hook)),
-        Err(error) => tracing::warn!(%error, "could not install the keyboard hook"),
-    }
+    hook_thread::set(Hook::Keyboard, wanted);
 }
 
-/// Removes the hook and clears every watch mode.
+/// Removes the hook and clears every watch mode. The modes go first, so a
+/// key the hook still sees before it is removed passes through.
 pub(crate) fn stop() {
-    if let Some(hook) = HOOK.take() {
-        // SAFETY: `hook` was returned by SetWindowsHookExW on this thread.
-        unsafe {
-            let _ = UnhookWindowsHookEx(hook);
-        }
-    }
-    CONTROLLER.set(None);
-    EDITING.set(false);
-    WATCH_SELECTION.set(false);
-    WATCH_PASTE.set(false);
-    WATCH_BACK.set(false);
+    MODES.replace(EDITING | WATCHES, 0);
+    CONTROLLER.store(0, Ordering::SeqCst);
+    hook_thread::set(Hook::Keyboard, false);
 }
 
 /// Whether the desktop shell (Progman or the wallpaper WorkerW), or the
@@ -242,7 +200,13 @@ fn is_system_key(vk: u32) -> bool {
         || is_key(vk, VK_APPS)
 }
 
-unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+/// The hook procedure, which `hook_thread` installs and Windows calls on that
+/// thread.
+pub(crate) unsafe extern "system" fn hook_proc(
+    code: i32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
     let message = wparam.0 as u32;
     if code >= 0 && (message == WM_KEYDOWN || message == WM_SYSKEYDOWN) {
         // SAFETY: for a keyboard hook, lParam points at a KBDLLHOOKSTRUCT.
@@ -273,41 +237,14 @@ impl Mods {
     }
 }
 
-/// Which watch flags are set (the docs/ENGINEERING.md Keys table's columns).
-#[derive(Clone, Copy, Debug, Default)]
-struct Watch {
-    /// An item is selected (`WATCH_SELECTION`).
-    selection: bool,
-    /// A space is current (`WATCH_PASTE`).
-    paste: bool,
-    /// The current space is a lens shown below its own folder
-    /// (`WATCH_BACK`).
-    back: bool,
-}
-
-impl Watch {
-    fn any(self) -> bool {
-        self.selection || self.paste
-    }
-}
-
 /// Handles one key press. Returns whether the event was consumed; when it
 /// returns `false`, the caller passes the event on unchanged.
 fn handle(event: &KBDLLHOOKSTRUCT) -> bool {
-    // An open menu owns every key (Esc to close, Enter to activate, arrows to
-    // navigate), so pass them all through while one is tracked.
-    if MENU_OPEN.get() {
-        return false;
+    match handling(MODES.load()) {
+        Handling::Pass => false,
+        Handling::Edit => handle_editing(event.vkCode),
+        Handling::Watch(watch) => handle_watched(event.vkCode, watch),
     }
-    let watch = Watch {
-        selection: WATCH_SELECTION.get(),
-        paste: WATCH_PASTE.get(),
-        back: WATCH_BACK.get(),
-    };
-    if watch.any() && !EDITING.get() {
-        return handle_watched(event.vkCode, watch);
-    }
-    handle_editing(event.vkCode)
 }
 
 /// Posts the message for a key the watch routes. The selection is kept while
@@ -540,11 +477,15 @@ fn post(kind: usize, ch: usize) {
 }
 
 fn post_message(message: u32, wparam: usize, lparam: isize) {
-    if let Some(controller) = CONTROLLER.get() {
-        // SAFETY: posting to our own controller window.
-        unsafe {
-            let _ = PostMessageW(Some(controller), message, WPARAM(wparam), LPARAM(lparam));
-        }
+    let controller = CONTROLLER.load(Ordering::SeqCst);
+    if controller == 0 {
+        return;
+    }
+    let controller = HWND(controller as *mut core::ffi::c_void);
+    // SAFETY: posting copies plain values into our controller's queue, from
+    // any thread; a window that is gone makes it fail, nothing more.
+    unsafe {
+        let _ = PostMessageW(Some(controller), message, WPARAM(wparam), LPARAM(lparam));
     }
 }
 
@@ -716,10 +657,28 @@ fn set_bit(state: &mut [u8; 256], key: VIRTUAL_KEY, mask: u8, on: bool) {
     }
 }
 
+/// The keyboard layout the user is typing in: that of the foreground window's
+/// thread. The hook's own thread owns no window, so its layout need not
+/// follow the one the user switches to.
+/// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getkeyboardlayout
+fn typing_layout() -> HKL {
+    // SAFETY: plain queries. No foreground window gives thread 0, which
+    // names the calling thread, as does the fallback.
+    unsafe {
+        let thread = GetWindowThreadProcessId(GetForegroundWindow(), None);
+        let layout = GetKeyboardLayout(thread);
+        if layout.0.is_null() {
+            GetKeyboardLayout(0)
+        } else {
+            layout
+        }
+    }
+}
+
 /// The character a key produces under the current layout and modifiers, or
-/// `None`. The space's thread never receives keyboard messages (spaces are
-/// never activated), so `GetKeyboardState` is frozen and its modifier bits
-/// cannot be trusted. Each modifier is read from live key state and set or
+/// `None`. The hook's thread never receives keyboard messages, so
+/// `GetKeyboardState` is frozen and its modifier bits cannot be trusted.
+/// Each modifier is read from live key state and set or
 /// cleared, so a released key cannot stay down. Caps Lock comes from
 /// `GetKeyState`'s toggle bit: `GetAsyncKeyState`'s low bit is a separate,
 /// unreliable "pressed since the last call" flag, not the toggle.
@@ -741,8 +700,7 @@ unsafe fn char_for(vk: u32) -> Option<char> {
     // SAFETY: plain key-state query.
     let caps = unsafe { GetKeyState(VK_CAPITAL.0 as i32) } & 1 != 0;
     set_bit(&mut state, VK_CAPITAL, 0x01, caps);
-    // SAFETY: thread-local layout query; no pointers held.
-    let layout = unsafe { GetKeyboardLayout(0) };
+    let layout = typing_layout();
     let mut buffer = [0u16; 8];
     // SAFETY: `state` and `buffer` are valid for the call; a dead key returns
     // a negative count and is ignored.
@@ -1099,18 +1057,5 @@ mod tests {
         );
         assert_eq!(classify(VK_RETURN.0 as u32, false), Some((KIND_COMMIT, 0)));
         assert_eq!(classify(VK_ESCAPE.0 as u32, false), Some((KIND_CANCEL, 0)));
-    }
-
-    #[test]
-    fn stopping_clears_every_watch_flag() {
-        EDITING.set(true);
-        WATCH_SELECTION.set(true);
-        WATCH_PASTE.set(true);
-        WATCH_BACK.set(true);
-        stop();
-        assert!(!EDITING.get());
-        assert!(!WATCH_SELECTION.get());
-        assert!(!WATCH_PASTE.get());
-        assert!(!WATCH_BACK.get());
     }
 }

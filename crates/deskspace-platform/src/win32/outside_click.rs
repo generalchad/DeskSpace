@@ -3,23 +3,22 @@
 //!
 //! Spaces are never activated, so they get no focus-loss message when the
 //! user clicks the desktop or another app. A low-level mouse hook is the only
-//! way to see those clicks. It runs for every mouse event in the session and
-//! Windows skips it if this thread is slow to pump messages
-//! (LowLevelHooksTimeout), so it is installed only while the app asks for
-//! it, and the callback only posts the point to the controller, which does
-//! the hit test.
+//! way to see those clicks. It runs for every mouse event in the session, so
+//! it is installed only while the app asks for it, and it runs on
+//! `hook_thread`'s thread, not the UI thread: Windows drops a hook whose
+//! thread is slow to answer (LowLevelHooksTimeout). The callback only posts
+//! the point to the controller, which does the hit test on the UI thread.
 //! https://learn.microsoft.com/en-us/windows/win32/winmsg/lowlevelmouseproc
 
-use std::cell::Cell;
+use std::sync::atomic::{AtomicIsize, Ordering};
 
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, WPARAM};
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, GA_ROOT, GetAncestor, GetClassNameW, HC_ACTION, HHOOK, MSLLHOOKSTRUCT,
-    PostMessageW, SetWindowsHookExW, UnhookWindowsHookEx, WH_MOUSE_LL, WM_LBUTTONDOWN,
-    WM_MBUTTONDOWN, WM_RBUTTONDOWN, WindowFromPoint,
+    CallNextHookEx, GA_ROOT, GetAncestor, GetClassNameW, HC_ACTION, MSLLHOOKSTRUCT, PostMessageW,
+    WM_LBUTTONDOWN, WM_MBUTTONDOWN, WM_RBUTTONDOWN, WindowFromPoint,
 };
 
+use crate::win32::hook_thread::{self, Hook};
 use crate::win32::{desktop_shell, messages, runtime};
 
 /// Window class of popup menus. Clicking one of DeskSpace's own menus (such
@@ -27,73 +26,53 @@ use crate::win32::{desktop_shell, messages, runtime};
 /// https://learn.microsoft.com/en-us/windows/win32/winmsg/about-window-classes#system-classes
 const MENU_CLASS: &str = "#32768";
 
-thread_local! {
-    // Process state: the low-level mouse hook, while outside clicks are
-    // watched. A hook procedure gets no context; `watch` installs it and
-    // `stop` removes it.
-    static HOOK: Cell<Option<HHOOK>> = const { Cell::new(None) };
-    // Process state: the controller window a press is reported to. A hook
-    // procedure gets no context; `watch` sets it and `stop` clears it.
-    static CONTROLLER: Cell<Option<HWND>> = const { Cell::new(None) };
-}
+// Process state: the controller window a press is reported to, as the
+// handle's value, or 0. A hook procedure gets no context; `watch` sets it,
+// and it stays set, since only a held hook reads it.
+static CONTROLLER: AtomicIsize = AtomicIsize::new(0);
 
 /// Starts or stops reporting presses to `controller`. Idempotent.
 pub(crate) fn watch(controller: HWND, enabled: bool) {
-    if enabled == HOOK.get().is_some() {
-        return;
+    if enabled {
+        CONTROLLER.store(controller.0 as isize, Ordering::SeqCst);
     }
-    if !enabled {
-        stop();
-        return;
-    }
-    CONTROLLER.set(Some(controller));
-    // SAFETY: the hook procedure lives in this module for the life of the
-    // process; low-level hooks run on the installing thread, which pumps
-    // messages for the whole run.
-    let hook = unsafe {
-        GetModuleHandleW(None).and_then(|module| {
-            SetWindowsHookExW(WH_MOUSE_LL, Some(hook_proc), Some(HINSTANCE(module.0)), 0)
-        })
-    };
-    match hook {
-        Ok(hook) => HOOK.set(Some(hook)),
-        Err(error) => tracing::warn!(%error, "could not watch for clicks outside spaces"),
-    }
+    hook_thread::set(Hook::Mouse, enabled);
+}
+
+/// Whether outside clicks are being watched now (the hook is installed).
+pub(crate) fn is_watching() -> bool {
+    hook_thread::holds(Hook::Mouse)
 }
 
 /// Removes the hook if it is installed.
-/// Whether outside clicks are being watched now (the hook is installed).
-pub(crate) fn is_watching() -> bool {
-    HOOK.with(|hook| hook.get().is_some())
-}
-
 pub(crate) fn stop() {
-    if let Some(hook) = HOOK.take() {
-        // SAFETY: `hook` was returned by SetWindowsHookExW on this thread.
-        unsafe {
-            let _ = UnhookWindowsHookEx(hook);
-        }
-    }
+    hook_thread::set(Hook::Mouse, false);
 }
 
-unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+/// The hook procedure, which `hook_thread` installs and Windows calls on that
+/// thread.
+pub(crate) unsafe extern "system" fn hook_proc(
+    code: i32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
     let press = matches!(
         wparam.0 as u32,
         WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN
     );
-    if code == HC_ACTION as i32 && press {
+    let controller = CONTROLLER.load(Ordering::SeqCst);
+    if code == HC_ACTION as i32 && press && controller != 0 {
         // SAFETY: for HC_ACTION, lParam points at the event's MSLLHOOKSTRUCT.
         let point = unsafe { (*(lparam.0 as *const MSLLHOOKSTRUCT)).pt };
-        if let Some(controller) = CONTROLLER.get() {
-            // SAFETY: posting to our own controller window.
-            unsafe {
-                let _ = PostMessageW(
-                    Some(controller),
-                    messages::OUTSIDE_PROBE,
-                    WPARAM(point.x as isize as usize),
-                    LPARAM(point.y as isize),
-                );
-            }
+        // SAFETY: posting copies plain values into our controller's queue,
+        // from any thread; a window that is gone makes it fail, nothing more.
+        unsafe {
+            let _ = PostMessageW(
+                Some(HWND(controller as *mut core::ffi::c_void)),
+                messages::OUTSIDE_PROBE,
+                WPARAM(point.x as isize as usize),
+                LPARAM(point.y as isize),
+            );
         }
     }
     // SAFETY: passing the event on unchanged, as every hook must.

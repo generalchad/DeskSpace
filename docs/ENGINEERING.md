@@ -278,6 +278,15 @@ says why; the diff already shows what. Run the gates (section 1) first.
   is open (`keyboard::set_menu_open`). The hook is installed only while a flag
   is set.
 
+  The hook runs on the hook thread (`win32/hook_thread.rs`), as the mouse
+  hook of `win32/outside_click.rs` does, and never on the UI thread: Windows
+  removes a low-level hook whose thread is slow to answer, and does not say
+  so. That thread only waits for messages. A hook procedure reads atomics
+  the UI thread sets (`win32/key_modes.rs` holds the flags), posts to the
+  controller, and returns: it never blocks, logs, or touches the runtime.
+  The hook is installed and removed a moment after the UI thread asks, so
+  the procedure decides from the flags, not from being installed.
+
 ## 7. Documentation
 
 Docs drift; code does not. Every fact has one home, and the doc that does
