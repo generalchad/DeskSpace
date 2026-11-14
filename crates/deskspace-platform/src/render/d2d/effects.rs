@@ -18,7 +18,101 @@ use super::*;
 use crate::render::burn::{self, BurnField};
 use crate::render::dissolve::DissolveField;
 use crate::render::math::Grid;
-use crate::render::transition::{Mask, Side};
+use crate::render::transition::{Content, Mask, Side, TransitionFrame};
+
+/// CRT's bright line at full glow: a cool white, slightly translucent so the
+/// line still reads as light over the contents.
+const CRT_GLOW: Color = Color::rgba(0xF0, 0xF6, 0xFF, 0xE6);
+
+impl Painter {
+    /// Draws the space through `transition`'s frame: the contents (or
+    /// Pixelate's blocks) at the frame's offset through its opacity and
+    /// mask, then Burn's marks and CRT's glow over them.
+    ///
+    /// # Safety
+    /// Call between `BeginDraw` and `EndDraw` on `ctx.target`.
+    pub(super) unsafe fn draw_transition(
+        &mut self,
+        ctx: DrawContext,
+        prepared: &PreparedScene,
+        frame: PaintFrame,
+        transition: &TransitionFrame,
+        resources: &FrameResources,
+        origin: Vector2,
+    ) {
+        let DrawContext { target, brush, .. } = ctx;
+        let size = resources.size;
+        let whole = rect_f(0.0, 0.0, size.0, size.1);
+        let offset = transition.content_offset;
+        // SAFETY: the caller is inside BeginDraw/EndDraw on `target`.
+        unsafe {
+            target.SetTransform(&Matrix3x2::translation(
+                origin.X + offset.x as f32,
+                origin.Y + offset.y as f32,
+            ));
+            let mask = resources.mask.clone();
+            with_layer(
+                target,
+                &resources.layer,
+                transition.opacity,
+                mask,
+                || match &resources.pixelated {
+                    Some((bitmap, source)) => target.DrawBitmap(
+                        bitmap,
+                        Some(&whole),
+                        1.0,
+                        D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
+                        Some(source),
+                    ),
+                    None => self.draw_scene(ctx, prepared, frame, size),
+                },
+            );
+            if let Some(marks) = &resources.burn_marks {
+                target.DrawBitmap(
+                    marks,
+                    Some(&whole),
+                    transition.opacity,
+                    D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+                    None,
+                );
+            }
+            if let Content::Lit { glow } = transition.content {
+                let alpha = (glow * f32::from(CRT_GLOW.a)).round() as u8;
+                brush.SetColor(&color_f(CRT_GLOW.with_alpha(alpha)));
+                target.FillRectangle(&whole, brush);
+            }
+        }
+    }
+
+    /// Draws how much of the blur `transition`'s frame leaves: the
+    /// space's whole rect through the same opacity and mask as its contents.
+    /// Pixelate's blocks are not drawn; the blur only fades with them.
+    pub(super) fn draw_blur_mask(
+        &mut self,
+        transition: &TransitionFrame,
+        resources: FrameResources,
+        brush: &ID2D1SolidColorBrush,
+    ) -> windows::core::Result<()> {
+        let offset = transition.content_offset;
+        let FrameResources {
+            size, layer, mask, ..
+        } = resources;
+        self.canvas.draw_blur_mask(|target, origin| {
+            // SAFETY: inside the mask surface's draw, on live objects made on
+            // its device.
+            unsafe {
+                target.SetTransform(&Matrix3x2::translation(
+                    origin.X + offset.x as f32,
+                    origin.Y + offset.y as f32,
+                ));
+                with_layer(target, &layer, transition.opacity, mask, || {
+                    brush.SetColor(&color_f(Color::rgba(255, 255, 255, 255)));
+                    target.FillRectangle(&rect_f(0.0, 0.0, size.0, size.1), brush);
+                });
+            }
+        })
+    }
+}
 
 #[derive(Default)]
 pub(super) struct Effects {
@@ -354,7 +448,7 @@ impl CellMask {
 ///
 /// # Safety
 /// Call between `BeginDraw` and `EndDraw` on `target`.
-pub(super) unsafe fn with_layer(
+unsafe fn with_layer(
     target: &ID2D1RenderTarget,
     layer: &ID2D1Layer,
     opacity: f32,

@@ -10,6 +10,7 @@
 mod badge;
 mod bitmap;
 mod canvas;
+mod chrome;
 mod color_picker;
 mod drag_image;
 mod edit;
@@ -114,20 +115,10 @@ const NOTICE_MIN_ALPHA: u8 = 0xE0;
 const DRAGGED_ALPHA: u8 = 90;
 /// Opacity of a cut item, shown ghosted until it is pasted, as Explorer does.
 const CUT_ALPHA: u8 = 110;
-/// CRT's bright line at full glow: a cool white, slightly translucent so the
-/// line still reads as light over the contents.
-const CRT_GLOW: Color = Color::rgba(0xF0, 0xF6, 0xFF, 0xE6);
 /// The outline marking the space selected in the settings window: its gap
 /// inside the frame and its width.
 const HIGHLIGHT_GAP: f32 = 1.5;
 const HIGHLIGHT_WIDTH: f32 = 2.0;
-/// Segoe Fluent Icons / Segoe MDL2 Assets "ChevronUp" and "ChevronDown", the
-/// sorted Details header's arrow.
-const SORT_UP_GLYPH: &[u16] = &[0xE70E];
-const SORT_DOWN_GLYPH: &[u16] = &[0xE70D];
-/// The dragged header's insertion mark, as a share of the header's height, so
-/// it scales with the display.
-const DROP_MARK_WIDTH_RATIO: f32 = 0.08;
 
 /// D2DERR_RECREATE_TARGET: the device was lost and every device-dependent
 /// resource must be recreated.
@@ -365,90 +356,6 @@ impl Painter {
         })
     }
 
-    /// Draws the space through `transition`'s frame: the contents (or
-    /// Pixelate's blocks) at the frame's offset through its opacity and
-    /// mask, then Burn's marks and CRT's glow over them.
-    ///
-    /// # Safety
-    /// Call between `BeginDraw` and `EndDraw` on `ctx.target`.
-    unsafe fn draw_transition(
-        &mut self,
-        ctx: DrawContext,
-        prepared: &PreparedScene,
-        frame: PaintFrame,
-        transition: &TransitionFrame,
-        resources: &FrameResources,
-        origin: Vector2,
-    ) {
-        let DrawContext { target, brush, .. } = ctx;
-        let size = resources.size;
-        let whole = rect_f(0.0, 0.0, size.0, size.1);
-        let offset = transition.content_offset;
-        // SAFETY: the caller is inside BeginDraw/EndDraw on `target`.
-        unsafe {
-            target.SetTransform(&Matrix3x2::translation(
-                origin.X + offset.x as f32,
-                origin.Y + offset.y as f32,
-            ));
-            let mask = resources.mask.clone();
-            effects::with_layer(target, &resources.layer, transition.opacity, mask, || {
-                match &resources.pixelated {
-                    Some((bitmap, source)) => target.DrawBitmap(
-                        bitmap,
-                        Some(&whole),
-                        1.0,
-                        D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
-                        Some(source),
-                    ),
-                    None => self.draw_scene(ctx, prepared, frame, size),
-                }
-            });
-            if let Some(marks) = &resources.burn_marks {
-                target.DrawBitmap(
-                    marks,
-                    Some(&whole),
-                    transition.opacity,
-                    D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
-                    None,
-                );
-            }
-            if let Content::Lit { glow } = transition.content {
-                let alpha = (glow * f32::from(CRT_GLOW.a)).round() as u8;
-                brush.SetColor(&color_f(CRT_GLOW.with_alpha(alpha)));
-                target.FillRectangle(&whole, brush);
-            }
-        }
-    }
-
-    /// Draws how much of the blur `transition`'s frame leaves: the
-    /// space's whole rect through the same opacity and mask as its contents.
-    /// Pixelate's blocks are not drawn; the blur only fades with them.
-    fn draw_blur_mask(
-        &mut self,
-        transition: &TransitionFrame,
-        resources: FrameResources,
-        brush: &ID2D1SolidColorBrush,
-    ) -> windows::core::Result<()> {
-        let offset = transition.content_offset;
-        let FrameResources {
-            size, layer, mask, ..
-        } = resources;
-        self.canvas.draw_blur_mask(|target, origin| {
-            // SAFETY: inside the mask surface's draw, on live objects made on
-            // its device.
-            unsafe {
-                target.SetTransform(&Matrix3x2::translation(
-                    origin.X + offset.x as f32,
-                    origin.Y + offset.y as f32,
-                ));
-                effects::with_layer(target, &layer, transition.opacity, mask, || {
-                    brush.SetColor(&color_f(Color::rgba(255, 255, 255, 255)));
-                    target.FillRectangle(&rect_f(0.0, 0.0, size.0, size.1), brush);
-                });
-            }
-        })
-    }
-
     /// Draws the scene at 1 / `block` of `size` on Pixelate's offscreen
     /// target, made from `window`'s, and returns that bitmap with the part of
     /// it the scene covers.
@@ -647,204 +554,6 @@ impl Painter {
                     HIGHLIGHT_WIDTH,
                     None,
                 );
-            }
-        }
-    }
-
-    /// Draws the Details header row at `top`: each column's label, Explorer's
-    /// sort arrow on the sorted column, and a rule along its bottom.
-    unsafe fn draw_details_header(
-        &self,
-        ctx: DrawContext,
-        prepared: &PreparedScene,
-        width: f32,
-        top: f32,
-    ) {
-        let Some(details) = prepared.scene.details.as_ref() else {
-            return;
-        };
-        let DrawContext {
-            graphics,
-            target,
-            brush,
-        } = ctx;
-        let scene = &prepared.scene;
-        let height = details.header_height as f32;
-        let pad = details.cell_pad as f32;
-        let bottom = top + height;
-        // SAFETY: caller is inside BeginDraw/EndDraw.
-        unsafe {
-            brush.SetColor(&color_f(scene.item_text.fade(80)));
-            target.DrawLine(
-                Vector2::new(0.0, bottom - 0.5),
-                Vector2::new(width, bottom - 0.5),
-                brush,
-                1.0,
-                None,
-            );
-            for (index, (column, label)) in details.columns.iter().zip(&prepared.header).enumerate()
-            {
-                let mut right = column.rect.right() as f32 - pad;
-                if let Some((_, up)) = details.sorted.filter(|(sorted, _)| *sorted == index)
-                    && let Some(format) = &graphics.glyph_format
-                {
-                    let glyph_width = height * 0.6;
-                    brush.SetColor(&color_f(scene.item_text.fade(200)));
-                    target.DrawText(
-                        if up { SORT_UP_GLYPH } else { SORT_DOWN_GLYPH },
-                        format,
-                        &rect_f(right - glyph_width, top, right, bottom),
-                        brush,
-                        D2D1_DRAW_TEXT_OPTIONS_NONE,
-                        DWRITE_MEASURING_MODE_NATURAL,
-                    );
-                    right -= glyph_width;
-                }
-                draw_text(
-                    target,
-                    brush,
-                    label,
-                    &graphics.details_format,
-                    rect_f(column.rect.x as f32 + pad, top, right, bottom),
-                    scene.item_text.fade(190),
-                    scene.text_shadow,
-                );
-            }
-            if let Some(mark) = details.drop_mark {
-                let mark = mark as f32;
-                brush.SetColor(&color_f(scene.item_text));
-                target.DrawLine(
-                    Vector2::new(mark, top),
-                    Vector2::new(mark, bottom),
-                    brush,
-                    (height * DROP_MARK_WIDTH_RATIO).round().max(1.0),
-                    None,
-                );
-            }
-        }
-    }
-
-    /// Draws each group's header row: a chevron, its name and count, and a rule
-    /// along its bottom to the edge.
-    unsafe fn draw_group_headers(&self, ctx: DrawContext, prepared: &PreparedScene, width: f32) {
-        let DrawContext {
-            graphics,
-            target,
-            brush,
-        } = ctx;
-        let scene = &prepared.scene;
-        for (header, label) in scene.group_headers.iter().zip(&prepared.group_labels) {
-            let rect = to_rect_f(header.rect);
-            let glyph_width = (rect.bottom - rect.top) * 0.8;
-            // SAFETY: caller is inside BeginDraw/EndDraw.
-            unsafe {
-                if let Some(format) = &graphics.glyph_format {
-                    brush.SetColor(&color_f(scene.item_text.fade(200)));
-                    target.DrawText(
-                        if header.folded {
-                            SORT_DOWN_GLYPH
-                        } else {
-                            SORT_UP_GLYPH
-                        },
-                        format,
-                        &rect_f(rect.left, rect.top, rect.left + glyph_width, rect.bottom),
-                        brush,
-                        D2D1_DRAW_TEXT_OPTIONS_NONE,
-                        DWRITE_MEASURING_MODE_NATURAL,
-                    );
-                }
-                draw_text(
-                    target,
-                    brush,
-                    label,
-                    &graphics.details_format,
-                    rect_f(rect.left + glyph_width, rect.top, rect.right, rect.bottom),
-                    scene.item_text,
-                    scene.text_shadow,
-                );
-                brush.SetColor(&color_f(scene.item_text.fade(80)));
-                target.DrawLine(
-                    Vector2::new(rect.left, rect.bottom - 0.5),
-                    Vector2::new(width, rect.bottom - 0.5),
-                    brush,
-                    1.0,
-                    None,
-                );
-            }
-        }
-    }
-
-    /// Draws Explorer's status bar: the counts on the left and the view
-    /// buttons on the right, with the space's current view marked.
-    unsafe fn draw_status(
-        &self,
-        ctx: DrawContext,
-        prepared: &PreparedScene,
-        status: &crate::render::scene::StatusBar,
-    ) {
-        let DrawContext {
-            graphics,
-            target,
-            brush,
-        } = ctx;
-        let scene = &prepared.scene;
-        let rect = to_rect_f(status.rect);
-        let height = rect.bottom - rect.top;
-        let pad = (height * 0.25).round();
-        let text_right = status
-            .buttons
-            .first()
-            .map_or(rect.right - pad, |button| button.rect.x as f32 - pad);
-        // SAFETY: caller is inside BeginDraw/EndDraw.
-        unsafe {
-            brush.SetColor(&color_f(scene.item_text.fade(60)));
-            target.DrawLine(
-                Vector2::new(rect.left, rect.top + 0.5),
-                Vector2::new(rect.right, rect.top + 0.5),
-                brush,
-                1.0,
-                None,
-            );
-            draw_text(
-                target,
-                brush,
-                &prepared.status_segments,
-                &graphics.details_format,
-                rect_f(rect.left + pad, rect.top, text_right, rect.bottom),
-                scene.item_text.fade(200),
-                scene.text_shadow,
-            );
-            for button in &status.buttons {
-                let button_rect = to_rect_f(button.rect);
-                if button.checked || button.hovered {
-                    let radius = (button_rect.bottom - button_rect.top) * 0.2;
-                    fill_rounded(
-                        target,
-                        brush,
-                        button_rect,
-                        radius,
-                        if button.hovered {
-                            scene.hover_fill
-                        } else {
-                            scene.selected_fill
-                        },
-                    );
-                }
-                if let Some(format) = &graphics.glyph_format {
-                    brush.SetColor(&color_f(scene.item_text.fade(if button.checked {
-                        255
-                    } else {
-                        200
-                    })));
-                    target.DrawText(
-                        button.glyph,
-                        format,
-                        &button_rect,
-                        brush,
-                        D2D1_DRAW_TEXT_OPTIONS_NONE,
-                        DWRITE_MEASURING_MODE_NATURAL,
-                    );
-                }
             }
         }
     }

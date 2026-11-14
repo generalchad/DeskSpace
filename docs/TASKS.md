@@ -22,7 +22,7 @@ are collected in section V instead of blocking:
 - section B's icon picker tasks: B49 next; then B54 from "Measure and trim
   the UI thread", once T41b has landed;
 - section G (settings window polish): the pure half of G13;
-- section K (K10-K13, K15, K16), each a pure move with rules that
+- section K (K10-K13, K15), each a pure move with rules that
   leave nothing to design;
 - section T: T24 (needs nothing now), T41a, and then T42; once T41 has
   landed, T25-T31 in order, then T44 and T46-T48;
@@ -124,7 +124,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Keys (spaces are never focused) | `deskspace-platform/src/win32/keyboard.rs` (`fn watched_key`) |
 | Space window procedure, DWM, shadow window | `deskspace-platform/src/win32/space_window/` (`mod.rs`, `zorder.rs`, `mouse.rs`, `frame.rs`, `paint.rs`), `dwm.rs`, `shadow_window.rs`, `render/shadow.rs` |
 | An animation effect | `deskspace-core/src/animation.rs` (the tables), `deskspace-platform/src/render/transition.rs` (frame math), `render/d2d/` (drawing), `win32/space_animation.rs` (playing it on a window), `win32/overlay.rs` (windows beside the space); the recipe is section T |
-| Drawing | `deskspace-platform/src/render/scene.rs`, `render/d2d/` (`mod.rs` the `Painter`, `effects.rs` an animation's resources, `prepared.rs` the `PreparedScene`, `drag_image.rs` the drag image) |
+| Drawing | `deskspace-platform/src/render/scene.rs`, `render/d2d/` (`mod.rs` the `Painter`, `chrome.rs` headers and the status bar, `effects.rs` an animation's resources, `prepared.rs` the `PreparedScene`, `drag_image.rs` the drag image) |
 | The zoom pop-up window and its layout | `deskspace-platform/src/win32/zoom_bar.rs`, `render/zoom_bar.rs`, `render/d2d/zoom_bar.rs` |
 | Settings window controls | `deskspace-platform/src/win32/settings_window/` (`mod.rs`, `build.rs`, `field.rs`, `update.rs`, `nav.rs`, `paint.rs`, `commands.rs`, `preview.rs`, `cards.rs`, `header.rs` the line above the page, `title.rs` the title's scroll, `scroll.rs` a page taller than the window); the title's pure motion is `deskspace-platform/src/title_scroll.rs`; the card grouping is `deskspace-platform/src/settings_cards.rs` |
 | The debug window (`--debug`) | `deskspace-platform/src/win32/debug_window/` (`mod.rs`, `build.rs`, `layout.rs`, `pages.rs`, `console.rs`); the console's pure model in `deskspace-platform/src/debug_console.rs`; the log capture in `deskspace-app/src/debug_log.rs`; the panel and actions in `deskspace-app/src/app/debug/` |
@@ -1812,18 +1812,6 @@ moves.
   - This code moves and deletes user files. A pure move is safe, but ask a senior
     to review the diff.
   - Done when: `mod.rs` is under about 500 lines and the K rules above hold.
-
-- [ ] **K16. Split `render/d2d/mod.rs`.** 959 lines. Add:
-  - `chrome.rs`: `Painter::draw_details_header`, `draw_group_headers`, and
-    `draw_status`, with `SORT_UP_GLYPH`, `SORT_DOWN_GLYPH`, and
-    `DROP_MARK_WIDTH_RATIO`. Child modules can add `impl Painter` blocks, so no
-    signature changes.
-  - Move `draw_transition` and `draw_blur_mask` into the existing `effects.rs`
-    (405 lines), which already holds an animation's resources.
-  - `mod.rs` keeps the device functions, `DrawContext`, `FrameResources`,
-    `Painter`'s paint path, `draw_scene`, `draw_items`, and the bitmap cache.
-  - Collides with: P15f (paint clipping) and anything in section T.
-  - Done when: `mod.rs` is under about 700 lines and the K rules above hold.
 
 ## Q. Move the why next to the code (shrink `CONTEXT.md` section 6)
 

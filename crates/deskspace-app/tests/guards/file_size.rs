@@ -65,11 +65,6 @@ const ALLOWED: &[Allowed] = &[
         why: "Look resolution, refresh, reflow, and the layer cache share state.",
         task: "K11",
     },
-    Allowed {
-        path: "deskspace-platform/src/render/d2d/mod.rs",
-        why: "One impl, the Painter's paint path.",
-        task: "K16",
-    },
 ];
 
 #[test]
