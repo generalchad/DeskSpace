@@ -51,6 +51,7 @@ impl FlameOverlay {
         self.field.flame_bases(front, SPACING, &mut self.bases);
         flames::tongues(&self.bases, self.space_height, time, &mut self.tongues);
         let (width, height) = self.overlay.pixel_size();
+        let previous = self.drawn;
         flames::paint(
             self.overlay.pixels(),
             width,
@@ -59,7 +60,7 @@ impl FlameOverlay {
             time,
             &mut self.drawn,
         );
-        self.overlay.present();
+        self.overlay.present(previous.union(self.drawn));
     }
 }
 

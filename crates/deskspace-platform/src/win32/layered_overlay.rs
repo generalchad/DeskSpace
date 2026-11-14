@@ -4,8 +4,12 @@
 //! placed directly above the space when made (`place_above_owner`) and again
 //! whenever it shows (`insert_after`).
 
+use std::time::Instant;
+
 use deskspace_core::geometry::Rect;
-use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POINT, SIZE, WPARAM};
+use windows::Win32::Foundation::{
+    COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM,
+};
 use windows::Win32::Graphics::Gdi::{
     AC_SRC_ALPHA, AC_SRC_OVER, BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BLENDFUNCTION,
     CreateCompatibleDC, CreateDIBSection, DIB_RGB_COLORS, DeleteDC, DeleteObject, HBITMAP, HDC,
@@ -15,12 +19,13 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GW_HWNDPREV, GWL_EXSTYLE, GWL_STYLE, GetWindow,
     GetWindowLongW, HWND_TOP, HWND_TOPMOST, IsWindowVisible, SWP_NOACTIVATE, SWP_NOMOVE,
-    SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SetWindowPos, ULW_ALPHA, UpdateLayeredWindow,
-    WINDOW_EX_STYLE, WS_CHILD, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
-    WS_EX_TRANSPARENT, WS_POPUP,
+    SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SetWindowPos, ULW_ALPHA, UPDATELAYEREDWINDOWINFO,
+    UpdateLayeredWindowIndirect, WINDOW_EX_STYLE, WS_CHILD, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
 use windows::core::{PCWSTR, w};
 
+use crate::render::flames::Rows;
 use crate::win32::space_window;
 use crate::win32::window_class::{self, WindowClass};
 
@@ -33,6 +38,7 @@ pub(crate) struct LayeredOverlay {
     owner: HWND,
     origin: POINT,
     size: SIZE,
+    moved: bool,
     memory: HDC,
     bitmap: HBITMAP,
     previous: HGDIOBJ,
@@ -107,6 +113,7 @@ impl LayeredOverlay {
                 owner,
                 origin,
                 size,
+                moved: true,
                 memory,
                 bitmap,
                 previous,
@@ -125,10 +132,14 @@ impl LayeredOverlay {
         if size != self.size {
             return false;
         }
-        self.origin = POINT {
+        let origin = POINT {
             x: rect.x,
             y: rect.y,
         };
+        if origin != self.origin {
+            self.origin = origin;
+            self.moved = true;
+        }
         true
     }
 
@@ -144,34 +155,54 @@ impl LayeredOverlay {
         unsafe { std::slice::from_raw_parts_mut(self.bits, (width * height) as usize) }
     }
 
-    /// Uploads the pixel buffer to the layered window and shows it directly
-    /// above its owner if hidden.
-    pub(crate) fn present(&self) {
+    /// Uploads `dirty` rows of the pixel buffer (or the whole buffer on the
+    /// first frame or after `follow` moves the window) and shows the overlay
+    /// directly above its owner if hidden.
+    pub(crate) fn present(&mut self, dirty: Rows) {
+        let Some(dirty_area) = dirty_rect(self.size, self.moved, dirty) else {
+            return;
+        };
         // Per-pixel alpha from premultiplied source pixels.
-        // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-updatelayeredwindow
+        // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-updatelayeredwindowindirect
         let blend = BLENDFUNCTION {
             BlendOp: AC_SRC_OVER as u8,
             BlendFlags: 0,
             SourceConstantAlpha: 255,
             AlphaFormat: AC_SRC_ALPHA as u8,
         };
-        // SAFETY: our own layered window and memory DC; UpdateLayeredWindow
-        // copies the pixels.
+        let source_origin = POINT::default();
+        let info = UPDATELAYEREDWINDOWINFO {
+            cbSize: std::mem::size_of::<UPDATELAYEREDWINDOWINFO>() as u32,
+            hdcDst: HDC::default(),
+            pptDst: &self.origin,
+            psize: &self.size,
+            hdcSrc: self.memory,
+            pptSrc: &source_origin,
+            crKey: COLORREF(0),
+            pblend: &blend,
+            dwFlags: ULW_ALPHA,
+            prcDirty: dirty_area
+                .as_ref()
+                .map_or(std::ptr::null(), std::ptr::from_ref),
+        };
+        let started = Instant::now();
+        // SAFETY: our own layered window and memory DC; `info`'s pointers stay
+        // valid for the duration of the synchronous call, and
+        // UpdateLayeredWindowIndirect copies only `prcDirty` (or the full
+        // buffer when null).
+        let result = unsafe { UpdateLayeredWindowIndirect(self.hwnd, &info) };
+        tracing::trace!(
+            elapsed_us = started.elapsed().as_micros() as u64,
+            full = dirty_area.is_none(),
+            "layered overlay present"
+        );
+        if let Err(error) = result.ok() {
+            tracing::debug!(%error, "overlay could not be drawn");
+            return;
+        }
+        self.moved = false;
+        // SAFETY: our own window, queried once on the thread that owns it.
         unsafe {
-            if let Err(error) = UpdateLayeredWindow(
-                self.hwnd,
-                None,
-                Some(&self.origin),
-                Some(&self.size),
-                Some(self.memory),
-                Some(&POINT::default()),
-                COLORREF(0),
-                Some(&blend),
-                ULW_ALPHA,
-            ) {
-                tracing::debug!(%error, "overlay could not be drawn");
-                return;
-            }
             if !IsWindowVisible(self.hwnd).as_bool() {
                 self.show();
             }
@@ -196,6 +227,30 @@ impl LayeredOverlay {
             let _ = SetWindowPos(self.hwnd, after, 0, 0, 0, 0, flags);
         }
     }
+}
+
+/// The dirty rectangle to upload for `dirty`: `None` skips the upload,
+/// `Some(None)` sends the whole buffer (`prcDirty = null`), and `Some(Some)`
+/// limits the upload to `dirty`'s rows clamped to the window.
+fn dirty_rect(size: SIZE, moved: bool, dirty: Rows) -> Option<Option<RECT>> {
+    if moved || dirty == Rows::ALL {
+        return Some(None);
+    }
+    if dirty.is_empty() {
+        return None;
+    }
+    let height = size.cy.max(0) as u32;
+    let top = dirty.top().min(height);
+    let bottom = dirty.bottom().min(height);
+    if top >= bottom {
+        return None;
+    }
+    Some(Some(RECT {
+        left: 0,
+        top: top as i32,
+        right: size.cx,
+        bottom: bottom as i32,
+    }))
 }
 
 /// The `hwndInsertAfter` that puts `overlay` directly above its space, or
@@ -344,6 +399,76 @@ mod tests {
                 Some(overlay.hwnd),
                 "the overlay sits directly above the space it belongs to"
             );
+            drop(overlay);
+            let _ = DestroyWindow(owner);
+        }
+    }
+
+    #[test]
+    fn dirty_rect_skips_empty_sends_whole_on_move_and_clamps_rows() {
+        let size = SIZE { cx: 200, cy: 120 };
+        let band = |from, to| {
+            let mut pixels = vec![0u32; 200 * 120];
+            let mut rows = Rows::ALL;
+            let tongue = crate::render::flames::Tongue {
+                x: 100.0,
+                y: to as f32,
+                height: (to - from) as f32,
+                width: 10.0,
+                heat: 1.0,
+                phase: 0.0,
+            };
+            crate::render::flames::paint(&mut pixels, 200, 120, &[tongue], 0.0, &mut rows);
+            rows
+        };
+        let mut cleared = Rows::ALL;
+        let mut buf = vec![0u32; 200 * 120];
+        crate::render::flames::paint(&mut buf, 200, 120, &[], 0.0, &mut cleared);
+
+        assert_eq!(dirty_rect(size, false, cleared), None);
+        assert_eq!(dirty_rect(size, true, cleared), Some(None));
+        assert_eq!(dirty_rect(size, false, Rows::ALL), Some(None));
+
+        let rows = band(30, 80);
+        let rect = dirty_rect(size, false, rows).unwrap().unwrap();
+        assert_eq!(rect.left, 0);
+        assert_eq!(rect.right, 200);
+        assert_eq!(rect.top, rows.top() as i32);
+        assert_eq!(rect.bottom, rows.bottom().min(120) as i32);
+        assert_eq!(dirty_rect(SIZE { cx: 200, cy: 0 }, false, rows), None);
+    }
+
+    #[test]
+    fn follow_tracks_origin_changes_and_rejects_resizes() {
+        // SAFETY: windows made on this thread and destroyed before it ends.
+        unsafe {
+            let owner = CreateWindowExW(
+                WINDOW_EX_STYLE(0),
+                w!("Static"),
+                w!("overlay follow test owner"),
+                WS_POPUP,
+                -30000,
+                -30000,
+                100,
+                100,
+                None,
+                None,
+                None,
+                None,
+            )
+            .expect("an owner window");
+            let mut overlay = LayeredOverlay::create(owner, Rect::new(-30000, -30000, 80, 60))
+                .expect("an overlay window");
+            assert!(
+                overlay.moved,
+                "new overlay starts moved so first frame shows all"
+            );
+            overlay.moved = false;
+            assert!(overlay.follow(Rect::new(-30000, -30000, 80, 60)));
+            assert!(!overlay.moved, "unchanged rect leaves moved clear");
+            assert!(overlay.follow(Rect::new(-29950, -30000, 80, 60)));
+            assert!(overlay.moved, "moving marks the overlay moved");
+            assert!(!overlay.follow(Rect::new(-29950, -30000, 90, 60)));
             drop(overlay);
             let _ = DestroyWindow(owner);
         }

@@ -19,8 +19,7 @@ are collected in section V instead of blocking:
   and Z7c, for anyone with a clean VM: v0.3.0 shipped before them;
 - section P's "Juniors and interns" list, the best place for a first task,
   ranked most severe first, so take one from the top;
-- section B's icon picker tasks: B49 next; then B54 from "Measure and trim
-  the UI thread";
+- section B's icon picker tasks: B49 next;
 - section G (settings window polish): the pure half of G13;
 - section K (K10-K13, K15), each a pure move with rules that
   leave nothing to design;
@@ -532,22 +531,6 @@ section 3, "Performance".
     that a patched `PreparedScene` equals one prepared from the rebuilt scene.
   - While an animation plays, a patch changes only the stored scene; the frame
     it draws keeps its snapshot.
-
-- [ ] **B54. Upload only the rows the flames changed (platform; Win32).**
-  Senior review: `unsafe` Win32.
-  - Why: `UpdateLayeredWindow` copies the whole overlay every frame.
-  - Call `UpdateLayeredWindowIndirect` with `prcDirty` set to the union of this
-    frame's and the last frame's `Rows` (`render/flames.rs`), linked beside
-    the call
-    (https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-updatelayeredwindowindirect).
-    `flames::paint` replaces the overlay's `Rows` with the frame's own, so copy
-    the last frame's before the call. `Rows` has no accessors yet; add the
-    ones the rect needs.
-    The first frame, and the first after the overlay moves (`follow`), still
-    send the whole window.
-  - Measure the call with a `trace` line, before and after.
-  - **[needs human]** check: Burn looks as before on Startup and Delete, at
-    100 % and 150 %, and no flame pixel is left behind where a tongue was.
 
 ### Readability and tooling (B56-B57)
 
@@ -2456,7 +2439,7 @@ for a machine that has it.
 | Flat material (part script) | Fade, Pixelate, Gradient, Dissolve, and Burn on hide, show, and delete (and in the debug preview) on Acrylic, Blur, and Solid spaces with a border, with Windows' "Transparency effects" off and on: no outline stays around the fading space, and it comes back once a show ends; with the switch off, no dark box either, the dark fill coming back only once a show ends; with it on, see the T13 row; Roll, Fly, and CRT look as before. |
 | T12 (part script) (D12) | Windows 11 with "Transparency effects" on: the log says "spaces use composition"; the R3 list passes unchanged with each backdrop (Acrylic and Blur blurred, Clear and Solid not), at 100 % and 150 %, corners and border as before, and the T8 row still passes, the blur stepping on and off as today. With the switch off at startup, the log names it and spaces look as before T12. Windows 10, `--placement desktop-*`, and `--click-through` change nothing. Idle CPU and GPU no higher than before. |
 | T13 (D12) | Windows 11 confirmed 2026-10-18 (maintainer). Still to check: on Windows 10 the blur still steps; idle GPU no higher than before. |
-| T17, T18, T24 (part script) (D12) | Burn on Startup (hide, show, a new space, startup, exit) and on Delete, on each backdrop at 100 % and 150 %: the space burns from the bottom up along a ragged edge that glows, chars, and scorches ahead of itself, like paper; flames lick up from the edge and past the top and sides of the frame with no box or blur around them, and never show over another application (cover the space with a window and they stay behind it), while with `--on-top` they follow the space above other windows; Detail changes how ragged the edge is; reversing mid-burn (the hotkey twice) un-burns it; no flame window is left behind after it ends, after a delete, or after quitting mid-burn; a desktop-hosted space burns without flames; Burn at 250 ms plays for about half a second, catching slowly and then racing to the end; un-burning starts fast and settles; every other effect looks and times as before. |
+| T17, T18, T24, B54 (part script) (D12) | Burn on Startup (hide, show, a new space, startup, exit) and on Delete, on each backdrop at 100 % and 150 %: the space burns from the bottom up along a ragged edge that glows, chars, and scorches ahead of itself, like paper; flames lick up from the edge and past the top and sides of the frame with no box or blur around them, and never show over another application (cover the space with a window and they stay behind it), while with `--on-top` they follow the space above other windows; Detail changes how ragged the edge is; reversing mid-burn (the hotkey twice) un-burns it; no flame window is left behind after it ends, after a delete, or after quitting mid-burn; a desktop-hosted space burns without flames; Burn at 250 ms plays for about half a second, catching slowly and then racing to the end; un-burning starts fast and settles; every other effect looks and times as before; no flame pixel is left behind where a tongue was. |
 | U3 (v0.3) (part script) (D11) | Space menu and tray menu list Undo and Redo at the top, greyed when empty and named for the top action ("Undo Move space", "Redo Move space"); moving, resizing, reordering, sorting, fitting, locking, folding, renaming, creating, and deleting an empty space each undo and redo from both menus. |
 | U4 (v0.3) (script) (D11) | Ctrl+Z after a space move puts it back, Ctrl+Y moves it again; with no space current, Ctrl+Z on the desktop still undoes an Explorer rename. |
 | U5 (v0.3) (part script) (D11) | Drop a file into a space and undo (it is back where it was); delete a space with stored files, undo, then redo; rename an item and undo. |

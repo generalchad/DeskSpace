@@ -133,12 +133,20 @@ impl Rows {
     };
     const NONE: Self = Self { top: 0, bottom: 0 };
 
-    fn is_empty(self) -> bool {
+    pub fn is_empty(self) -> bool {
         self.top >= self.bottom
     }
 
+    pub fn top(self) -> u32 {
+        self.top
+    }
+
+    pub fn bottom(self) -> u32 {
+        self.bottom
+    }
+
     /// The run that holds both.
-    fn union(self, other: Self) -> Self {
+    pub fn union(self, other: Self) -> Self {
         if other.is_empty() {
             self
         } else if self.is_empty() {
@@ -635,11 +643,15 @@ mod tests {
     #[test]
     fn rows_join_into_one_run_and_stay_inside_the_buffer() {
         let run = |top, bottom| Rows { top, bottom };
-        assert_eq!(run(4, 9).union(run(20, 22)), run(4, 22));
+        let joined = run(4, 9).union(run(20, 22));
+        assert_eq!(joined, run(4, 22));
+        assert_eq!((joined.top(), joined.bottom()), (4, 22));
+        assert!(!joined.is_empty());
         assert_eq!(run(20, 22).union(run(4, 9)), run(4, 22));
         assert_eq!(run(4, 9).union(Rows::NONE), run(4, 9));
         assert_eq!(Rows::NONE.union(run(4, 9)), run(4, 9));
         assert_eq!(Rows::NONE.union(run(9, 4)), Rows::NONE, "an empty run");
+        assert!(Rows::NONE.is_empty());
 
         // Three pixels wide, two rows.
         let mut pixels = [1; 6];
