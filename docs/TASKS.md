@@ -24,7 +24,7 @@ are collected in section V instead of blocking:
 - section G (settings window polish): the pure half of G13;
 - section K (K10-K13, K15), each a pure move with rules that
   leave nothing to design;
-- section T: T41a, and then T42; once T41 has
+- section T: T41b, and then T42; once T41 has
   landed, T25-T31 in order, then T44 and T46-T48;
 - O5 and the O6-O9 harness abilities;
 - anything else not marked **[needs decision]**, "still to design", or in
@@ -1110,13 +1110,6 @@ Rules for these, on top of section T's:
   each, in order. No visible change, so no section V row; say so in each
   commit body. The branch's third piece, `Play::seed`, has no reader until
   T25, so it lands there, with its first caller.
-  - [ ] **T41a (junior). One noise module.** Move `fractal`, `value_noise`,
-    and `lattice_value` from `render/burn.rs` into a new `render/noise.rs`,
-    unchanged, and port the branch's `RisingField` (the bottom-biased field
-    `BurnField::new` builds today) with its tests. `BurnField` then holds a
-    `RisingField`. Before moving anything, pin three of today's field values
-    in a test, so the move provably changes no burn. The branch's
-    `random(seed, index)` waits for its first caller, T28.
   - [ ] **T41b (senior review; Win32). One layered window for every overlay.**
     Pull the window, its DIB section, `present` (today's `UpdateLayeredWindow`
     call), `follow`, and the z-order helpers out of `FlameOverlay` into a new
@@ -1129,7 +1122,6 @@ Rules for these, on top of section T's:
     `the_overlay_starts_directly_above_its_owner` must still pass.
 
 - [ ] **T42. A contact sheet for Burn (platform; test tool).** **(junior)**
-  After: T41a.
   - Why: no one can judge Burn without a person at the screen, and every
     look task below asks for that judgement. A picture of frames lets a
     contributor, or an agent that can read an image, compare before and after
@@ -1358,9 +1350,9 @@ ash, and looks the same at every DPI. One commit each, in order.
   - Why: a threshold sweeping through noise moves at one speed along a
     blobby edge. Fire catches unevenly, climbs faster than it spreads,
     runs up in fingers, and burns holes that join the main front.
-  - `render/noise.rs`: port the branch's `random(seed, index)` with its
-    tests. T41a left it for this task, its first caller; T29-T31 and T47
-    use it too.
+  - `render/noise.rs`: port the branch's `random(seed, index)` and
+    `RisingField::value_at` with their tests. T41a left them for this task,
+    their first caller; T29-T31, T44, and T47 use them too.
   - `render/burn.rs`: a cell's value becomes when the fire reaches it,
     scaled to 0 to 1. Leave the stages, `cell_pixels`, and the painter as
     they are.

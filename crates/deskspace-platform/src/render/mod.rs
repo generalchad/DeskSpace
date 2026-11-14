@@ -6,6 +6,7 @@ pub mod flames;
 pub(crate) mod glyph;
 pub(crate) mod highlight;
 pub(crate) mod math;
+pub mod noise;
 pub mod scene;
 pub mod shadow;
 pub mod transition;
