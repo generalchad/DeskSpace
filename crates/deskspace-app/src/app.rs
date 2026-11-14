@@ -869,11 +869,11 @@ impl App {
         if self.debug.is_some() {
             self.open_debug(ui);
         }
+        self.prune_all_missing(ui);
         self.sync_windows_at_startup(ui);
         // Positions are derived from the grid; recompute them so a
         // stored layout from another icon size or DPI is refreshed.
         self.relayout_all(ui);
-        self.prune_all_missing(ui);
         tracing::info!(
             spaces = self.config.desktop.spaces().len(),
             dark = self.system.dark(),

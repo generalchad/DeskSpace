@@ -219,7 +219,9 @@ impl IconCache {
         for (key, icon) in std::mem::take(&mut state.loaded) {
             if let Some(finished) = state.queue.finish(&key) {
                 users.extend(finished.users);
-                self.store(key, icon, finished.stale);
+                if !finished.stale || icon.is_some() {
+                    self.store(key, icon, finished.stale);
+                }
             }
         }
         // Let the worker re-check whether it has any work left, which is how
@@ -254,7 +256,7 @@ impl IconCache {
                 return true;
             }
             entry.stale = true;
-            let keep = matches!(key.2, IconKind::Item { .. });
+            let keep = matches!(key.2, IconKind::Item { .. }) && entry.icon.is_some();
             if !keep {
                 by_age.remove(&entry.last_used);
             }
@@ -587,6 +589,46 @@ mod tests {
         assert_eq!(cache.take_loaded(), [SPACE]);
         scene(&mut cache, SPACE, &["a"]);
         assert_eq!(load_all(&cache, Some(icon())), 1);
+    }
+
+    #[test]
+    fn an_invalidated_missing_icon_is_asked_for_again() {
+        let mut cache = cache_with_queue();
+        scene(&mut cache, SPACE, &["a"]);
+        load_all(&cache, None);
+        assert_eq!(cache.take_loaded(), [SPACE]);
+        assert_eq!(cache.len(), 1);
+        cache.invalidate(Path::new("a"));
+        assert!(cache.is_empty());
+        assert_eq!(cache.by_age.len(), cache.len(), "ages stay in step");
+        scene(&mut cache, SPACE, &["a"]);
+        let loaded = icon();
+        assert_eq!(load_all(&cache, Some(loaded.clone())), 1);
+        assert_eq!(cache.take_loaded(), [SPACE]);
+        assert_eq!(
+            cache.touch(&key("a")).map(|icon| icon.id()),
+            Some(loaded.id())
+        );
+    }
+
+    #[test]
+    fn a_failed_load_invalidated_in_flight_keeps_the_cached_icon_and_loads_again() {
+        let mut cache = cache_with_queue();
+        let old = icon();
+        cache.insert(key("a"), old.clone());
+        cache.invalidate(Path::new("a"));
+        scene(&mut cache, SPACE, &["a"]);
+        let worker = cache.worker.clone().expect("a worker");
+        let popped = worker.lock().queue.pop().expect("a request");
+        cache.invalidate(Path::new("a"));
+        worker.lock().loaded.push((popped, None));
+        assert_eq!(cache.take_loaded(), [SPACE]);
+        assert_eq!(cache.touch(&key("a")).map(|icon| icon.id()), Some(old.id()));
+        scene(&mut cache, SPACE, &["a"]);
+        let new = icon();
+        assert_eq!(load_all(&cache, Some(new.clone())), 1);
+        cache.take_loaded();
+        assert_eq!(cache.touch(&key("a")).map(|icon| icon.id()), Some(new.id()));
     }
 
     #[test]

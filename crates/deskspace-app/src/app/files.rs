@@ -387,6 +387,7 @@ impl App {
             match write_shortcut(&destination, &source) {
                 Ok(path) => {
                     tracing::info!(name = source.name(), path = %path.display(), "created a shortcut");
+                    self.icons.invalidate(&path);
                     self.undo
                         .note_file(FileChange::Created { path: path.clone() });
                     if lens.is_some() {
@@ -512,6 +513,7 @@ impl App {
             match self.storage.release(&path, desktop) {
                 Ok(back) => {
                     tracing::info!(to = %back.display(), "moved back to the desktop");
+                    self.icons.invalidate(&back);
                     notify_moved(&path, &back);
                     self.undo.note_file(FileChange::Moved {
                         from: path,
@@ -1186,5 +1188,76 @@ mod tests {
             "Notepad.lnk"
         );
         assert_eq!(link_copy_name(Path::new(""), "Docs"), "Docs.lnk");
+    }
+
+    #[test]
+    fn creating_or_adding_or_removing_an_item_invalidates_its_cached_icon() {
+        let root = std::env::temp_dir().join(format!(
+            "deskspace-icon-invalidate-test-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let source_dir = root.join("src");
+        std::fs::create_dir_all(&source_dir).unwrap();
+        let source_lnk = source_dir.join("App.lnk");
+        std::fs::write(&source_lnk, "x").unwrap();
+
+        let store = deskspace_config::ConfigStore::with_path(root.join("deskspace.toml"));
+        let mut app = App::new(deskspace_config::Config::new(), store, false, false);
+        let space = crate::fixtures::create_space(
+            &mut app.config.desktop,
+            "S",
+            deskspace_core::Rect::new(0, 0, 300, 200),
+        );
+
+        let stored_lnk = app.storage.root().join("App.lnk");
+        assert!(app.icons.icon_now(&stored_lnk, 32, 80).is_none());
+        assert_eq!(app.icons.len(), 1);
+        assert!(app.create_shortcuts(
+            space,
+            Point::ZERO,
+            vec![ShortcutSource::Shell(ShellItem {
+                name: "App".to_owned(),
+                path: Some(source_lnk),
+                id_list: Vec::new(),
+            })],
+        ));
+        assert!(app.icons.is_empty());
+
+        let extra = root.join("extra.txt");
+        assert!(app.icons.icon_now(&extra, 32, 80).is_none());
+        assert_eq!(app.icons.len(), 1);
+        assert!(
+            app.dispatch(
+                Command::AddItem {
+                    space,
+                    path: extra.clone(),
+                    facts: Default::default(),
+                },
+                Point::ZERO,
+            )
+            .is_applied()
+        );
+        assert!(app.icons.is_empty());
+
+        let extra_id = app
+            .config
+            .desktop
+            .space(space)
+            .unwrap()
+            .items()
+            .iter()
+            .find(|item| item.path == extra)
+            .unwrap()
+            .id;
+        assert!(app.icons.icon_now(&extra, 32, 80).is_none());
+        assert_eq!(app.icons.len(), 1);
+        assert!(
+            app.dispatch(Command::RemoveItem { id: extra_id }, Point::ZERO)
+                .is_applied()
+        );
+        assert!(app.icons.is_empty());
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -31,6 +31,7 @@ impl App {
             .filter(|id| self.config.desktop.space(*id).is_some())
             .or_else(|| self.config.desktop.space_at(near));
         let layout = target.map_or_else(|| self.effective_layout(), |id| self.layout_for(id));
+        self.invalidate_command_icons(&command);
         let outcome = self
             .config
             .desktop
@@ -40,6 +41,40 @@ impl App {
         }
         super::lens::free_off_thread(self.config.desktop.take_retired_items());
         outcome
+    }
+
+    /// Drops or marks stale cached icons whose backing items changed or left.
+    fn invalidate_command_icons(&mut self, command: &Command) {
+        match command {
+            Command::AddItem { path, .. } => self.icons.invalidate(path),
+            Command::RemoveItem { id } => {
+                if let Some(item) = self.config.desktop.item(*id) {
+                    self.icons.invalidate(&item.path);
+                }
+            }
+            Command::DeleteSpace { id } => {
+                if let Some(space) = self.config.desktop.space(*id) {
+                    for item in space.items() {
+                        self.icons.invalidate(&item.path);
+                    }
+                }
+            }
+            Command::RestoreSpaces { spaces } => {
+                for (id, entry) in spaces {
+                    if let Some(before) = self.config.desktop.space(*id) {
+                        for item in before.items() {
+                            self.icons.invalidate(&item.path);
+                        }
+                    }
+                    if let Some((_, after)) = entry {
+                        for item in after.items() {
+                            self.icons.invalidate(&item.path);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 
     /// Writes the configuration now. The first failure since the last

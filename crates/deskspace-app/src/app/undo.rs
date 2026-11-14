@@ -540,7 +540,12 @@ impl App {
                 } else {
                     (from.clone(), to.clone())
                 };
-                self.reverse_move(ui, &src, &dst)
+                let ok = self.reverse_move(ui, &src, &dst);
+                if ok {
+                    self.icons.invalidate(&src);
+                    self.icons.invalidate(&dst);
+                }
+                ok
             }
             FileChange::Renamed { from, to } => {
                 let (src, dst) = if undo {
@@ -554,6 +559,7 @@ impl App {
                 let target = path.clone();
                 match self.reverse_created(ui, &target) {
                     Some(at) => {
+                        self.icons.invalidate(&target);
                         files[index] = FileChange::Recycled {
                             original: target,
                             at,
@@ -568,6 +574,8 @@ impl App {
                 let since = *at;
                 match self.reverse_recycled(ui, &target, since) {
                     Some(restored) => {
+                        self.icons.invalidate(&target);
+                        self.icons.invalidate(&restored);
                         files[index] = FileChange::Created { path: restored };
                         true
                     }
