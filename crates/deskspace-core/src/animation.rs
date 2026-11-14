@@ -56,6 +56,96 @@ pub enum AutoEdge {
     Nearest,
 }
 
+/// Smoothstep: 0 at 0 and 1 at 1, slow at both ends, and symmetric, so
+/// played backwards it traces the same curve.
+pub fn smoothstep(t: f32) -> f32 {
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// How much of the fall's distance its speed at the start covers: the space
+/// crosses the edge already moving, so an Out leaves the screen rather than
+/// hanging at its edge.
+const BOUNCE_ENTRY: f32 = 0.25;
+/// How much of its speed each landing keeps.
+const BOUNCE_KEPT: f32 = 1.0 / 3.0;
+/// How much of the play the first rebound lasts, per unit of the fall.
+const BOUNCE_REBOUND: f32 = BOUNCE_KEPT * (2.0 - BOUNCE_ENTRY) / (1.0 - BOUNCE_ENTRY);
+/// When the space lands: the end of the fall and of the first rebound. The
+/// second rebound lands at 1.
+const BOUNCE_LANDINGS: [f32; 2] = {
+    let fall = 1.0 / (1.0 + BOUNCE_REBOUND + BOUNCE_REBOUND * BOUNCE_KEPT);
+    [fall, fall * (1.0 + BOUNCE_REBOUND)]
+};
+/// The acceleration that carries the fall, which the rebounds share.
+const BOUNCE_GRAVITY: f32 = 2.0 * (1.0 - BOUNCE_ENTRY) / (BOUNCE_LANDINGS[0] * BOUNCE_LANDINGS[0]);
+
+/// A fall that lands and settles in two shrinking rebounds, one parabola
+/// each under one gravity. Penner's easeOutBounce (four arcs, a first rebound
+/// a quarter of the fall) left its last arcs a frame or two at the usual
+/// durations and read as jitter.
+fn bounce_ease(t: f32) -> f32 {
+    let [fall, first] = BOUNCE_LANDINGS;
+    if t < fall {
+        let t = t / fall;
+        return BOUNCE_ENTRY * t + (1.0 - BOUNCE_ENTRY) * t * t;
+    }
+    let (start, end) = if t < first {
+        (fall, first)
+    } else {
+        (first, 1.0)
+    };
+    let half = (end - start) / 2.0;
+    let from_peak = t - (start + half);
+    1.0 - BOUNCE_GRAVITY / 2.0 * (half * half - from_peak * from_peak)
+}
+
+/// How an effect's shown progress moves from 0 (gone) to 1 (whole).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Curve {
+    /// Slow at both ends (`smoothstep`).
+    Smooth,
+    /// Starts slowly when going out (`1 - (1 - u)²`) and races to the end,
+    /// so fire catches before it sweeps away.
+    Kindle,
+    /// Drops in and settles in two shrinking rebounds.
+    Bounce,
+}
+
+impl Curve {
+    /// Maps linear shown progress `u` (0 to 1) to eased shown progress.
+    pub fn apply(self, u: f32) -> f32 {
+        match self {
+            Self::Smooth => smoothstep(u),
+            Self::Kindle => 1.0 - (1.0 - u) * (1.0 - u),
+            Self::Bounce => bounce_ease(u),
+        }
+    }
+}
+
+/// How long an effect plays relative to the chosen duration, and the curve
+/// its progress follows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Pace {
+    /// How long it plays, in percent of the chosen duration, so an effect
+    /// that needs more time takes it without a special case.
+    pub stretch_percent: u16,
+    pub curve: Curve,
+}
+
+pub const PACE_NORMAL: Pace = Pace {
+    stretch_percent: 100,
+    curve: Curve::Smooth,
+};
+
+pub const PACE_STRETCH_RANGE: (u16, u16) = (50, 300);
+
+impl Pace {
+    /// How long the effect plays when `duration` is the chosen duration.
+    pub fn stretch(self, duration: Duration) -> Duration {
+        duration * u32::from(self.stretch_percent) / 100
+    }
+}
+
 /// One row of `EFFECTS`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EffectSpec {
@@ -67,52 +157,59 @@ pub struct EffectSpec {
     /// Where "Automatic" goes, for an effect that uses `Direction`: the top
     /// unless the row says otherwise.
     pub auto_edge: AutoEdge,
-    /// How long it plays, in percent of the chosen duration, so an effect
-    /// that needs more time takes it without a special case.
-    pub stretch_percent: u16,
+    pub pace: Pace,
 }
 
 use EffectOption::{Detail, Direction};
 
 /// Every effect, in the order the settings page lists them.
 pub const EFFECTS: &[EffectSpec] = &[
-    effect(Effect::None, "none", &[]),
-    effect(Effect::Roll, "roll", &[Direction]),
-    effect(Effect::Fade, "fade", &[]),
-    effect(Effect::Pixelate, "pixelate", &[Detail]),
-    effect(Effect::Gradient, "gradient", &[Direction]),
-    effect(Effect::Dissolve, "dissolve", &[Detail]),
-    effect(Effect::Fly, "fly", &[Direction]).auto_edge(AutoEdge::Nearest),
-    effect(Effect::Crt, "crt", &[]),
-    effect(Effect::Burn, "burn", &[Detail]),
-    effect(Effect::Bounce, "bounce", &[Direction]).stretch_percent(200),
+    effect(Effect::None, "none", &[], PACE_NORMAL),
+    effect(Effect::Roll, "roll", &[Direction], PACE_NORMAL),
+    effect(Effect::Fade, "fade", &[], PACE_NORMAL),
+    effect(Effect::Pixelate, "pixelate", &[Detail], PACE_NORMAL),
+    effect(Effect::Gradient, "gradient", &[Direction], PACE_NORMAL),
+    effect(Effect::Dissolve, "dissolve", &[Detail], PACE_NORMAL),
+    effect(Effect::Fly, "fly", &[Direction], PACE_NORMAL).auto_edge(AutoEdge::Nearest),
+    effect(Effect::Crt, "crt", &[], PACE_NORMAL),
+    effect(
+        Effect::Burn,
+        "burn",
+        &[Detail],
+        Pace {
+            stretch_percent: 200,
+            curve: Curve::Kindle,
+        },
+    ),
+    effect(
+        Effect::Bounce,
+        "bounce",
+        &[Direction],
+        Pace {
+            stretch_percent: 200,
+            curve: Curve::Bounce,
+        },
+    ),
 ];
 
-const fn effect(effect: Effect, key: &'static str, options: &'static [EffectOption]) -> EffectSpec {
+const fn effect(
+    effect: Effect,
+    key: &'static str,
+    options: &'static [EffectOption],
+    pace: Pace,
+) -> EffectSpec {
     EffectSpec {
         effect,
         key,
         options,
         auto_edge: AutoEdge::Top,
-        stretch_percent: 100,
+        pace,
     }
 }
 
 impl EffectSpec {
     const fn auto_edge(self, auto_edge: AutoEdge) -> Self {
         Self { auto_edge, ..self }
-    }
-
-    const fn stretch_percent(self, stretch_percent: u16) -> Self {
-        Self {
-            stretch_percent,
-            ..self
-        }
-    }
-
-    /// How long the effect plays when `chosen` is the chosen duration.
-    pub fn stretched(&self, chosen: Duration) -> Duration {
-        chosen * u32::from(self.stretch_percent) / 100
     }
 }
 
@@ -623,5 +720,97 @@ mod tests {
         assert_eq!(clamped.fold.effect, EffectChoice::Effect(Effect::Roll));
         assert_eq!(clamped.fold.duration_ms, DURATION_MS_RANGE.1);
         assert_eq!(clamped.stagger_ms, STAGGER_MS_RANGE.0);
+    }
+
+    #[test]
+    fn smoothstep_runs_from_0_to_1_and_is_symmetric() {
+        assert_eq!(smoothstep(0.0), 0.0);
+        assert_eq!(smoothstep(1.0), 1.0);
+        assert_eq!(smoothstep(0.5), 0.5);
+        for step in 0..=10 {
+            let t = step as f32 / 10.0;
+            assert!((smoothstep(t) + smoothstep(1.0 - t) - 1.0).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn bounce_ease_lands_at_least_three_times_and_stays_in_range() {
+        assert_eq!(bounce_ease(0.0), 0.0);
+        assert!((bounce_ease(1.0) - 1.0).abs() < 1e-6);
+        for step in 0..=1000 {
+            let t = step as f32 / 1000.0;
+            let value = bounce_ease(t);
+            assert!((0.0..=1.0).contains(&value), "at {t}: {value}");
+        }
+        let [fall, first] = BOUNCE_LANDINGS;
+        assert!(bounce_ease((fall + first) / 2.0) < 1.0, "rebounds");
+        assert!(bounce_ease((first + 1.0) / 2.0) < 1.0, "rebounds again");
+        let landings = [fall, first, 1.0];
+        let touched = landings
+            .iter()
+            .filter(|&&t| (bounce_ease(t) - 1.0).abs() < 1e-5)
+            .count();
+        assert_eq!(touched, 3, "touched 1 only {touched} times");
+    }
+
+    #[test]
+    fn bounce_ease_moves_at_its_ends_and_every_landing_keeps_the_same_speed() {
+        // The slope of `bounce_ease` at `t`, measured just inside its arc.
+        let slope = |t: f32, sign: f32| (bounce_ease(t + sign * 1e-3) - bounce_ease(t)) / 1e-3;
+        assert!(slope(0.0, 1.0) > 0.2, "enters already moving");
+        let [fall, first] = BOUNCE_LANDINGS;
+        let (lands, leaves) = (slope(fall, -1.0), -slope(fall, 1.0));
+        assert!(
+            (leaves / lands + BOUNCE_KEPT).abs() < 0.02,
+            "{lands} {leaves}"
+        );
+        let (lands, leaves) = (slope(first, -1.0), -slope(first, 1.0));
+        assert!(
+            (leaves / lands + BOUNCE_KEPT).abs() < 0.02,
+            "{lands} {leaves}"
+        );
+    }
+
+    #[test]
+    fn every_bounce_is_long_enough_to_see_at_the_default_duration() {
+        // At 60 Hz, the slowest common refresh, a shorter arc shows as a
+        // twitch rather than a bounce.
+        const REFRESH_MS: f32 = 1000.0 / 60.0;
+        const FRAMES: f32 = 3.0;
+        let chosen = Duration::from_millis(DURATION_MS_DEFAULT.into());
+        let played = Effect::Bounce.spec().pace.stretch(chosen).as_secs_f32() * 1000.0;
+        let [fall, first] = BOUNCE_LANDINGS;
+        for arc in [fall, first - fall, 1.0 - first] {
+            assert!(arc * played >= FRAMES * REFRESH_MS, "{arc} of {played} ms");
+        }
+    }
+
+    #[test]
+    fn every_effect_pace_is_in_range_and_curves_behave() {
+        for spec in EFFECTS {
+            assert!(
+                (PACE_STRETCH_RANGE.0..=PACE_STRETCH_RANGE.1).contains(&spec.pace.stretch_percent),
+                "{:?}: {}",
+                spec.effect,
+                spec.pace.stretch_percent
+            );
+        }
+        for curve in [Curve::Smooth, Curve::Kindle, Curve::Bounce] {
+            assert_eq!(curve.apply(0.0), 0.0, "{curve:?} at 0");
+            assert!((curve.apply(1.0) - 1.0).abs() < 1e-6, "{curve:?} at 1");
+        }
+        for curve in [Curve::Smooth, Curve::Kindle] {
+            let mut prev = 0.0_f32;
+            for step in 0..=100 {
+                let u = step as f32 / 100.0;
+                let value = curve.apply(u);
+                assert!(value >= prev, "{curve:?} went backward at {u}");
+                prev = value;
+            }
+        }
+        assert!(
+            Curve::Kindle.apply(0.9) > 0.98,
+            "a burn barely moves in its first tenth"
+        );
     }
 }

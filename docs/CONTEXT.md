@@ -477,8 +477,9 @@ beside it.
 ### Animations (`animation.rs`)
 
 What each kind of moment plays (ROADMAP D12), as data. `EFFECTS` and `KINDS`
-are the two tables: an effect's row names the options it uses and where
-"Automatic" sends it, and a kind's row the effects (`Offers`) and options
+are the two tables: an effect's row names the options it uses, where
+"Automatic" sends it, and its pace (`Pace`: duration stretch and progress
+`Curve`), and a kind's row the effects (`Offers`) and options
 it offers, the kind it may follow ("Same as startup"), and whether it has
 the startup controls. The platform turns an edge into a `Side`, with
 Automatic decided, through `Play::side`. `Animations` holds one

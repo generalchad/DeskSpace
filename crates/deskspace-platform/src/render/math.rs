@@ -5,11 +5,7 @@ pub fn lerp(from: f32, to: f32, t: f32) -> f32 {
     from + (to - from) * t
 }
 
-/// Smoothstep: 0 at 0 and 1 at 1, slow at both ends, and symmetric, so
-/// played backwards it traces the same curve.
-pub fn smoothstep(t: f32) -> f32 {
-    t * t * (3.0 - 2.0 * t)
-}
+pub use deskspace_core::animation::smoothstep;
 
 /// A fixed, well-spread hash of three integers, so noise built on it takes
 /// the same shape every time and an effect played backwards retraces it.
@@ -61,17 +57,6 @@ impl Grid {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn smoothstep_runs_from_0_to_1_and_is_symmetric() {
-        assert_eq!(smoothstep(0.0), 0.0);
-        assert_eq!(smoothstep(1.0), 1.0);
-        assert_eq!(smoothstep(0.5), 0.5);
-        for step in 0..=10 {
-            let t = step as f32 / 10.0;
-            assert!((smoothstep(t) + smoothstep(1.0 - t) - 1.0).abs() < 1e-6);
-        }
-    }
 
     #[test]
     fn the_hash_is_fixed_and_unit_stays_below_1() {

@@ -7101,3 +7101,4 @@ takes an id listed here or used anywhere above
 - **B53.** Shade the flames with less work per pixel (platform).
 - **K18.** Split `app/undo.rs` before it crosses the limit.
 - **K16.** Split `render/d2d/mod.rs`.
+- **T24.** Each effect sets its own pace (core, app, platform).

@@ -193,7 +193,7 @@ fn play_for(
     Play {
         effect: resolved.effect,
         way,
-        duration: tweak.slow(resolved.effect.spec().stretched(chosen)),
+        duration: tweak.slow(resolved.effect.spec().pace.stretch(chosen)),
         delay: Duration::ZERO,
         detail: resolved.detail,
         edge: resolved.direction,
@@ -216,6 +216,7 @@ mod tests {
             play_for(&animations, true, normal, Kind::Startup, Way::In).duration
         };
         assert_eq!(duration_of(Effect::Roll), Duration::from_millis(250));
+        assert_eq!(duration_of(Effect::Burn), Duration::from_millis(500));
         assert_eq!(duration_of(Effect::Bounce), Duration::from_millis(500));
     }
 
@@ -305,6 +306,32 @@ mod tests {
         let last = delays.iter().map(|(_, delay)| *delay).max().unwrap();
         assert!(last + Duration::from_millis(1000) <= EXIT_LIMIT, "{last:?}");
         assert!(last > Duration::ZERO, "still staggered");
+    }
+
+    #[test]
+    fn burn_on_exit_with_ten_spaces_fits_within_the_limit() {
+        let mut animations = Animations::default();
+        animations.startup_exit.effect = EffectChoice::Effect(Effect::Burn);
+        animations.startup_exit.duration_ms = 1000;
+        let play = play_for(
+            &animations,
+            true,
+            AnimationTweak::default(),
+            Kind::Startup,
+            Way::Out,
+        );
+        assert_eq!(play.duration, Duration::from_millis(2000));
+        let ten: Vec<(SpaceId, Rect)> = (0..10)
+            .map(|index| (SpaceId(index), Rect::new(index as i32 * 10, 0, 50, 50)))
+            .collect();
+        let delays = exit_delays(
+            &ten,
+            StartupOrder::OneAfterAnother,
+            Duration::from_millis(500),
+            play.duration,
+        );
+        let last = delays.iter().map(|(_, delay)| *delay).max().unwrap();
+        assert!(last + play.duration <= EXIT_LIMIT, "{last:?}");
     }
 
     /// An app with two shown spaces, the lower one made first, that animates

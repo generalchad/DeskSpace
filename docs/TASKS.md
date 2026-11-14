@@ -24,7 +24,7 @@ are collected in section V instead of blocking:
 - section G (settings window polish): the pure half of G13;
 - section K (K10-K13, K15), each a pure move with rules that
   leave nothing to design;
-- section T: T24 (needs nothing now), T41a, and then T42; once T41 has
+- section T: T41a, and then T42; once T41 has
   landed, T25-T31 in order, then T44 and T46-T48;
 - O5 and the O6-O9 harness abilities;
 - anything else not marked **[needs decision]**, "still to design", or in
@@ -1252,7 +1252,7 @@ T24-T33 make Burn read as fire rather than an orange wipe: it takes its
 time and kindles, spreads unevenly, smoulders, throws turbulent flames and
 ash, and looks the same at every DPI. One commit each, in order.
 
-- **When to start.** T24 needs nothing and can start now. T25-T33 build on
+- **When to start.** T25-T33 build on
   groundwork that is on `feat/color-picker-redesign` (as of `c1ad0f3`) but
   not in `main`; T41 below brings it over, so start T25 after T41. Where a
   task below names the branch's types, read `main`'s after T41:
@@ -1275,56 +1275,6 @@ ash, and looks the same at every DPI. One commit each, in order.
   to that row's first column, instead of adding a new row.
 - **Burn's smoke.** If Burn's smoke (`render/burn_smoke.rs`) has landed,
   keep the overlay's drawing order: smoke, then flames, then ash.
-
-- [ ] **T24. Each effect sets its own pace (core, app, platform).**
-  **(junior)** **[needs human]**
-  - Why: D12 (amended 2026-10-22). At the default 250 ms, Burn is over
-    before its flames read. Smoothstep, the curve every effect but Bounce
-    uses (`smoothstep` in `render/transition.rs`), slows at both ends, while
-    a fire catches slowly and then races. An effect's pace belongs in its
-    `EFFECTS` row, so Burn needs no `if` and Bounce no `match`.
-  - `deskspace-core/src/animation.rs`:
-    - `pub enum Curve { Smooth, Kindle, Bounce }`, with a `///` doc on each,
-      and `pub fn apply(self, u: f32) -> f32`. `Smooth` is today's
-      `smoothstep`; move it and its comment from `render/math.rs` here.
-      `Bounce` is `bounce_ease` with its constants; move them here too. `Kindle` is
-      `1 - (1 - u)²`, where `u` is how much of the space is shown. An out
-      (u from 1 to 0) starts slowly and ends fast; an in starts fast and
-      settles.
-    - `pub struct Pace { pub stretch_percent: u16, pub curve: Curve }`,
-      `pub const PACE_NORMAL: Pace` (100, `Smooth`), `pub const
-      PACE_STRETCH_RANGE: (u16, u16) = (50, 300)`, and `pub fn
-      stretch(self, duration: Duration) -> Duration`.
-    - `EffectSpec` gains `pace: Pace` in place of its `stretch_percent`, and
-      `effect()` takes it as a fourth argument. Every row gets `PACE_NORMAL`
-      except Burn, which gets
-      `Pace { stretch_percent: 200, curve: Curve::Kindle }`, and Bounce,
-      which gets `Pace { stretch_percent: 200, curve: Curve::Bounce }`.
-  - `render/transition.rs`: `Transition::frame` applies
-    `self.play.effect.spec().pace.curve` in place of the `match` that
-    chooses `bounce_ease` or `smoothstep`. Delete that match and both local
-    curve functions.
-  - `deskspace-app/src/app/animation.rs`: `play_for` already stretches the
-    chosen duration before `tweak.slow`; have it read
-    `spec().pace.stretch`. The exit stagger (`exit_delays`) uses
-    `play.duration`, so it allows for the stretch with no further change.
-  - The settings page does not change: the Duration control still shows
-    the chosen time.
-  - Tests:
-    - core: every row's stretch is within `PACE_STRETCH_RANGE`; every
-      curve is 0 at 0 and 1 at 1; `Smooth` and `Kindle` never decrease over
-      101 even samples; `Bounce` stays within 0..=1 and lands at least
-      three times; `Kindle.apply(0.9)` is above 0.98 (a burn barely moves
-      in its first tenth).
-    - app: `play_for` gives Burn at 250 ms a 500 ms play and Roll at
-      250 ms a 250 ms one. With Burn on Startup at 1000 ms and ten
-      spaces, the last one still ends within `EXIT_LIMIT` (copy the
-      existing exit test).
-  - `CONTEXT.md` section 4, "Animations": one sentence saying an effect's
-    row also sets its pace.
-  - **[needs human]** check: Burn at 250 ms plays for about half a
-    second, catching slowly and then racing to the end; un-burning starts
-    fast and settles; every other effect looks and times as before.
 
 - [ ] **T25. One seeded Burn field per play (platform).**
   **(junior)** **[needs human]**
@@ -2531,7 +2481,7 @@ for a machine that has it.
 | Flat material (part script) | Fade, Pixelate, Gradient, Dissolve, and Burn on hide, show, and delete (and in the debug preview) on Acrylic, Blur, and Solid spaces with a border, with Windows' "Transparency effects" off and on: no outline stays around the fading space, and it comes back once a show ends; with the switch off, no dark box either, the dark fill coming back only once a show ends; with it on, see the T13 row; Roll, Fly, and CRT look as before. |
 | T12 (part script) (D12) | Windows 11 with "Transparency effects" on: the log says "spaces use composition"; the R3 list passes unchanged with each backdrop (Acrylic and Blur blurred, Clear and Solid not), at 100 % and 150 %, corners and border as before, and the T8 row still passes, the blur stepping on and off as today. With the switch off at startup, the log names it and spaces look as before T12. Windows 10, `--placement desktop-*`, and `--click-through` change nothing. Idle CPU and GPU no higher than before. |
 | T13 (D12) | Windows 11 confirmed 2026-10-18 (maintainer). Still to check: on Windows 10 the blur still steps; idle GPU no higher than before. |
-| T17, T18 (part script) (D12) | Burn on Startup (hide, show, a new space, startup, exit) and on Delete, on each backdrop at 100 % and 150 %: the space burns from the bottom up along a ragged edge that glows, chars, and scorches ahead of itself, like paper; flames lick up from the edge and past the top and sides of the frame with no box or blur around them, and never show over another application (cover the space with a window and they stay behind it), while with `--on-top` they follow the space above other windows; Detail changes how ragged the edge is; reversing mid-burn (the hotkey twice) un-burns it; no flame window is left behind after it ends, after a delete, or after quitting mid-burn; a desktop-hosted space burns without flames. |
+| T17, T18, T24 (part script) (D12) | Burn on Startup (hide, show, a new space, startup, exit) and on Delete, on each backdrop at 100 % and 150 %: the space burns from the bottom up along a ragged edge that glows, chars, and scorches ahead of itself, like paper; flames lick up from the edge and past the top and sides of the frame with no box or blur around them, and never show over another application (cover the space with a window and they stay behind it), while with `--on-top` they follow the space above other windows; Detail changes how ragged the edge is; reversing mid-burn (the hotkey twice) un-burns it; no flame window is left behind after it ends, after a delete, or after quitting mid-burn; a desktop-hosted space burns without flames; Burn at 250 ms plays for about half a second, catching slowly and then racing to the end; un-burning starts fast and settles; every other effect looks and times as before. |
 | U3 (v0.3) (part script) (D11) | Space menu and tray menu list Undo and Redo at the top, greyed when empty and named for the top action ("Undo Move space", "Redo Move space"); moving, resizing, reordering, sorting, fitting, locking, folding, renaming, creating, and deleting an empty space each undo and redo from both menus. |
 | U4 (v0.3) (script) (D11) | Ctrl+Z after a space move puts it back, Ctrl+Y moves it again; with no space current, Ctrl+Z on the desktop still undoes an Explorer rename. |
 | U5 (v0.3) (part script) (D11) | Drop a file into a space and undo (it is back where it was); delete a space with stored files, undo, then redo; rename an item and undo. |
