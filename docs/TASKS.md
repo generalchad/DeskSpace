@@ -20,12 +20,11 @@ are collected in section V instead of blocking:
 - section P's "Juniors and interns" list, the best place for a first task,
   ranked most severe first, so take one from the top;
 - section B's icon picker tasks: B49 next; then B54 from "Measure and trim
-  the UI thread", once T41b has landed;
+  the UI thread";
 - section G (settings window polish): the pure half of G13;
 - section K (K10-K13, K15), each a pure move with rules that
   leave nothing to design;
-- section T: T41b, and then T42; once T41 has
-  landed, T25-T31 in order, then T44 and T46-T48;
+- section T: T42, and T25-T31 in order, then T44 and T46-T48;
 - O5 and the O6-O9 harness abilities;
 - anything else not marked **[needs decision]**, "still to design", or in
   section D.
@@ -123,7 +122,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | `WM_APP` message ids | `deskspace-platform/src/win32/messages.rs` |
 | Keys (spaces are never focused) | `deskspace-platform/src/win32/keyboard.rs` (`fn watched_key`) |
 | Space window procedure, DWM, shadow window | `deskspace-platform/src/win32/space_window/` (`mod.rs`, `zorder.rs`, `mouse.rs`, `frame.rs`, `paint.rs`), `dwm.rs`, `shadow_window.rs`, `render/shadow.rs` |
-| An animation effect | `deskspace-core/src/animation.rs` (the tables), `deskspace-platform/src/render/transition.rs` (frame math), `render/d2d/` (drawing), `win32/space_animation.rs` (playing it on a window), `win32/overlay.rs` (windows beside the space); the recipe is section T |
+| An animation effect | `deskspace-core/src/animation.rs` (the tables), `deskspace-platform/src/render/transition.rs` (frame math), `render/d2d/` (drawing), `win32/space_animation.rs` (playing it on a window), `win32/overlay.rs` and `win32/layered_overlay.rs` (windows beside the space); the recipe is section T |
 | Drawing | `deskspace-platform/src/render/scene.rs`, `render/d2d/` (`mod.rs` the `Painter`, `chrome.rs` headers and the status bar, `effects.rs` an animation's resources, `prepared.rs` the `PreparedScene`, `drag_image.rs` the drag image) |
 | The zoom pop-up window and its layout | `deskspace-platform/src/win32/zoom_bar.rs`, `render/zoom_bar.rs`, `render/d2d/zoom_bar.rs` |
 | Settings window controls | `deskspace-platform/src/win32/settings_window/` (`mod.rs`, `build.rs`, `field.rs`, `update.rs`, `nav.rs`, `paint.rs`, `commands.rs`, `preview.rs`, `cards.rs`, `header.rs` the line above the page, `title.rs` the title's scroll, `scroll.rs` a page taller than the window); the title's pure motion is `deskspace-platform/src/title_scroll.rs`; the card grouping is `deskspace-platform/src/settings_cards.rs` |
@@ -535,7 +534,7 @@ section 3, "Performance".
     it draws keeps its snapshot.
 
 - [ ] **B54. Upload only the rows the flames changed (platform; Win32).**
-  After: T41b. Senior review: `unsafe` Win32.
+  Senior review: `unsafe` Win32.
   - Why: `UpdateLayeredWindow` copies the whole overlay every frame.
   - Call `UpdateLayeredWindowIndirect` with `prcDirty` set to the union of this
     frame's and the last frame's `Rows` (`render/flames.rs`), linked beside
@@ -1106,21 +1105,6 @@ Rules for these, on top of section T's:
    look writes T42's sheets before and after, and the commit body says what
    changed in them. The **[needs human]** check still decides.
 
-- [ ] **T41. Port the effect groundwork (platform).** Two parts, one commit
-  each, in order. No visible change, so no section V row; say so in each
-  commit body. The branch's third piece, `Play::seed`, has no reader until
-  T25, so it lands there, with its first caller.
-  - [ ] **T41b (senior review; Win32). One layered window for every overlay.**
-    Pull the window, its DIB section, `present` (today's `UpdateLayeredWindow`
-    call), `follow`, and the z-order helpers out of `FlameOverlay` into a new
-    `win32/layered_overlay.rs` (`LayeredOverlay`), keeping every `// SAFETY:`
-    comment and both z-order fixes with their dated notes. `FlameOverlay` keeps
-    the burn's field and flames and owns a `LayeredOverlay`. T21's lamp, T14's
-    disk, and T44's smoke then use it too, instead of copying
-    `flame_overlay.rs`. Move the `flame_overlay.rs` tests that test the window
-    with it.
-    `the_overlay_starts_directly_above_its_owner` must still pass.
-
 - [ ] **T42. A contact sheet for Burn (platform; test tool).** **(junior)**
   - Why: no one can judge Burn without a person at the screen, and every
     look task below asks for that judgement. A picture of frames lets a
@@ -1144,7 +1128,7 @@ Rules for these, on top of section T's:
     Commit no PNG.
 
 - [ ] **T44. Burn's smoke (platform).** **(junior, senior review)**
-  **[needs human]** After: T41, T42, and T31.
+  **[needs human]** After: T42 and T31.
   - The senior review is for the port: say in the commit body what was kept
     from the branch's version and what was left, and why.
   - Pure, in `render/burn_smoke.rs`; read the branch's version first and
@@ -1244,10 +1228,9 @@ T24-T33 make Burn read as fire rather than an orange wipe: it takes its
 time and kindles, spreads unevenly, smoulders, throws turbulent flames and
 ash, and looks the same at every DPI. One commit each, in order.
 
-- **When to start.** T25-T33 build on
-  groundwork that is on `feat/color-picker-redesign` (as of `c1ad0f3`) but
-  not in `main`; T41 below brings it over, so start T25 after T41. Where a
-  task below names the branch's types, read `main`'s after T41:
+- **When to start.** T41 has landed, so T25 can start now. T25-T33 build on
+  the groundwork ported from `feat/color-picker-redesign` (as of `c1ad0f3`). Where a
+  task below names the branch's types, read `main`'s:
   `EffectOverlay` and `Art::Burn` are `FlameOverlay` (the burn's state, in
   `win32/flame_overlay.rs`), and `Margins` is what `flames::margins` returns.
 - **Who.** Tiers follow section P's "Who takes what": **(junior)** is pure

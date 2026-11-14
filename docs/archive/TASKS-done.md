@@ -7103,3 +7103,5 @@ takes an id listed here or used anywhere above
 - **K16.** Split `render/d2d/mod.rs`.
 - **T24.** Each effect sets its own pace (core, app, platform).
 - **T41a.** One noise module.
+- **T41b.** One layered window for every overlay.
+- **T41.** Port the effect groundwork (platform).

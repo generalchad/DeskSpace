@@ -35,6 +35,7 @@ pub(crate) mod icons;
 mod info_tip;
 pub(crate) mod instance;
 mod keyboard;
+mod layered_overlay;
 mod menu;
 mod messages;
 pub(crate) mod names;
