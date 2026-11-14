@@ -18,6 +18,7 @@ mod geometry;
 mod glyph;
 mod graphics;
 mod item;
+mod label_lines;
 mod prepared;
 mod title;
 mod zoom_bar;
@@ -94,7 +95,8 @@ use geometry::{
 };
 pub(crate) use graphics::rebuild_text_formats;
 use graphics::{GRAPHICS, Graphics, graphics};
-use item::{draw_item, draw_marquee};
+use item::{ItemText, draw_item, draw_marquee};
+use label_lines::LabelLines;
 
 const LABEL_LINE_HEIGHT: f32 = crate::render::ITEM_LABEL_LINE_HEIGHT;
 const SCROLL_THUMB_ALPHA: u8 = 110;
@@ -850,12 +852,7 @@ impl Painter {
     unsafe fn draw_items(&mut self, ctx: DrawContext, prepared: &PreparedScene) {
         let scene = &prepared.scene;
         let editing = prepared.edit_item.as_ref().map(|(id, _)| *id);
-        for ((item, label), cells) in scene
-            .items
-            .iter()
-            .zip(&prepared.labels)
-            .zip(&prepared.cells)
-        {
+        for (item, text) in scene.items.iter().zip(prepared.item_texts()) {
             if Some(item.id) == editing {
                 continue;
             }
@@ -864,19 +861,18 @@ impl Painter {
                 .as_ref()
                 .and_then(|icon| self.bitmap_for(ctx.target, icon));
             // SAFETY: caller is inside BeginDraw/EndDraw.
-            unsafe { draw_item(ctx, scene, item, label, cells, bitmap.as_ref(), None) };
+            unsafe { draw_item(ctx, scene, item, text, bitmap.as_ref(), None) };
         }
         // The rename box grows over the items below it, as Explorer's does, so
         // draw the item being renamed last.
         let Some((id, buffer)) = &prepared.edit_item else {
             return;
         };
-        let Some(((item, label), cells)) = scene
+        let Some((item, text)) = scene
             .items
             .iter()
-            .zip(&prepared.labels)
-            .zip(&prepared.cells)
-            .find(|((item, _), _)| item.id == *id)
+            .zip(prepared.item_texts())
+            .find(|(item, _)| item.id == *id)
         else {
             return;
         };
@@ -890,8 +886,7 @@ impl Painter {
                 ctx,
                 scene,
                 item,
-                label,
-                cells,
+                text,
                 bitmap.as_ref(),
                 Some(buffer.as_slice()),
             )

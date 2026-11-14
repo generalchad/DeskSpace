@@ -336,9 +336,14 @@ every space lays out on.
   (`Desktop::apply_with_layout(command, layout, bounds)`; `apply` delegates
   with the stored base). Scene geometry, hit tests, and scroll all read the
   same per-space grid, so painter and pointer always agree. A customized
-  space's base grid and theme are its own (`Space::grid`, `Space::theme`);
-  under the `MatchExplorer` preset, Explorer's item spacing replaces the cell
-  and gap outright.
+  space's base grid and theme are its own (`Space::grid`, `Space::theme`).
+  A space's row is as tall as its items draw
+  (`ItemMetrics::grid_cell_height`), whatever the look (ROADMAP D28); under
+  the `MatchExplorer` preset its column is Explorer's and its cells touch.
+  Only the desktop layer keeps Explorer's whole cell (`App::layer_layout`),
+  since its items sit where Explorer put them. An icon cell's highlight hugs
+  the icon and the lines its own label takes; the painter counts those when
+  it prepares a scene (`render/d2d/label_lines.rs`).
 - `resize_rect` moves the grabbed edges to a point, snapped to the fine
   `snap` step, keeping opposite edges fixed, at least `min_space_size()` (one
   icon cell plus padding) and inside the work area. With `fit_to_grid` on

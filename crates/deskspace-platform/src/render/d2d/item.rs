@@ -12,9 +12,27 @@ const MARQUEE_FILL_ALPHA: u8 = 70;
 /// The selection box border's alpha, close to solid.
 const MARQUEE_BORDER_ALPHA: u8 = 200;
 const CELL_INSET: f32 = crate::render::ITEM_FRAME_INSET as f32;
+const FRAME_GAP: f32 = crate::render::ITEM_FRAME_GAP as f32;
 const HIGHLIGHT_RADIUS: f32 = 4.0;
-/// The space between a label and its cell's sides.
+/// The space between an icon cell's label and its highlight's sides.
 const LABEL_INSET: f32 = 4.0;
+
+/// How wide the label's box is in an icon cell `cell_width` wide: the
+/// highlight's width less the inset at each side. A label's line count is
+/// measured in this width, so it must be the one the label is drawn in.
+pub(super) fn grid_label_width(cell_width: f32) -> f32 {
+    cell_width - FRAME_GAP - 2.0 * LABEL_INSET
+}
+
+/// One item's strings, as the painter draws them.
+#[derive(Clone, Copy)]
+pub(super) struct ItemText<'a> {
+    pub(super) label: &'a [u16],
+    /// How many lines the label takes in an icon cell: one or two.
+    pub(super) lines: u8,
+    /// The Details cells after Name.
+    pub(super) cells: &'a [Vec<u16>],
+}
 /// The focus rectangle's alpha.
 const FOCUS_ALPHA: u8 = 220;
 /// The check box's corner radius and tick width, as shares of its side.
@@ -62,8 +80,7 @@ pub(super) unsafe fn draw_item(
     ctx: DrawContext,
     scene: &SpaceScene,
     item: &ItemVisual,
-    label: &[u16],
-    cells: &[Vec<u16>],
+    text: ItemText,
     icon: Option<&ID2D1Bitmap>,
     edit: Option<&[u16]>,
 ) {
@@ -72,13 +89,18 @@ pub(super) unsafe fn draw_item(
         target,
         brush,
     } = ctx;
+    let ItemText {
+        label,
+        lines,
+        cells,
+    } = text;
     let cell = to_rect_f(item.rect);
     let metrics = scene.metrics;
     let layout = CellLayout::new(
         cell,
         metrics,
         scene.label_size,
-        scene.label_lines,
+        lines,
         scene.item_layout,
         scene.details.as_ref(),
     );
@@ -344,8 +366,10 @@ unsafe fn draw_content_meta(
 
 /// Where an item cell's parts go, in the scene's coordinates. Pure, so the
 /// layout is tested apart from the drawing. The cell's shape follows the
-/// space's view (`ItemLayout`): a grid centers the icon over a two-line label,
-/// while Small, List, Details, Tiles, and Content put the icon beside the name.
+/// space's view (`ItemLayout`): a grid centers the icon over its label, with a
+/// highlight that hugs the two as Explorer's does, while Small, List, Details,
+/// Tiles, and Content put the icon beside the name in a highlight as large as
+/// the cell.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct CellLayout {
     /// Where the highlight and the focus rectangle go.
@@ -368,9 +392,10 @@ struct CellLayout {
 }
 
 impl CellLayout {
-    /// The layout of `cell` at `metrics` in `mode`, with labels at
-    /// `label_size` percent (`LABEL_SIZE_RANGE`) and `label_lines` (one or two)
-    /// tall. `details` gives Details view's name column.
+    /// The layout of `cell` at `metrics` in `mode`, with its label at
+    /// `label_size` percent (`LABEL_SIZE_RANGE`) taking `label_lines` lines
+    /// (one or two; only a grid's label wraps). `details` gives Details
+    /// view's name column.
     fn new(
         cell: D2D_RECT_F,
         metrics: ItemMetrics,
@@ -390,9 +415,9 @@ impl CellLayout {
             let top = cell.top + ((cell.bottom - cell.top - icon_size) / 2.0).round();
             (left, top)
         } else {
-            let center_x = (cell.left + cell.right) / 2.0;
+            let width = (cell.right - cell.left) as i32;
             (
-                (center_x - icon_size / 2.0).round(),
+                cell.left + metrics.grid_icon_left(width) as f32,
                 cell.top + metrics.icon_top as f32,
             )
         };
@@ -444,11 +469,25 @@ impl CellLayout {
             ItemLayout::Grid => (
                 cell.left + LABEL_INSET,
                 icon_top + icon_size + metrics.label_gap as f32,
-                cell.right - LABEL_INSET,
+                cell.left + LABEL_INSET + grid_label_width(cell.right - cell.left),
                 label_lines.clamp(1, 2) as f32,
             ),
         };
         let label_bottom = (label_top + lines * line_height).min(cell.bottom);
+        // A grid's highlight hugs the icon and the lines its own label takes,
+        // and stops short of the next cell; a row's or a tile's sits evenly
+        // inside its cell.
+        let frame = if beside_icon {
+            super::geometry::inset(cell, CELL_INSET)
+        } else {
+            let height = metrics.grid_frame_height(label_lines, label_size) as f32;
+            rect_f(
+                cell.left,
+                cell.top,
+                cell.right - FRAME_GAP,
+                (cell.top + height).min(cell.bottom - FRAME_GAP),
+            )
+        };
         let check_box = if beside_icon {
             CheckBoxRect {
                 left: cell.left + inset,
@@ -464,7 +503,7 @@ impl CellLayout {
             }
         };
         Self {
-            frame: super::geometry::inset(cell, CELL_INSET),
+            frame,
             icon: rect_f(
                 icon_left,
                 icon_top,
@@ -560,7 +599,9 @@ mod tests {
         let layout = layout(cell);
         let size = metrics.icon_size as f32;
         assert_eq!(layout.icon.left, layout.icon.left.round());
-        assert!(((layout.icon.left + size / 2.0) - 148.5).abs() <= 0.5);
+        // Centered in the highlight, which is the cell less a pixel's gap.
+        let middle = (layout.frame.left + layout.frame.right) / 2.0;
+        assert_eq!(layout.icon.left + size / 2.0, middle);
         assert_eq!(layout.icon.top, cell.top + metrics.icon_top as f32);
         assert_eq!(layout.icon.right - layout.icon.left, size);
         let margin = metrics.check_box_margin as f32;
@@ -577,14 +618,80 @@ mod tests {
         let layout = layout(cell);
         let label = layout.label.expect("room for a label");
         assert_eq!(label.top, layout.icon.bottom + metrics.label_gap as f32);
-        assert_eq!((label.left, label.right), (LABEL_INSET, 96.0 - LABEL_INSET));
+        assert_eq!(
+            (label.left, label.right),
+            (LABEL_INSET, layout.frame.right - LABEL_INSET),
+            "inset evenly from the highlight's sides"
+        );
+        assert_eq!(label.right - label.left, grid_label_width(96.0));
         assert_eq!(
             label.bottom - label.top,
             2.0 * LABEL_LINE_HEIGHT,
             "two lines"
         );
         assert!(layout.edit.bottom > label.bottom, "the rename box can grow");
-        assert_eq!(layout.frame, super::geometry::inset(cell, CELL_INSET));
+    }
+
+    /// A grid cell's layout at `metrics` for a label taking `lines` lines.
+    fn grid(cell: D2D_RECT_F, metrics: ItemMetrics, lines: u8) -> CellLayout {
+        CellLayout::new(cell, metrics, 100, lines, ItemLayout::Grid, None)
+    }
+
+    #[test]
+    fn a_grid_highlight_hugs_the_lines_its_own_label_takes() {
+        // Explorer's desktop at 100 % with a 40 px icon, as measured: a
+        // 75 px step, and a 74 x 62 highlight around a one-line name.
+        let metrics = ItemMetrics::for_scale(40.0 / 48.0);
+        let cell = rect_f(
+            300.0,
+            100.0,
+            375.0,
+            100.0 + metrics.grid_cell_height(2, 100) as f32,
+        );
+        let one = grid(cell, metrics, 1).frame;
+        assert_eq!((one.left, one.top), (cell.left, cell.top));
+        assert_eq!((one.right - one.left, one.bottom - one.top), (74.0, 62.0));
+        // A name that wraps gets one more line, which fills the row.
+        let two = grid(cell, metrics, 2).frame;
+        assert_eq!(two.bottom - two.top, 62.0 + LABEL_LINE_HEIGHT);
+        assert_eq!(
+            two.bottom,
+            cell.bottom - FRAME_GAP,
+            "a gap to the row below"
+        );
+        assert_eq!(
+            (two.left, two.top, two.right),
+            (one.left, one.top, one.right)
+        );
+    }
+
+    #[test]
+    fn a_taller_cell_does_not_stretch_a_grid_highlight() {
+        // The desktop layer keeps Explorer's own 92 px row.
+        let metrics = ItemMetrics::for_scale(40.0 / 48.0);
+        let frame = grid(rect_f(0.0, 0.0, 75.0, 92.0), metrics, 1).frame;
+        assert_eq!(frame.bottom - frame.top, 62.0);
+        // A cell too short for the highlight still keeps it inside.
+        let short = grid(rect_f(0.0, 0.0, 75.0, 40.0), metrics, 2).frame;
+        assert_eq!(short.bottom, 40.0 - FRAME_GAP);
+    }
+
+    #[test]
+    fn a_row_highlight_sits_evenly_inside_its_cell() {
+        let cell = rect_f(10.0, 20.0, 210.0, 42.0);
+        for mode in [
+            ItemLayout::Inline,
+            ItemLayout::Details,
+            ItemLayout::Tiles,
+            ItemLayout::Content,
+        ] {
+            let layout = CellLayout::new(cell, ItemMetrics::for_scale(1.0), 100, 1, mode, None);
+            assert_eq!(
+                layout.frame,
+                super::geometry::inset(cell, CELL_INSET),
+                "{mode:?}"
+            );
+        }
     }
 
     #[test]

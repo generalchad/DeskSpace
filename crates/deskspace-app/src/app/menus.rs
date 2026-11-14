@@ -1724,7 +1724,8 @@ mod tests {
             let position = space.item(item).unwrap().position;
             (space.rect(), space.content_rect(), position)
         };
-        let layout = app.config.desktop.layout;
+        // The cell the space draws the item in, not the stored base grid.
+        let layout = app.layout_for(id);
 
         app.selection.items.clear();
         assert_eq!(app.menu_anchor(), Some(rect.center()));

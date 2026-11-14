@@ -3,6 +3,7 @@
 use std::time::Instant;
 
 use super::*;
+use crate::render::ItemLayout;
 
 /// A scene with its strings pre-encoded, so painting does not allocate.
 pub struct PreparedScene {
@@ -12,9 +13,12 @@ pub struct PreparedScene {
     pub(super) edit: Option<Vec<u16>>,
     /// The item id and rename buffer while `scene.editing_item` is set.
     pub(super) edit_item: Option<(u64, Vec<u16>)>,
-    pub(super) labels: Vec<Vec<u16>>,
+    labels: Vec<Vec<u16>>,
+    /// How many lines each label takes in an icon cell, so the highlight
+    /// hugs it; worked out here, since painting lays no text out.
+    label_lines: Vec<u8>,
     /// Each item's Details cells after Name, encoded once.
-    pub(super) cells: Vec<Vec<Vec<u16>>>,
+    cells: Vec<Vec<Vec<u16>>>,
     /// The Details header labels, encoded once.
     pub(super) header: Vec<Vec<u16>>,
     /// The group headers' labels, encoded once.
@@ -39,11 +43,12 @@ impl PreparedScene {
             .editing_item
             .as_ref()
             .map(|(id, edit)| (*id, edit.text().encode_utf16().collect()));
-        let labels = scene
+        let labels: Vec<Vec<u16>> = scene
             .items
             .iter()
             .map(|item| item.label.encode_utf16().collect())
             .collect();
+        let label_lines = count_label_lines(&scene, &labels);
         let cells = scene
             .items
             .iter()
@@ -96,6 +101,7 @@ impl PreparedScene {
             edit,
             edit_item,
             labels,
+            label_lines,
             cells,
             header,
             group_labels,
@@ -108,4 +114,35 @@ impl PreparedScene {
     pub fn scene(&self) -> &SpaceScene {
         &self.scene
     }
+
+    /// Each item's strings, in the scene's item order.
+    pub(super) fn item_texts(&self) -> impl Iterator<Item = ItemText<'_>> {
+        self.labels
+            .iter()
+            .zip(&self.label_lines)
+            .zip(&self.cells)
+            .map(|((label, lines), cells)| ItemText {
+                label,
+                lines: *lines,
+                cells,
+            })
+    }
+}
+
+/// How many lines each of `scene`'s `labels` takes. Only an icon grid whose
+/// look allows two lines has anything to measure; without the text formats
+/// (no painter could draw either), every label keeps the lines allowed.
+fn count_label_lines(scene: &SpaceScene, labels: &[Vec<u16>]) -> Vec<u8> {
+    let allowed = scene.label_lines.clamp(1, 2);
+    let measured = scene.item_layout == ItemLayout::Grid && allowed > 1;
+    let graphics = measured.then(|| graphics().ok()).flatten();
+    scene
+        .items
+        .iter()
+        .zip(labels)
+        .map(|(item, label)| match &graphics {
+            Some(graphics) => graphics.item_label_lines(scene, item, label),
+            None => allowed,
+        })
+        .collect()
 }

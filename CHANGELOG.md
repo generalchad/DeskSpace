@@ -7,6 +7,14 @@ Notable changes to DeskSpace, newest first. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- An item's highlight in the icon views is the size of Explorer's: it hugs
+  the icon and the label, so it is shorter around a one-line name than
+  around one that wraps, and no longer fills the whole cell. Rows sit
+  closer together to match. On upgrade, a space that sizes itself gets
+  shorter, and a space you sized keeps its size and fits more rows.
+
 ## [0.3.0] - 2026-11-13
 
 "Lenses": a space can show a folder's live contents, and every space gets

@@ -105,7 +105,7 @@ impl App {
     pub(super) fn surface_layout(&self, surface: Surface) -> GridSpec {
         match surface {
             Surface::Space(id) => self.layout_for(id),
-            Surface::Desktop => self.effective_layout(),
+            Surface::Desktop => self.layer_layout(),
         }
     }
 

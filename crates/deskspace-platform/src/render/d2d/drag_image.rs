@@ -79,7 +79,12 @@ pub(crate) fn render_items(
                 .icon
                 .as_ref()
                 .and_then(|icon| upload_icon(&target, icon));
-            draw_item(ctx, &scene, &item, &label, &cells, icon.as_ref(), None);
+            let text = ItemText {
+                label: &label,
+                lines: graphics.item_label_lines(&scene, &item, &label),
+                cells: &cells,
+            };
+            draw_item(ctx, &scene, &item, text, icon.as_ref(), None);
         }
         target.EndDraw(None, None).ok()?;
         drop(target);

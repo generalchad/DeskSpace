@@ -35,6 +35,8 @@ pub(super) struct Graphics {
     /// The same sizes for an inline cell's single left-aligned line.
     pub(super) inline_label_format: IDWriteTextFormat,
     pub(super) inline_label_formats: HashMap<u8, IDWriteTextFormat>,
+    /// How many lines each icon label takes in these formats, measured once.
+    pub(super) label_lines: LabelLines,
     /// The Details row and header text: one left-aligned and one
     /// right-aligned line, centered vertically.
     pub(super) details_format: IDWriteTextFormat,
@@ -257,6 +259,7 @@ impl Graphics {
                 label_formats,
                 inline_label_format,
                 inline_label_formats,
+                label_lines: LabelLines::default(),
                 details_format,
                 details_right_format,
                 glyph_format,

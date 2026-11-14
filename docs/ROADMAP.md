@@ -228,7 +228,8 @@ A native, lightweight, offline Windows desktop organizer that:
   - *Ctrl+wheel under "Match Explorer's display":* it drives the desktop's
     own icon size (`IFolderView2::SetViewModeAndIconSize`), exactly as
     Ctrl+wheel on the desktop does, and spaces that match Explorer follow
-    it, so they stay 1:1 with the desktop. Under the `Custom` preset it keeps
+    it, so they stay 1:1 with the desktop (amended by D28: the icon size
+    and the column, not the row). Under the `Custom` preset it keeps
     changing DeskSpace's own global icon size. A customized space with its
     own `Custom` look keeps its size either way. Done (`TASKS.md` F13).
   - *Rust toolchain:* pinned to an exact version in `rust-toolchain.toml`,
@@ -933,6 +934,36 @@ A native, lightweight, offline Windows desktop organizer that:
     registry verbs (F-52), so that half needs a design: `TASKS.md` C13,
     settled before any of the code lands.
   - Work items: `TASKS.md` C13-C16.
+
+- **D28. Items hug as Explorer's do (2026-11-14, maintainer).** An item's
+  highlight in an icon view filled its whole cell, so it was much larger
+  than Explorer's and uneven around the icon: 71 × 88 px beside Explorer's
+  74 × 62 for the same one-line name.
+  - *The highlight hugs the item.* It covers the icon and the lines the
+    item's own label takes, as Explorer's does, so a one-line name gets a
+    shorter highlight than one that wraps. Its sizes were measured on
+    Explorer's desktop on Windows 11 at 100 % with 40 px icons: 2 px above
+    the icon, the label close under it, 2 px below the label, and one pixel
+    short of the next cell. The hover and the focus rectangle follow it.
+  - *Rows are tight.* A space's row is as tall as an item draws with the
+    look's label lines, plus that one pixel. It is no longer Explorer's
+    row step, which leaves an empty band under every item (92 px on that
+    desktop, where two label lines need 79). This amends D9's "1:1 with
+    the desktop": a space that matches Explorer keeps Explorer's icon size
+    and column, and its rows are closer together than the desktop's.
+  - *Every icon view.* Match Explorer, Custom, and the fixed icon views
+    (D17) share the rule. Custom keeps its icon spacing between the rows.
+    The desktop layer keeps Explorer's own cell, since its items sit where
+    Explorer put them, so only its highlight changes.
+  - *Existing spaces* change on upgrade, on purpose (section 3, "never
+    break users"): a space that sizes itself gets shorter, and a space the
+    user sized keeps its size and fits more rows.
+  - *A click* still lands on the whole cell, so the strip under a one-line
+    name in a two-line row selects that item.
+  - *Measuring.* A label's line count comes from DirectWrite when a scene
+    is prepared and is remembered per label, so a hover or a selection
+    change measures nothing again. This is the painter's own measuring,
+    apart from D25's seam for the app.
 
 ## 3. Guiding principles
 
