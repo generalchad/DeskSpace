@@ -22,8 +22,8 @@ are collected in section V instead of blocking:
 - section B's icon picker tasks: B49 next; then B54 from "Measure and trim
   the UI thread", once T41b has landed;
 - section G (settings window polish): the pure half of G13;
-- section K (K10-K13, K15, K16, K18), each a pure move with rules that
-  leave nothing to design; K18 first, since `undo.rs` is at the limit;
+- section K (K10-K13, K15, K16), each a pure move with rules that
+  leave nothing to design;
 - section T: T24 (needs nothing now), T41a, and then T42; once T41 has
   landed, T25-T31 in order, then T44 and T46-T48;
 - O5 and the O6-O9 harness abilities;
@@ -93,7 +93,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Startup before the window loop | `deskspace-app/src/bootstrap.rs` |
 | Handling an `Event`; timer and menu ids; preset tables | `deskspace-app/src/app.rs` (`on_event`, `MenuId`, `*_PRESETS`, `SORT_MENU_IDS`) |
 | Saving, dispatching a `Command` | `deskspace-app/src/app/persist.rs` |
-| Undo and redo stack, applying entries | `deskspace-app/src/app/undo.rs` |
+| Undo and redo stack, applying entries | `deskspace-app/src/app/undo/` (`mod.rs` applying and restoring, `stack.rs` the stack and entries, `files.rs` reversing file changes) |
 | An `Effect` a pure decision returns, and `App::run` that carries it out (R17) | `deskspace-app/src/app/effect.rs` |
 | What a space looks like, refresh/re-flow, takeover | `deskspace-app/src/app/view.rs` |
 | Surface (space or desktop layer) lookups | `deskspace-app/src/app/hit.rs` |
@@ -1824,26 +1824,6 @@ moves.
     `Painter`'s paint path, `draw_scene`, `draw_items`, and the bitmap cache.
   - Collides with: P15f (paint clipping) and anything in section T.
   - Done when: `mod.rs` is under about 700 lines and the K rules above hold.
-
-- [ ] **K18. Split `app/undo.rs` before it crosses the limit.** 791 lines
-  (2026-11-05), so the next action that records an entry fails `file_size.rs`
-  for whoever adds it, in a task about something else. Turn it into
-  `app/undo/mod.rs` plus:
-  - `stack.rs`: `FileChange`, `SpaceChange`, `UndoEntry`, `OpenEntry`,
-    `UndoStack` and their `impl`s, `space_state`, and `same_space_state`, with
-    the tests that build only a stack (`finish_caps_depth_at_undo_depth`,
-    `new_entry_clears_redo_but_empty_action_does_not`, and any other that
-    builds no `App`).
-  - `files.rs`: the `App` methods that put files back, from `reverse_files` to
-    `reverse_rename`, with `original_path` and `rollback_failed_text`.
-  - `mod.rs` keeps `UNDO_DEPTH`, the label functions, `StepOutcome`,
-    `Reversed`, the stale texts, `undo`, `redo`, the apply and restore steps,
-    `arrange_space`, `snap_all_spaces`, and every round-trip test, which builds a
-    whole `App`.
-  - `files.rs` moves and restores user files. A pure move is safe, but ask a
-    senior to review the diff, as K15 does. Add no `ALLOWED` entry: the file is
-    under the limit today.
-  - Done when: `mod.rs` is under about 400 lines and the K rules above hold.
 
 ## Q. Move the why next to the code (shrink `CONTEXT.md` section 6)
 

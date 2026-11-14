@@ -1,0 +1,426 @@
+//! The session undo and redo stack and the entries it records.
+
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
+
+use deskspace_core::{Desktop, Space, SpaceId};
+
+use super::UNDO_DEPTH;
+
+/// A filesystem change made by a user action, recorded in the order it happened.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in crate::app) enum FileChange {
+    Moved { from: PathBuf, to: PathBuf },
+    Renamed { from: PathBuf, to: PathBuf },
+    Created { path: PathBuf },
+    Recycled { original: PathBuf, at: SystemTime },
+}
+
+impl FileChange {
+    fn can_undo(&self, exists: &impl Fn(&Path) -> bool) -> bool {
+        match self {
+            Self::Moved { from, to } | Self::Renamed { from, to } => exists(to) && !exists(from),
+            Self::Created { path } => exists(path),
+            Self::Recycled { original, .. } => !exists(original),
+        }
+    }
+
+    fn can_redo(&self, exists: &impl Fn(&Path) -> bool) -> bool {
+        match self {
+            Self::Moved { from, to } | Self::Renamed { from, to } => exists(from) && !exists(to),
+            Self::Created { path } => exists(path),
+            Self::Recycled { original, .. } => !exists(original),
+        }
+    }
+}
+
+/// Before and after snapshots of a single space within an [`UndoEntry`].
+///
+/// `None` means the space did not exist in [`Desktop`] at that point.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpaceChange {
+    pub id: SpaceId,
+    pub before: Option<(usize, Space)>,
+    pub after: Option<(usize, Space)>,
+}
+
+/// One undoable user action (`ROADMAP.md` D11).
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct UndoEntry {
+    pub label: String,
+    pub spaces: Vec<SpaceChange>,
+    pub files: Vec<FileChange>,
+}
+
+impl UndoEntry {
+    /// True while every listed space still equals its `after` state and every
+    /// file change can be reversed.
+    pub(super) fn can_undo(&self, desktop: &Desktop, exists: impl Fn(&Path) -> bool) -> bool {
+        self.spaces
+            .iter()
+            .all(|change| same_space_state(desktop, change.id, &change.after))
+            && self.files.iter().all(|file| file.can_undo(&exists))
+    }
+
+    /// True while every listed space still equals its `before` state and every
+    /// file change can be re-applied.
+    pub(super) fn can_redo(&self, desktop: &Desktop, exists: impl Fn(&Path) -> bool) -> bool {
+        self.spaces
+            .iter()
+            .all(|change| same_space_state(desktop, change.id, &change.before))
+            && self.files.iter().all(|file| file.can_redo(&exists))
+    }
+}
+
+#[derive(Debug, Clone)]
+struct OpenEntry {
+    label: String,
+    spaces: Vec<(SpaceId, Option<(usize, Space)>)>,
+    files: Vec<FileChange>,
+    depth: usize,
+    cancelled: bool,
+}
+
+/// Session-only undo and redo stacks (`ROADMAP.md` D11).
+#[derive(Debug, Default)]
+pub(in crate::app) struct UndoStack {
+    pub(super) undo: Vec<UndoEntry>,
+    pub(super) redo: Vec<UndoEntry>,
+    open: Option<OpenEntry>,
+    suppressed: bool,
+}
+
+impl UndoStack {
+    /// Starts recording a user action under `label`. Nested `begin` calls
+    /// merge into the outer entry so a composite action (such as opening a
+    /// new space on a desktop drop and moving items into it) records once.
+    pub(in crate::app) fn begin(&mut self, label: impl Into<String>) {
+        if self.suppressed {
+            return;
+        }
+        match &mut self.open {
+            Some(open) => open.depth += 1,
+            None => {
+                self.open = Some(OpenEntry {
+                    label: label.into(),
+                    spaces: Vec::new(),
+                    files: Vec::new(),
+                    depth: 1,
+                    cancelled: false,
+                });
+            }
+        }
+    }
+
+    /// Starts recording under `label` when no entry is open yet (used by
+    /// multi-step pointer drags that finish on button release).
+    pub(in crate::app) fn begin_if_none(&mut self, label: impl Into<String>) {
+        if self.open.is_none() {
+            self.begin(label);
+        }
+    }
+
+    /// Updates the open entry's label when at the outer level.
+    pub(in crate::app) fn set_label(&mut self, label: impl Into<String>) {
+        if let Some(open) = &mut self.open
+            && open.depth == 1
+        {
+            open.label = label.into();
+        }
+    }
+
+    /// Discards the open entry (even if nested), recording nothing.
+    pub(in crate::app) fn cancel(&mut self) {
+        if let Some(open) = &mut self.open {
+            open.cancelled = true;
+            if open.depth <= 1 {
+                self.open = None;
+            }
+        }
+    }
+
+    /// Turns recording off or on (used while a debug-window tool runs).
+    pub(in crate::app) fn set_suppressed(&mut self, suppressed: bool) {
+        self.suppressed = suppressed;
+        if suppressed {
+            self.open = None;
+        }
+    }
+
+    /// Label of the next action [`App::undo`](super::App::undo) will undo, if any.
+    pub(in crate::app) fn undo_label(&self) -> Option<&str> {
+        self.undo.last().map(|entry| entry.label.as_str())
+    }
+
+    /// Label of the next action [`App::redo`](super::App::redo) will redo, if any.
+    pub(in crate::app) fn redo_label(&self) -> Option<&str> {
+        self.redo.last().map(|entry| entry.label.as_str())
+    }
+
+    /// Captures `id`'s current state in `desktop` the first time the open entry sees it.
+    pub(in crate::app) fn note_space(&mut self, desktop: &Desktop, id: SpaceId) {
+        let Some(open) = &mut self.open else {
+            return;
+        };
+        if open.spaces.iter().any(|(noted, _)| *noted == id) {
+            return;
+        }
+        open.spaces.push((id, space_state(desktop, id)));
+    }
+
+    /// Records a filesystem change in the open entry.
+    pub(in crate::app) fn note_file(&mut self, change: FileChange) {
+        if let Some(open) = &mut self.open {
+            open.files.push(change);
+        }
+    }
+
+    /// Closes the open entry, reads each noted space's `after` state from `desktop`,
+    /// and pushes the entry if anything changed.
+    pub(in crate::app) fn finish(&mut self, desktop: &Desktop) {
+        let Some(open) = &mut self.open else {
+            return;
+        };
+        if open.depth > 1 {
+            open.depth -= 1;
+            return;
+        }
+        let Some(open) = self.open.take() else {
+            return;
+        };
+        if open.cancelled {
+            return;
+        }
+        let spaces: Vec<SpaceChange> = open
+            .spaces
+            .into_iter()
+            .filter_map(|(id, before)| {
+                let after = space_state(desktop, id);
+                (before != after).then_some(SpaceChange { id, before, after })
+            })
+            .collect();
+        if spaces.is_empty() && open.files.is_empty() {
+            return;
+        }
+        self.redo.clear();
+        if self.undo.len() >= UNDO_DEPTH {
+            self.undo.drain(..=self.undo.len() - UNDO_DEPTH);
+        }
+        self.undo.push(UndoEntry {
+            label: open.label,
+            spaces,
+            files: open.files,
+        });
+    }
+}
+
+fn space_state(desktop: &Desktop, id: SpaceId) -> Option<(usize, Space)> {
+    desktop
+        .spaces()
+        .iter()
+        .enumerate()
+        .find(|(_, space)| space.id == id)
+        .map(|(index, space)| (index, space.undo_snapshot()))
+}
+
+/// Whether the space at `id` still matches `expected`, ignoring the item facts
+/// a refresh may have updated since the entry was recorded.
+fn same_space_state(desktop: &Desktop, id: SpaceId, expected: &Option<(usize, Space)>) -> bool {
+    match (space_state(desktop, id), expected) {
+        (None, None) => true,
+        (Some((index, space)), Some((expected_index, expected_space))) => {
+            index == *expected_index && space.same_ignoring_facts(expected_space)
+        }
+        (None, Some(_)) | (Some(_), None) => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+    use std::time::UNIX_EPOCH;
+
+    use deskspace_core::{Command, Rect};
+
+    use crate::fixtures::{apply, create_space};
+
+    use super::*;
+
+    fn sample_rect(x: i32) -> Rect {
+        Rect::new(x, 32, 320, 208)
+    }
+
+    #[test]
+    fn entry_round_trip_captures_first_before_and_final_after() {
+        let mut desktop = Desktop::default();
+        let id = create_space(&mut desktop, "Work", sample_rect(16));
+        let mut stack = UndoStack::default();
+
+        stack.begin("Move space");
+        stack.note_space(&desktop, id);
+        apply(
+            &mut desktop,
+            Command::SetSpaceRect {
+                id,
+                rect: sample_rect(160),
+            },
+        );
+        // Noting the same space a second time keeps the original `before`.
+        stack.note_space(&desktop, id);
+        apply(
+            &mut desktop,
+            Command::SetSpaceRect {
+                id,
+                rect: sample_rect(320),
+            },
+        );
+        stack.finish(&desktop);
+
+        assert_eq!(stack.undo.len(), 1);
+        let entry = &stack.undo[0];
+        assert_eq!(entry.label, "Move space");
+        assert_eq!(entry.spaces.len(), 1);
+        assert_eq!(entry.spaces[0].before.as_ref().unwrap().1.rect().x, 16);
+        assert_eq!(entry.spaces[0].after.as_ref().unwrap().1.rect().x, 320);
+        assert!(entry.can_undo(&desktop, |_| false));
+        assert!(!entry.can_redo(&desktop, |_| false));
+
+        // Restore the `before` state: now `can_redo` is true and `can_undo` is false.
+        apply(
+            &mut desktop,
+            Command::RestoreSpaces {
+                spaces: vec![(id, entry.spaces[0].before.clone())],
+            },
+        );
+        assert!(!entry.can_undo(&desktop, |_| false));
+        assert!(entry.can_redo(&desktop, |_| false));
+    }
+
+    #[test]
+    fn finish_caps_depth_at_undo_depth() {
+        let mut desktop = Desktop::default();
+        let id = create_space(&mut desktop, "Work", sample_rect(0));
+        let mut stack = UndoStack::default();
+
+        for step in 1..=(UNDO_DEPTH + 5) {
+            stack.begin(format!("Move {step}"));
+            stack.note_space(&desktop, id);
+            apply(
+                &mut desktop,
+                Command::SetSpaceRect {
+                    id,
+                    rect: sample_rect(step as i32 * 16),
+                },
+            );
+            stack.finish(&desktop);
+        }
+
+        assert_eq!(stack.undo.len(), UNDO_DEPTH);
+        assert_eq!(stack.undo.first().unwrap().label, "Move 6");
+        assert_eq!(
+            stack.undo.last().unwrap().label,
+            format!("Move {}", UNDO_DEPTH + 5)
+        );
+    }
+
+    #[test]
+    fn new_entry_clears_redo_but_empty_action_does_not() {
+        let mut desktop = Desktop::default();
+        let id = create_space(&mut desktop, "Work", sample_rect(10));
+        let mut stack = UndoStack::default();
+
+        stack.begin("Rename space");
+        stack.note_space(&desktop, id);
+        apply(
+            &mut desktop,
+            Command::RenameSpace {
+                id,
+                title: "Play".into(),
+            },
+        );
+        stack.finish(&desktop);
+        stack.redo.push(stack.undo.pop().unwrap());
+
+        // An empty action records nothing and leaves `redo` intact.
+        stack.begin("No-op");
+        stack.note_space(&desktop, id);
+        stack.finish(&desktop);
+        assert!(stack.undo.is_empty());
+        assert_eq!(stack.redo.len(), 1);
+
+        // A real change records a new undo entry and clears `redo`.
+        stack.begin("Toggle fold");
+        stack.note_space(&desktop, id);
+        apply(&mut desktop, Command::ToggleFold { id });
+        stack.finish(&desktop);
+        assert_eq!(stack.undo.len(), 1);
+        assert!(stack.redo.is_empty());
+    }
+
+    #[test]
+    fn changed_space_or_moved_file_makes_entry_stale() {
+        let mut desktop = Desktop::default();
+        let id = create_space(&mut desktop, "Work", sample_rect(10));
+        let mut stack = UndoStack::default();
+
+        let from = PathBuf::from(r"C:\Users\alice\Desktop\a.txt");
+        let to = PathBuf::from(r"C:\Store\a.txt");
+        let renamed_from = PathBuf::from(r"C:\Store\old_name.txt");
+        let renamed_to = PathBuf::from(r"C:\Store\new_name.txt");
+        let created = PathBuf::from(r"C:\Store\copy.txt");
+        let recycled = PathBuf::from(r"C:\Store\old.txt");
+
+        stack.begin("Drop files");
+        stack.note_space(&desktop, id);
+        apply(&mut desktop, Command::ToggleLock { id });
+        stack.note_file(FileChange::Moved {
+            from: from.clone(),
+            to: to.clone(),
+        });
+        stack.note_file(FileChange::Renamed {
+            from: renamed_from,
+            to: renamed_to.clone(),
+        });
+        stack.note_file(FileChange::Created {
+            path: created.clone(),
+        });
+        stack.note_file(FileChange::Recycled {
+            original: recycled.clone(),
+            at: UNIX_EPOCH,
+        });
+        stack.finish(&desktop);
+
+        let entry = &stack.undo[0];
+        let mut disk: HashSet<PathBuf> = [to.clone(), renamed_to.clone(), created.clone()]
+            .into_iter()
+            .collect();
+        assert!(entry.can_undo(&desktop, |p| disk.contains(p)));
+
+        // Moving `to` away outside DeskSpace makes the entry stale.
+        disk.remove(&to);
+        assert!(!entry.can_undo(&desktop, |p| disk.contains(p)));
+        disk.insert(to.clone());
+
+        // Putting a new file at `from` or `recycled` makes the entry stale (would clobber).
+        disk.insert(from.clone());
+        assert!(!entry.can_undo(&desktop, |p| disk.contains(p)));
+        disk.remove(&from);
+
+        disk.insert(recycled);
+        assert!(!entry.can_undo(&desktop, |p| disk.contains(p)));
+        disk.clear();
+        disk.insert(to);
+        disk.insert(renamed_to);
+        disk.insert(created);
+
+        // Changing the space outside the entry makes it stale.
+        apply(
+            &mut desktop,
+            Command::RenameSpace {
+                id,
+                title: "Edited since".into(),
+            },
+        );
+        assert!(!entry.can_undo(&desktop, |p| disk.contains(p)));
+    }
+}
