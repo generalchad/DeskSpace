@@ -1258,13 +1258,15 @@ section numbers stable.
 - **Placement is fixed for a run.** Only `--placement` chooses it; there is no
   live switch, because recreating every space window would drop the blur.
   Top-level, the default, is the only placement with blur.
-- **The icon cache is invalidated only after shell menu commands, renames,
-  a desktop-layer sync, and a lens listing.** Its key includes the pixel and
-  overlay size, so an icon-size or DPI change reloads, and
-  `sync_desktop_layer` forgets a loose item whose modification time changed.
-  A lens listing invalidates every entry whose `modified` changed. Nothing
-  watches the files in spaces, so one whose icon changed in place keeps the
-  old one.
+- **The icon cache is invalidated on item changes, shell menu commands,
+  renames, a desktop-layer sync, and a lens listing.** Adding or removing an
+  item, creating a shortcut, deleting or restoring a space, releasing a
+  stored file to the desktop, and reversing a file change on undo or redo all
+  invalidate the affected paths. Its key includes the pixel and overlay size,
+  so an icon-size or DPI change reloads, and `sync_desktop_layer` forgets a
+  loose item whose modification time changed. A lens listing invalidates
+  every entry whose `modified` changed. Nothing watches the files in spaces,
+  so one whose icon changed in place outside DeskSpace keeps the old one.
 - **The scroll indicators are display-only.** A Details space whose columns
   pass its edge has a second one along the bottom (`scroll_thumb_x`). Spaces
   scroll with the wheel, Home/End/PageUp/PageDown, and by keeping a
@@ -1323,9 +1325,9 @@ section numbers stable.
     installer cannot start, DeskSpace starts itself again with the same
     arguments (less `--reset` and `--settings`) and then explains in a box
     that has no owner window (`deskspace_platform::alert`).
-  - Until the maintainer sets the `DESKSPACE_MINISIGN_KEY` secret and
-    `UPDATE_PUBKEY`, releases ship without a feed, and the app greys out the
-    tray's "Check for updates…" and the Settings update controls
+  - A build without `UPDATE_PUBKEY` (or a release built without the
+    `DESKSPACE_MINISIGN_KEY` secret) ships without a feed, and the app greys
+    out the tray's "Check for updates…" and the Settings update controls
     (`deskspace_update::is_configured`).
   - The release build is reproducible (`--remap-path-prefix` in
     `release.yml`, `/Brepro` in `build.rs`) on the toolchain pinned in

@@ -1157,10 +1157,8 @@ Remaining:
      activated.
 7. Space icons: an icon left of each space's title, matched from its name
    or chosen in a picker from the rename box or the space's settings, from
-   a downloaded Fluent icon set (F-62, D16). Build it with or after F-28,
-   which reworks the same title bar. Partial: the model, the library, the
-   cache, the signed download, the title icon, and the consent are built (S1-S8,
-   S13, S14); the picker and the settings follow (S9-S12).
+   a downloaded Fluent icon set (F-62, D16). Built (S1-S14), awaiting the
+   on-screen checks in `TASKS.md` section V.
 
 Exit criteria: hide-all and peek are instant and reversible, and the fold
 policy can be set per space.
@@ -1275,10 +1273,10 @@ Remaining:
    `cargo-packager-updater` SDK and the network IO live in `deskspace-update`,
    driven by the app, never in `core` or `config`; CONTEXT sections 5, 8, and
    10 describe the settings, controls, and code. `cargo deny` passes (the
-   updater's `time` dependency moved the minimum Rust version to 1.88). Still
-   to do (maintainer): set the `DESKSPACE_MINISIGN_KEY` secret and the public
-   `UPDATE_PUBKEY`, which turns the feed on. It does not wait for code signing
-   (item 3; D6, amended 2026-10-31), so until then unsigned updates trigger
+   updater's `time` dependency moved the minimum Rust version to 1.88), and
+   the `DESKSPACE_MINISIGN_KEY` secret and `UPDATE_PUBKEY` are set (v0.3.0
+   shipped the first signed feed). It does not wait for code signing (item 3;
+   D6, amended 2026-10-31), so until then unsigned updates trigger
    SmartScreen on every version.
 8. A winget manifest in `microsoft/winget-pkgs` for the installer, updated
    per stable release by a workflow step, after the first stable release.
