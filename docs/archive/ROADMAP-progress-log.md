@@ -700,3 +700,51 @@ besides its console; closing it ended the process with exit code 1, and
 the config's bytes were unchanged with no `.bak` beside it. Its wording,
 whether it opens in front, and the normal start once the handle closes
 stay in section V's row.
+
+### 2026-11-15: Z5a, lens files
+
+The maintainer ran Z5a on Windows 11 (build 26300), 100 %, Transparency
+effects on, two monitors, takeover on, with a debug build of `ffa592e`
+(v0.3.0 plus later fixes) on a `dev.ps1` scratch config and a hand-made
+lens over a throwaway folder. Passed and deleted from section V:
+
+- W7: "New lens…" from a space's menu, the tray, and the taken-over
+  desktop's menu each asked for a folder and opened a lens titled with the
+  folder's name beside the top row, filled at once; Cancel and the storage
+  folder (refused with a message) created nothing.
+- W3c, all but its cursor: a Shift-drag onto a lens moved nothing; the
+  right-drop menu greyed "Show here without moving" on a lens; on a normal
+  space Shift kept the file in place and every right-drop entry was
+  enabled. The cursor showed "move", not "no": P54.
+- W3d: a lens item dragged onto a normal space left the folder and was
+  listed by the space; deleting that space put it on the desktop, not
+  back in the folder. It works as specified, but the maintainer then
+  decided against the design: C21.
+- W3e: Explorer's copy and cut pasted onto a lens copied and moved into
+  its folder; an item cut from a normal space moved into the folder; a
+  paste on a normal space worked as before.
+- W3f: a Start app, "Paste shortcut", and the custom shortcut dialog each
+  made a working shortcut in a lens's folder; a Start app on a normal
+  space still made a shortcut.
+- W3g: Delete on a lens item and the Shortcuts page's X (which named the
+  Recycle Bin) both recycled the file.
+- P20: a lens item renamed, undone, and redone stayed selected.
+- W46: clearing a lens's nickname showed the folder's name, or the full
+  path or the folder's name under Global's "Show as" of Full path and
+  Custom; Ctrl+Z restored the nickname; clearing a normal space's title
+  or a lens already on its folder's name changed nothing.
+- W25: started with its share (`\\MINAS-MORGUL\Share`) unreachable, the
+  other spaces drew and responded at once and the lens said "Folder not
+  available"; Change folder… to a junction into the store was refused
+  with a message; a lens hand-edited to that junction showed "Folder not
+  available" and listed nothing. Disconnecting the share while DeskSpace
+  ran hung it: P52.
+- W45 at 100 %: a renamed folder was followed within 5 s with its items,
+  its title, and the "Folder moved:" bar (readable on Acrylic, Blur,
+  Solid, and Clear); Ctrl+Z pointed it back (unavailable); a move on the
+  same drive was followed, one to another drive showed unavailable and
+  never the Recycle Bin; a renamed browsed subfolder returned the lens to
+  its folder with no bar; a root renamed while browsed two levels down was
+  followed and the browse dropped, and Ctrl+Z pointed it back. The 150 %
+  part stays in section V. The maintainer asked for the bar as plain
+  text: C23.

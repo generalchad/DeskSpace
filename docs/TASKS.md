@@ -15,7 +15,7 @@ its section.
 
 **Pick a task:** these are ready for any contributor, now that human checks
 are collected in section V instead of blocking:
-- section Z's check batches (Z5a-Z5g), for anyone with a screen, and Z7a
+- section Z's check batches (Z5b-Z5g), for anyone with a screen, and Z7a
   and Z7c, for anyone with a clean VM: v0.3.0 shipped before them;
 - section P's "Juniors and interns" list, the best place for a first task,
   ranked most severe first, so take one from the top;
@@ -391,9 +391,6 @@ Who takes what:
       setup), with the Windows version, the display scale, and what you saw.
       Whoever commits the results follows section V's rules; a failure goes
       to the maintainer.
-  - [ ] **Z5a (intern). Lens files.** A hand-made lens on a throwaway
-    folder, as section V's "First session" says: W3c, W3d, W3e, W3f, W3g,
-    W7, W25, W45, W46, P20.
   - [ ] **Z5b (intern). Views and sorting.** W8, W9, W11, W12, W13, W15,
     W16, W17, W18, W19, W21, W22, W23, W28, W33, W37 and W38, W39, W47, W48.
     W18, W21, W22, and W33 need Explorer open beside the space.
@@ -820,6 +817,25 @@ drop side is `win32/drop_target.rs` (`DragKind`, `drag_kind`, `DropPlan`,
     icon: Suggest icons asks once naming three spaces, gives the first
     three icons and leaves "Stuff" alone; Ctrl+Z takes all three away; a
     space with its own icon keeps it.
+
+- [ ] **C23. The "Folder moved" notice as plain text (platform; render).**
+  **(junior)** Asked by the maintainer, 2026-11-15, after W45 passed.
+  - Why: the notice a lens shows after following its folder
+    (`FOLDER_MOVED_NOTICE`, `app/lens.rs`) sits on an opaque rounded bar
+    (`fill_rounded` with `NOTICE_MIN_ALPHA`, in `Painter`'s paint path in
+    `render/d2d/mod.rs`), unlike the lens's other messages.
+  - Decided (maintainer, 2026-11-15): draw it as plain text the way the
+    placeholder ("Folder not available") is drawn, with the same faded item
+    text color and text shadow and no fill, but along the bottom of the
+    content area instead of centered. Keep `notice_rect` as the one place
+    its geometry lives; drop the constants nothing uses afterwards.
+  - Tests: none new beyond the existing notice tests, unless `notice_rect`
+    changes; then a test for its rect.
+  - **[needs human]** check: rename a lens's folder on Acrylic, Blur, Solid,
+    and Clear at 100 % and 150 %, light and dark: "Folder moved:" and the
+    path show as plain text along the bottom for about 3 s and then go,
+    with no box. On a lens full enough that items sit under it, judge
+    whether the text over the labels still reads.
 
 ### Draw a space on the desktop (ROADMAP F-69, D27)
 
@@ -1999,6 +2015,27 @@ A rare loss of a user's file, memory that only grows, a broken install's shell e
 
 Logs, tooling, readability, docs, and checks that may close a task.
 
+- [ ] **P54. Show "no" while Shift-dragging files over a lens (fix; drop
+  target).** Found 2026-11-15 in Z5a: W3c's Shift-drag of a file from
+  Explorer onto a hand-made lens moved nothing, as it should, but the cursor
+  showed Explorer's normal move cursor, not "no" (Windows 11, 100 %). The
+  rest of W3c passed.
+  - `drop_plan` (`win32/drop_target.rs`) already answers `DROPEFFECT_NONE`
+    for `DragKind::Files` into `DropInto::Folder` with `MK_SHIFT`, and its
+    tests say so, so the hover path reaches it with something else. Read
+    what `DragEnter` and `DragOver` pass to `drag_effect`: the `keys` (is
+    Shift in `grfKeyState` there?), the `into` (is the lens's surface
+    resolved as a folder while hovering, as it is at the drop?), and whether
+    a cached effect from `DragEnter` is returned when only the modifiers
+    change. Log the three with `-Verbosity 1` while reproducing. If the
+    cause is outside this file or needs a design choice, stop and ask.
+  - A test for the case found, beside the existing `drop_plan` tests.
+  - **[needs human]** check: Shift-drag a file from Explorer onto a lens:
+    "no" shows, whether Shift is pressed before the drag starts or during
+    it, and nothing moves; releasing Shift over the lens shows the move
+    cursor again; a Shift-drag onto a normal space still keeps the file in
+    place.
+
 - [ ] **P18b. Make a failed capture explain itself (scripts).** Part of P18. In
   `scripts/onscreen/OnScreen.psm1`, add `Get-CaptureState`: each DeskSpace window's
   cloak state (`DwmGetWindowAttribute`, `DWMWA_CLOAKED`), the session
@@ -2059,6 +2096,11 @@ These are in the order we would take them. Each lands alone.
     17:57:25Z, then the log went silent until the kill. Before that,
     "opened item path=\\MINAS-MORGUL\Share" twice (17:56:53Z, 17:57:05Z),
     while the share was still up. Nothing names the call that blocked.
+  - A later run started with the share already down: every few 5-second
+    retries landed about 2.7 s late (for example 18:02:37.9Z, then
+    18:02:45.6Z), so opening a dead UNC path blocks the watch worker for
+    seconds each time (`ERROR_BAD_NETPATH`, 0x80070035). Anything waiting
+    on that worker waits with it.
   - First, find where it is stuck: reproduce (a lens on a share, Open folder
     on it once, then disconnect the share or its server), and read every
     thread's stack with `TOOLS.md` section 4's `cdb -pv` recipe (ask before
@@ -2309,6 +2351,37 @@ These are in the order we would take them. Each lands alone.
   - **[needs human]** check: the same clicks always show the clicked
     scope's categories and page at once.
 
+- [ ] **P55. A right-click on the taskbar sometimes opens the desktop menu
+  (fix; z-order).** Found 2026-11-15 (maintainer), takeover on, Windows 11,
+  two monitors at 100 %.
+  - Seen: now and then, a right-click on the main monitor's taskbar opened
+    the taken-over desktop's menu (New space, New lens…, DeskSpace
+    settings…, Hide spaces, then Explorer's desktop menu) instead of the
+    taskbar's. No pattern noticed. The log shows nothing, because opening
+    the desktop menu logs no line.
+  - Read: the desktop layer window spans the whole virtual screen,
+    taskbar rectangles included (`scripts/zorder.ps1` on 2026-11-15:
+    `DeskSpaceSpace` at (0,-673)-(3640,1247), just above `Progman`, both
+    `Shell_TrayWnd` and `Shell_SecondaryTrayWnd` topmost above it, and a
+    click at each taskbar's center reaching the taskbar). So the layer
+    takes a taskbar click only while the taskbar is not above it: the
+    taskbar dropping its topmost place for a moment, or something raising
+    the layer. The 5-second taskbar repair (the "Taskbar repair" row in
+    section V) never logged in that session.
+  - First, make it visible: log one debug line each time the desktop menu
+    opens, with the point, the window `WindowFromPoint` reports there, and
+    whether a `Shell_TrayWnd` contains the point. Reproduce with
+    `-Verbosity 1`, and run `scripts/zorder.ps1` right after it happens.
+  - Then fix by the finding. Candidates, cheapest first: refuse to open the
+    menu (and pass the click on) when the point is inside a taskbar's
+    rectangle; find what raises the layer and stop it; cut the taskbars'
+    rectangles out of the layer's input region. If it needs a design
+    choice, bring the evidence to the maintainer.
+  - **[needs human]** check: with takeover on, right-click the taskbar on
+    every monitor many times, including right after Win+D, a full-screen
+    app, and a space or desktop menu closing: the taskbar's own menu shows
+    every time, and a right-click on empty desktop still opens DeskSpace's.
+
 ## D. Reserved (strong model or maintainer; do not start)
 
 Each needs design work first. Ids are `R`-numbered so they do not collide with
@@ -2461,8 +2534,8 @@ monitor) is reported as **not covered**, never passed.
     (`SetForegroundWindow` on `Progman`/`WorkerW`), because a space never
     activates, and wait for the app to handle the key before asserting.
   - Rows: the marked rows whose action is a key: F1-F5, G1/G3, B23, C7, C12,
-    F9, F13, F15, R17, U3-U7, W12, W13, W15-W17, W19, W25, W28, W30-W32, W35,
-    W39, W42-W48, P6, P10, P20, P23, P25.
+    F9, F13, F15, R17, U3-U7, W12, W13, W15-W17, W19, W28, W30-W32, W35,
+    W39, W42-W45, W47, W48, P6, P10, P23, P25.
   - Done when: a throwaway check moves a space (W12), undoes it (U4), and the
     window rect and config show both; `TOOLS.md` section 3 lists the helper.
 
@@ -2491,7 +2564,7 @@ monitor) is reported as **not covered**, never passed.
     `FileGroupDescriptorW` for a shell or Start item) driven through
     `SHDoDragDrop` at the window under the point. The drag image and cursor are
     taste and stay human.
-  - Rows: W3c-W3g, W15, W42, G5a-c, L2, L5, L6, Drag and drop, Desktop drop,
+  - Rows: W15, W42, G5a-c, L2, L5, L6, Drag and drop, Desktop drop,
     Spaces above the layer, U5, U7, X7-X9, Delete stress spaces, P25.
   - Done when: a drop moves a fixture file into a space, the config lists it,
     and a Shift-drop leaves it where it was.
@@ -2505,7 +2578,7 @@ monitor) is reported as **not covered**, never passed.
     `Set-FixtureReadOnly`, `Hold-FixtureOpen`, `Get-RecycleBinItem` (Shell
     `NameSpace(10)`, matching only the fixture's paths), and
     `Clear-FixtureRecycleBin` (never a user's bin).
-  - Rows: F1-F5, U5-U7, X7-X9, Delete stress spaces, W3c-W3g, L2, L5, L6, P25,
+  - Rows: F1-F5, U5-U7, X7-X9, Delete stress spaces, L2, L5, L6, P25,
     P10, and B29's read-only config case.
   - Done when: a file deleted through DeskSpace is found by name in the bin
     and restored, and every helper refuses a path outside its fixture.
@@ -2544,12 +2617,12 @@ the row and append it, dated, to the last section of
 **Found while working** line. The task text for each id is in
 `archive/TASKS-done.md`.
 
-**First session (Windows 11, 100 %, Transparency effects on, scratch config,
-about 20-30 min).** W2, W3b-W3g, W5, W6, and W7, in that order, on section
-W's hand-made lens over a throwaway folder. W27, W35, W39, W42-W45, and B37
-are the second lens session; a row that needs a setup this machine lacks
-(Windows 10, 150 %, transparency off) is recorded as not covered and left
-for a machine that has it.
+**Lens sessions (Windows 11, 100 %, Transparency effects on, scratch config,
+on the lens recipe's hand-made lens over a throwaway folder).** The first
+session's rows are done (2026-11-15, Z5a). W27, W35, W39, W42-W44, and B37
+are the second; a row that needs a setup this machine lacks (Windows 10,
+150 %, transparency off) is recorded as not covered and left for a machine
+that has it.
 
 | Id | What to check |
 |----|---------------|
@@ -2613,12 +2686,6 @@ for a machine that has it.
 | Right-drop greying (v0.3) | Right-drag onto a space from a source that offers only copy (a file on a read-only share or a zip's contents): "Move here" is greyed, "Copy here" and "Show here without moving" work; from Explorer every entry is enabled. |
 | H5, H4 (part script) (F-46) | Panes, hairlines, dimmed rows, and keyboard movement in both modes; a space is greyed until customized, then edits apply to it alone and Cancel restores; the switch off and on restores custom values; a menu edit with the window open survives Cancel; an old config with per-space `icon_size`/`tint` opens customized; the highlight outline is visible on Clear and Solid, and on Acrylic with Windows corners (border on and off, 100 % and 150 %) its corners are round, following the window's |
 | I8 (v0.3) (script) | With takeover on, creating, renaming, and deleting a desktop file updates the layer within about 150 ms; so does editing one in place whose icon is its content (save a new picture over a desktop `.png`, or re-point a desktop shortcut to another app), with no restart. |
-| W3c (v0.3) (part script) (F-07) | Shift-drag a file from Explorer onto a hand-made lens (the lens recipe): the cursor shows "no" and nothing moves. Right-drag onto a lens: "Show here without moving" is grey. On a normal space, Shift and the right-drop menu behave as before. |
-| W3d (v0.3) (part script) (F-07) | Drag an item from a hand-made lens (the lens recipe) onto a normal space: the file leaves the lens's folder, the space lists it, and the lens no longer shows it. Delete that space: the file goes to the desktop, not back to the folder (D3). |
-| W3e (v0.3) (part script) (F-07) | In Explorer, copy a file and paste it on a hand-made lens (the lens recipe; click it, then Ctrl+V): a copy lands in the folder. Cut and paste: it moves. Cut an item from a normal space and paste it on a lens: it moves into the folder and leaves the space. A paste on a normal space works as before. |
-| W3f (v0.3) (part script) (F-07) | Drop a Start-menu app on a hand-made lens (the lens recipe): a working `.lnk` is in the folder and the lens shows it. "New shortcut ▸ Paste shortcut" and the custom shortcut dialog on a lens do the same. On a normal space, shortcuts work as before. |
-| W3g (v0.3) (part script) (F-07) | Select an item on a hand-made lens (the lens recipe) and press Delete: the file is in the Recycle Bin and the lens drops it. On the settings window's Shortcuts page, the X on a lens item says the file goes to the Recycle Bin, and it does. |
-| W7 (v0.3) (part script) (F-07) | Create a lens with "New lens…" from the space menu, the tray menu, and the desktop layer's menu (takeover on): each asks for a folder and opens a lens titled with the folder's name beside the top row of spaces, filled within a moment. Picking DeskSpace's storage folder shows a message and creates nothing. Cancelling creates nothing. |
 | New space placement (script) (D10) | With a few spaces in a row at the top of a monitor, New space from the space menu, the tray, the desktop menu, and the hotkey each opens to the right of the row, its top in line, with the same gutter as the others; with the row full to the screen edge it goes to the next row or under all of them; it never covers another space; on a second monitor it opens on the monitor of the click or the pointer; on an empty monitor it opens near the top-left corner; on a 150 % monitor the gutter looks the same. |
 | Desktop menu (v0.3) (part script) (F-14) | With takeover on, right-click an empty spot of the desktop: New space, DeskSpace settings…, and Hide/Show spaces sit above Explorer's desktop menu; each DeskSpace entry works; View, Sort by, Refresh, New › Text Document, Paste, Display settings, and Personalize work, and the layer shows the result; the Menu key and Shift+F10 with nothing selected open the same menu; a right-click on a loose icon still shows its item menu, and on a space the space menu. Run elevated once too: the menu still shows New, Display settings, and Personalize below the DeskSpace entries, with masked icons and no separator dangling under Hide spaces; with `-Verbosity 1` any fallback logs a warning naming the step that failed. |
 | C9 (part script) (F-52) | With the app running (not elevated; `./scripts/dev.ps1 -RealConfig` so the entries are real), right-click an empty spot of the desktop: "New space" and "DeskSpace Settings" sit above Explorer's entries. "New space" opens a space on the pointer's monitor; "DeskSpace Settings" opens the running instance's window instead of starting a second copy. With the spaces hidden, "Show DeskSpace spaces" appears, and hiding/showing updates the menu. After a clean exit all three are gone. |
@@ -2685,12 +2752,10 @@ for a machine that has it.
 | W21 (v0.3) (D17) | Tiles beside Explorer's Tiles on the same folder, at 100 % and 150 %, in light and dark: 48 px icons with name, type, and size beside them, tiles wrapping into rows and scrolling down; click, Ctrl and Shift click, the marquee, the arrow keys, type-to-select, F2 over the name, and drag out. |
 | W22 (v0.3) (D17) | Content beside Explorer's Content on the same folder, at 100 % and 150 %, in light and dark: one row per item with the icon and name at the left, "Date modified: …" and "Size: …" at the right, and Explorer's separator between rows; click, Ctrl and Shift click, the marquee, the arrow keys, type-to-select, F2 over the name, and drag out. |
 | W23 (v0.3) (script) (D17) | Global's Lenses page sits after New spaces. Change each default (View, Status bar, Sort by, Order, Folders first, Show hidden files, Show as) and "New lens…" uses it; an existing lens keeps its own settings. |
-| W25 (v0.3) (part script) (F-07) | Start with a lens on a share whose server is off (or a disconnected network drive): the other spaces draw and respond at once, and that lens shows "Folder not available". Make a junction into the storage folder of a `dev.ps1` scratch config (`mklink /J C:\Temp\into-store "%TEMP%\deskspace-dev\storage"`; drop a file on a space first so the folder exists). Change folder… to it: a message refuses it. Hand-edit a lens's path to it and restart: the lens shows "Folder not available" and lists nothing. |
 | W42 (v0.3) (part script) (F-64) | In a Downloads lens, double-click a folder, then one inside it (and once with Enter): each shows in place, the selection clears, the list starts at the top, and the title reads `Downloads › A › B`. Narrow the lens until the title is too long: it is cut from the left (`… › B`). Drop, paste, New shortcut, and Delete there all act on `B`; Open folder opens `B`. A `.lnk` to a folder still opens Explorer. Delete `B` in Explorer while it is shown: "Folder not available" with `B`'s path. A junction to the storage folder inside the lens shows unavailable when browsed into. Change folder…, its undo, and a restart each return to the lens's own folder. F2 on the browsed lens's title edits the lens's own nickname, so its box shows `Downloads`, not the bar's `Downloads › A › B`: confirm that reads clearly. |
 | W43 (v0.3) (part script) (F-64) | In a lens browsed two levels down, at 100 % and 150 %: the Back button sits left of the folder icon and goes up one level per click (a double-click goes up two, and never folds the space); Backspace, Alt+Left, Alt+Up, and the mouse's back button over the lens do the same. A click on the button makes that lens current, so Backspace then continues up it; a press on its top-left corner resizes instead. At the lens's own folder the button is gone, Backspace reaches the desktop as before, and Alt+Left does not move the selection. Backspace in a rename edits the text and does not go back. Compare the button's size and place with Explorer's (provisional 24 px, 4 px inset); it has no hover highlight yet. |
 | W35 (v0.3) (part script) (F-22) | On a Downloads lens's Lens page, type `*.pdf` in Show only: only PDFs and the folders remain, as you type. Add `*.tmp` to Hide: they go. Type `; ` and extra spaces mid-list: the text stays as typed, the caret does not jump. A filter that matches nothing shows "No items match the filter". Cancel puts the lens back; Apply keeps it over a restart. Typing on a 50,000-file lens never stalls the spaces; the list follows about a quarter of a second behind (B37), and half a second with many patterns: note whether that lag reads as slow. |
-| W46 (v0.3) (script) (F-07) | Rename a lens's title to a nickname with F2 (nothing selected), then F2 again, clear it, Enter: the title shows the folder's name and the Lens page shows "Folder name". Ctrl+Z gives the nickname back. With the Lenses page's "Show as" set to Full path, clearing shows the full path; set to Custom, clearing shows the folder's name. Clearing the title of a normal space, or of a lens that already follows its folder, changes nothing. |
-| W45 (v0.3) (part script) (F-67) | With a `dev.ps1` scratch config, make a lens on a scratch folder. Rename the folder in Explorer: within 5 s the lens shows the new path and keeps its items, its title follows (under "Folder name"), and a bar along its bottom reads "Folder moved:" and the path for about 3 s, readable on Acrylic, Blur, Solid, and Clear at 100 % and 150 %. Ctrl+Z points it back (it then says "Folder not available"). Move the folder elsewhere on the same drive: it follows. Move it to another drive, or delete it in Explorer: "Folder not available", and it never lists the Recycle Bin. Browse into a subfolder and rename that subfolder: the lens returns to its own folder with no bar. Browse two levels down, then rename the lens's own folder in Explorer: the rename succeeds (the watch no longer holds the subfolder), within 5 s the lens follows the new root with its notice and drops the browse, and Ctrl+Z points it back. |
+| W45 (v0.3) (part script) (F-67) | At 150 % (the rest passed at 100 % on 2026-11-15): make a lens on a scratch folder and rename the folder in Explorer: the "Folder moved:" notice and the path read clearly on Acrylic, Blur, Solid, and Clear, and the title follows. |
 | W47 (v0.3) (script) (D17) | Sort a space by Date, descending, with View ▸ Status bar on, then press Ctrl+Shift+6 and Ctrl+Shift+2, pick View ▸ List, and click the status bar's Details button: Sort by ▸ still shows Date and Descending, Keep sorted is as it was, and the status bar stays. |
 | W27 (v0.3) (F-07) | Hover a lens's title bar: after the usual delay a tip shows the folder the lens displays (a browsed subfolder's path, matching the title's `Root › Sub`), and it leaves with the pointer. An unavailable lens's tip reads "Folder not available" and the path. A normal space's title shows no tip. Hover the title until the tip shows, then F2: the tip goes and the edit is uncovered; moving within the title during the rename shows none. |
 | W39 (v0.3) (script) (F-09) | On a space in Large icons, Ctrl+wheel down walks Medium icons, Small icons, List, Details, Tiles, Content and stops; wheel up walks back and stops at Extra large icons; no zoom pop-up shows for a step. Ctrl+Plus and Ctrl+Minus step the same way, Ctrl+0 returns to "Settings icon size", and each step is one Undo entry ("Undo Change view"). A space on "Settings icon size" zooms as before (the F13 row still passes). |
@@ -2717,7 +2782,6 @@ for a machine that has it.
 | P23 (script) (new space on start) | With DeskSpace not running, `deskspace --config <scratch> --new-space` starts with one more space than the config holds. With it running, the same command adds one space and starts no second process. |
 | P25 (v0.3) (script) (space cap) | Drop items on a space until it reaches the bottom of the monitor: it stops and scrolls. Ctrl+Z puts it back. |
 | P15d (part script) (Details indicator) | Over a Details space with every column on, at 100 % and 150 %: a thin bar shows along the bottom, and slides right as you scroll sideways. Widen the space until the columns fit: it goes. With enough items to scroll vertically, both bars show without touching, and with few items only the bottom one does. Other views show no bottom bar unless they scroll that way. |
-| P20 (v0.3) (part script) (lens rename undo) | Rename an item in a lens, Ctrl+Z: it stays selected. Ctrl+Y: still selected. |
 | P15c (part script) (Details sideways) | Shift+wheel over a Details space with every column on, at 100 % and 150 %: the columns scroll sideways and the header stays with them. |
 | P15e (part script) (Details sideways) | On a mouse with a tilt wheel, over a Details space with every column on at 100 % and 150 %: tilting right scrolls the columns right and tilting left scrolls them left, with the header following. In other views the tilt does nothing. |
 | P22 (part script) | Open "From installed apps…" from a space's Shortcuts page and from the custom shortcut dialog: it lists apps with icons. Close it, wait for the background refresh (with `--debug`, "cached the installed apps"), and open it again: the apps and icons still show, with no failure or stall. Do it twice in a row. |

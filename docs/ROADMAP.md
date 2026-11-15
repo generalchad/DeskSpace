@@ -71,6 +71,13 @@ A native, lightweight, offline Windows desktop organizer that:
     the folder the same way. A lens item dropped on a normal space is an
     ordinary file there and moves into the store. A lens never binds the
     store or a folder inside it.
+  - *Amended 2026-11-15 (maintainer), not built yet:* a lens is a window
+    into a real folder with real files, and a normal space is a container
+    for `.lnk` shortcuts. A shortcut dropped on a space moves into the
+    store; a plain file or a lens item gets a shortcut made for it and
+    stays where it is; real files already in the store keep working.
+    `TASKS.md` C21 holds the decided and the open parts; until it lands,
+    the rules below describe the shipped behavior.
   - *Normal spaces* hold individual items. Dropping an item into a normal
     space moves that one item into a managed store. It is an atomic rename on
     the same volume, so nothing is duplicated and no extra disk space is used.
