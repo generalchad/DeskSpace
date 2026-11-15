@@ -12,7 +12,7 @@ use windows::Win32::Graphics::DirectWrite::{
     IDWriteTextLayout,
 };
 
-use super::edit::draw_edit_title;
+use super::edit::{EditArea, draw_edit_title};
 use super::geometry::{color_f, draw_text, inset, rect_f};
 use super::{DrawContext, Painter, PreparedScene};
 
@@ -151,6 +151,10 @@ const TITLE_INSET: f32 = 12.0;
 /// The gap between the title icon and the text, at 96 DPI: 6 px at the 28 px
 /// title, so it scales with the bar like the icon does.
 const TITLE_ICON_GAP: f32 = 6.0;
+/// The margin the title's rename box keeps around its text, at every scale
+/// like the title's own insets: the title starts at the box's left edge, so
+/// the box reaches into the bar for an even border.
+const TITLE_EDIT_MARGIN: f32 = 6.0;
 /// Segoe Fluent Icons / Segoe MDL2 Assets "Lock" glyph.
 /// https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-fluent-icons-font
 const LOCK_GLYPH: &[u16] = &[0xE72E];
@@ -264,7 +268,14 @@ pub(super) unsafe fn draw_title(
             draw_title_icon_button(ctx, prepared, title, has_image);
         }
         if scene.editing.is_some() {
-            draw_edit_title(ctx, prepared, text.left, text.right, title_height);
+            draw_edit_title(
+                ctx,
+                prepared,
+                EditArea::title(
+                    rect_f(text.left, 0.0, text.right, title_height),
+                    TITLE_EDIT_MARGIN,
+                ),
+            );
         } else {
             let title = if scene.title_keeps_end {
                 painter.title_keeping_end(

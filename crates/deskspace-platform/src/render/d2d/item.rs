@@ -1,7 +1,7 @@
 //! Draws one item cell (highlight, icon, label, and check box) and the
 //! rubber-band marquee.
 
-use super::edit::{EDIT_MAX_HEIGHT, EditArea, EditWidth, draw_edit_buffer};
+use super::edit::{EDIT_MAX_HEIGHT, EditArea, draw_edit_buffer};
 use super::geometry::{color_f, draw_text, rect_f, to_rect_f};
 use super::*;
 use crate::render::{DetailsView, ItemLayout, ItemMetrics};
@@ -515,18 +515,18 @@ impl CellLayout {
             check_box,
             label: (label_bottom > label_top)
                 .then(|| rect_f(label_left, label_top, label_right, label_bottom)),
-            edit: EditArea {
-                rect: rect_f(
+            edit: {
+                let rect = rect_f(
                     label_left,
                     label_top,
                     label_right,
                     label_top + EDIT_MAX_HEIGHT,
-                ),
-                extent: if beside_icon {
-                    EditWidth::Text
+                );
+                if beside_icon {
+                    EditArea::text(rect)
                 } else {
-                    EditWidth::Label
-                },
+                    EditArea::label(rect)
+                }
             },
             label_top,
             line_height,
@@ -588,6 +588,7 @@ unsafe fn draw_check_box(
 
 #[cfg(test)]
 mod tests {
+    use super::edit::EditWidth;
     use super::*;
 
     fn layout(cell: D2D_RECT_F) -> CellLayout {

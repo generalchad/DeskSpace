@@ -5,13 +5,7 @@ use super::geometry::{color_f, draw_text, rect_f};
 use super::*;
 
 /// Draws the title rename buffer in the title bar.
-pub(super) unsafe fn draw_edit_title(
-    ctx: DrawContext,
-    prepared: &PreparedScene,
-    left: f32,
-    right: f32,
-    title_height: f32,
-) {
+pub(super) unsafe fn draw_edit_title(ctx: DrawContext, prepared: &PreparedScene, area: EditArea) {
     let scene = &prepared.scene;
     let Some(edit) = &scene.editing else {
         return;
@@ -26,10 +20,7 @@ pub(super) unsafe fn draw_edit_title(
             edit,
             buffer,
             &ctx.graphics.edit_format,
-            EditArea {
-                rect: rect_f(left, 0.0, right, title_height),
-                extent: EditWidth::Text,
-            },
+            area,
             scene.edit,
             scene.caret_visible,
         );
@@ -52,11 +43,52 @@ pub(super) enum EditWidth {
 }
 
 /// The area an editable buffer is laid out in: the box its height may grow
-/// to, and how its width is taken.
+/// to, how its width is taken, and the even margin a hugging box keeps around
+/// its text.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct EditArea {
     pub(super) rect: D2D_RECT_F,
     pub(super) extent: EditWidth,
+    /// The margin between the text and a hugging box's sides.
+    pub(super) pad_x: f32,
+    /// How far past `rect` the box may reach to keep that margin. A row's box
+    /// stays inside its cell; a title's may reach into the bar, because its
+    /// text starts at the box's left edge.
+    pub(super) reach_x: f32,
+}
+
+impl EditArea {
+    /// A box that hugs its text inside `rect`, as a row's name does.
+    pub(super) fn text(rect: D2D_RECT_F) -> Self {
+        Self {
+            rect,
+            extent: EditWidth::Text,
+            pad_x: EDIT_PAD_X,
+            reach_x: 0.0,
+        }
+    }
+
+    /// A box that spans `rect`, as Explorer's does in an icon cell.
+    pub(super) fn label(rect: D2D_RECT_F) -> Self {
+        Self {
+            rect,
+            extent: EditWidth::Label,
+            pad_x: 0.0,
+            reach_x: 0.0,
+        }
+    }
+
+    /// A title bar's box: it hugs the text with `margin` on each side and may
+    /// reach that far past `rect`, so the margin stays even where the text
+    /// starts at the box's edge.
+    pub(super) fn title(rect: D2D_RECT_F, margin: f32) -> Self {
+        Self {
+            rect,
+            extent: EditWidth::Text,
+            pad_x: margin,
+            reach_x: margin,
+        }
+    }
 }
 
 /// How tall the rename box's layout is allowed to grow. A name that wraps to
@@ -161,7 +193,7 @@ pub(super) unsafe fn draw_edit_buffer(
             return;
         };
         let lines = edit_lines(&layout);
-        let field = edit_field(rect, &lines, area.extent);
+        let field = edit_field(area, &lines);
 
         brush.SetColor(&color_f(colors.fill));
         target.FillRectangle(&field, brush);
@@ -225,11 +257,14 @@ pub(super) unsafe fn draw_edit_buffer(
     }
 }
 
-/// The rename box for `lines` laid out in `rect`: their height plus an even
-/// margin, and either the text's own width or all of `rect`'s. Clamped to
-/// `rect`, so a line that reaches past it still draws inside. A buffer with
-/// no measured lines gets a small box at the layout's top.
-fn edit_field(rect: D2D_RECT_F, lines: &[EditLine], extent: EditWidth) -> D2D_RECT_F {
+/// The rename box for `lines` in `area`: their height plus an even vertical
+/// margin, and either the text's own width plus its horizontal margin or all
+/// of the area's rect. A hugging box may reach `reach_x` past the rect, so a
+/// title's margin fits where its text starts at the edge. A line that runs
+/// past the box is clipped when it is drawn. A buffer with no measured lines
+/// gets a small box at the layout's top.
+fn edit_field(area: EditArea, lines: &[EditLine]) -> D2D_RECT_F {
+    let rect = area.rect;
     let (text_left, text_right, top, bottom) = if lines.is_empty() {
         (0.0, 0.0, 0.0, 0.0)
     } else {
@@ -246,10 +281,10 @@ fn edit_field(rect: D2D_RECT_F, lines: &[EditLine], extent: EditWidth) -> D2D_RE
             lines[lines.len() - 1].bottom,
         )
     };
-    let (field_left, field_right) = match extent {
+    let (field_left, field_right) = match area.extent {
         EditWidth::Text => (
-            (rect.left + text_left - EDIT_PAD_X).max(rect.left),
-            (rect.left + text_right + EDIT_PAD_X).min(rect.right),
+            (rect.left + text_left - area.pad_x).max(rect.left - area.reach_x),
+            (rect.left + text_right + area.pad_x).min(rect.right + area.reach_x),
         ),
         EditWidth::Label => (rect.left, rect.right),
     };
@@ -348,7 +383,7 @@ mod tests {
             line(3, 16.0, 5.0, 45.0),
             line(6, 32.0, 8.0, 30.0),
         ];
-        let field = edit_field(rect_f(0.0, 0.0, 100.0, 1000.0), &lines, EditWidth::Text);
+        let field = edit_field(EditArea::text(rect_f(0.0, 0.0, 100.0, 1000.0)), &lines);
         assert_eq!(
             (field.left, field.top, field.right, field.bottom),
             (2.0, 0.0, 48.0, 50.0)
@@ -358,7 +393,7 @@ mod tests {
     #[test]
     fn an_icon_cells_box_spans_its_label() {
         let lines = [line(0, 0.0, 20.0, 42.0)];
-        let field = edit_field(rect_f(100.0, 40.0, 175.0, 1064.0), &lines, EditWidth::Label);
+        let field = edit_field(EditArea::label(rect_f(100.0, 40.0, 175.0, 1064.0)), &lines);
         assert_eq!((field.left, field.right), (100.0, 175.0));
         assert_eq!(
             (field.top, field.bottom),
@@ -370,7 +405,7 @@ mod tests {
     #[test]
     fn a_two_line_name_grows_an_icon_cells_box_downward() {
         let lines = [line(0, 0.0, 0.0, 75.0), line(3, 16.0, 0.0, 60.0)];
-        let field = edit_field(rect_f(100.0, 40.0, 175.0, 1064.0), &lines, EditWidth::Label);
+        let field = edit_field(EditArea::label(rect_f(100.0, 40.0, 175.0, 1064.0)), &lines);
         assert_eq!((field.left, field.right), (100.0, 175.0));
         assert_eq!(
             (field.top, field.bottom),
@@ -383,10 +418,24 @@ mod tests {
     fn a_name_wider_than_its_label_keeps_the_box_on_the_label() {
         let lines = [line(0, 0.0, 0.0, 120.0)];
         let rect = rect_f(100.0, 40.0, 175.0, 1064.0);
-        let field = edit_field(rect, &lines, EditWidth::Label);
+        let field = edit_field(EditArea::label(rect), &lines);
         assert_eq!((field.left, field.right), (rect.left, rect.right));
-        let hugged = edit_field(rect, &lines, EditWidth::Text);
+        let hugged = edit_field(EditArea::text(rect), &lines);
         assert_eq!(hugged.right, rect.right, "a row clamps to its box too");
+    }
+
+    #[test]
+    fn a_title_box_keeps_an_even_margin_around_its_text() {
+        let lines = [line(0, 0.0, 0.0, 40.0)];
+        let rect = rect_f(12.0, 0.0, 200.0, 28.0);
+        let field = edit_field(EditArea::title(rect, 6.0), &lines);
+        assert_eq!((field.left, field.right), (6.0, 58.0));
+        assert_eq!(
+            rect.left - field.left,
+            field.right - (rect.left + 40.0),
+            "the same margin on both sides"
+        );
+        assert_eq!((field.top, field.bottom), (0.0, 18.0));
     }
 
     fn layout(
@@ -422,7 +471,7 @@ mod tests {
             let width = grid_label_width(cell);
             let (lines, rect) = layout(&graphics, "Firefox", width, size);
             assert_eq!(lines.len(), 1, "{size} %: a short name takes one line");
-            let field = edit_field(rect, &lines, EditWidth::Label);
+            let field = edit_field(EditArea::label(rect), &lines);
             assert_eq!(
                 (field.left, field.right),
                 (rect.left, rect.right),
@@ -444,7 +493,7 @@ mod tests {
         let graphics = graphics().expect("graphics");
         let (lines, rect) = layout(&graphics, "Quarterly review", grid_label_width(75.0), 100);
         assert_eq!(lines.len(), 2, "wraps inside the label");
-        let field = edit_field(rect, &lines, EditWidth::Label);
+        let field = edit_field(EditArea::label(rect), &lines);
         assert_eq!((field.left, field.right), (rect.left, rect.right));
         assert_eq!(field.bottom, rect.top + lines[1].bottom + EDIT_PAD_Y);
         assert!(

@@ -786,8 +786,9 @@ one arm in `App::on_event`, whose match is exhaustive.
   names.
 - **Inline rename** (`edit.rs`, `win32/keyboard.rs`): the app owns a pure
   `TextEdit` and the painter draws the field. In an icon cell the box spans
-  the label, as Explorer's does, with the name centered in it; a row's box and
-  the title bar's hug their text. A `WH_KEYBOARD_LL` hook turns
+  the label, as Explorer's does, with the name centered in it; a row's box
+  hugs its text, and the title bar's keeps a small even margin around it. A
+  `WH_KEYBOARD_LL` hook turns
   keys into `Event::EditKey` because spaces never receive `WM_CHAR`, and reads
   modifiers live because `GetKeyboardState` is frozen. F2 renames the focused
   item, or the title with no item selected; a slow second click starts an item
