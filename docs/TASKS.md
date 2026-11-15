@@ -677,34 +677,6 @@ drop side is `win32/drop_target.rs` (`DragKind`, `drag_kind`, `DropPlan`,
     by Status. A lens outside OneDrive and a normal space offer no Status
     column. Showing the column downloads nothing.
 
-- [ ] **C19. The rename box as wide as Explorer's (platform; render).**
-  Asked by the maintainer, 2026-11-15, with screenshots: Explorer's box on a
-  desktop folder spans the item's width with the name centered in it, while
-  ours, on a shortcut named "Firefox", hugs the text.
-  - Why: `draw_edit_buffer` (`render/d2d/edit.rs`) sizes the field from the
-    measured lines plus `EDIT_PAD_X` and `EDIT_PAD_Y`, so a short name gets a
-    narrow box.
-  - Decided (maintainer, 2026-11-15): in the icon views (Medium, Large, and
-    Extra large icons, Match Explorer and Custom) and on the desktop layer,
-    the box spans the item's label width, the width D28's highlight gives
-    the label (`CellLayout`'s edit rect), with the text centered and wrapping
-    inside it; a name too long for one line grows the box downward as now.
-    It may be 1 px taller than ours: unconfirmed, so measure it.
-  - Measure Explorer's box on the desktop and in an Explorer window at
-    100 % and 150 % (left, right, top, and bottom against the icon and the
-    text, the border, and the colors), and name each value as measured, as
-    the lens recipe says. Measure Small icons, List, Details, Tiles, and
-    Content the same way; change a view only where it differs from
-    Explorer, and record the numbers in the commit body.
-  - The title rename keeps its own box. A pure helper that turns the label
-    rect and the measured lines into the field rect, with tests for one
-    line, two lines, and a name wider than the label.
-  - **[needs human]** check: beside Explorer at 100 % and 150 %, F2 on a
-    short name, a long name, and a two-line name in each icon view and on
-    the taken-over desktop: the box's edges, height, and text placement
-    match Explorer's; the caret, the selection, mouse selection in the box,
-    and the Esc and Enter keys behave as before.
-
 - [ ] **C20. A folder picture for why a lens's folder is unavailable
   (core, platform, app).** Asked by the maintainer, 2026-11-15.
   - Why: a lens whose folder is gone and one whose network share is down
@@ -2795,6 +2767,7 @@ that has it.
 | P50 (v0.3) (part script) (cross-space selection) | Ctrl+click two items in one space, then Ctrl+click one in another: only that one shows selected. Press Delete on a throwaway scratch config: only that file goes to the Recycle Bin, and the first space's two stay. Repeat with Shift+click, and with Explorer's check boxes on in independent mode (tick two in one space, click in another, Delete): the first space's ticks are gone and its files stay. |
 | P46 (v0.3) (shell windows in front) | With a lens on a throwaway folder and Explorer maximized over the spaces, drop a clashing file onto the lens: "Replace or Skip Files" shows in front of Explorer within a moment, and Replace and Skip both work. The same for a long copy's progress window (a few GB, or onto a slow drive), a move's error window (a file another program holds open), and a rename to a name already taken. With `--on-top` and the spaces above everything, the window still shows in front of them. A quick delete, rename, or small copy shows no window at all, as before. A copy started from Explorer itself meanwhile keeps its own window where it was. Repeat the clashing drop on Windows 10: the window's class name was read on Windows 11 only. |
 | Item highlight (D28) | Beside Explorer's desktop and an Explorer window on the same folder, at 100 % and 150 %, under Match Explorer, Custom, and the fixed icon views (Medium, Large, Extra large): hovering or selecting an item in an icon view draws a highlight the size of Explorer's around its icon and the lines its own label takes, shorter around a one-line name than around one that wraps, with the icon centered in it and the focus rectangle following it. Rows sit close together with a 1 px gap between two-line highlights (or the Custom spacing under Custom), and no label is clipped at 1 or 2 lines or at 160 % label size. Clicking the strip under a one-line name in a two-line row still selects that item; the check box still sits on the icon's top-left corner and takes clicks; the drag image hugs the item the same way. With takeover on, loose desktop icons stay where Explorer put them and their highlights hug each item. Small icons, List, Details, Tiles, and Content highlights look as before. |
+| C19 (platform; render) | Beside Explorer's desktop and an Explorer window on the same folder, at 100 % and 150 %, light and dark, with takeover on as well: F2 on a short name ("Firefox"), a two-line name, and a name wider than its label, in Medium, Large, and Extra large icons under both Match Explorer and Custom. In each, the box spans the label's width with the name centered in it, a wrapped name grows it downward over the items below, and its left, right, top, and bottom edges and border match Explorer's; the commit that closes this row records Explorer's measured edges (against the icon and the text, the border, and the colors) and whether ours is 1 px taller. The caret, the selection, mouse selection in the box, and Esc and Enter behave as before, and the title bar's rename box still hugs its text. Then compare Explorer's box in Small icons, List, Details, Tiles, and Content at both scales: ours still hugs the name in those views, so note any where Explorer's spans the label instead, as a fix task. |
 
 ## Found while working
 

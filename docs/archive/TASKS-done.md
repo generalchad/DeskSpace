@@ -7109,3 +7109,4 @@ takes an id listed here or used anywhere above
 - **P32.** Keep the keyboard hook alive through a stall (fix; key hook).
 - **T25.** One seeded Burn field per play (platform).
 - **Z5a.** Lens files (checks).
+- **C19.** The rename box as wide as Explorer's (platform; render).

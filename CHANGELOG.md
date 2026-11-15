@@ -9,6 +9,9 @@ Notable changes to DeskSpace, newest first. The format follows
 
 ### Changed
 
+- An item's rename box in the icon views is the width of the item's label,
+  as Explorer's is, with the name centered in it, instead of hugging the
+  name. A long name still wraps inside it and grows the box downward.
 - An item's highlight in the icon views is the size of Explorer's: it hugs
   the icon and the label, so it is shorter around a one-line name than
   around one that wraps, and no longer fills the whole cell. Rows sit

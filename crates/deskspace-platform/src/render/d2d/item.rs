@@ -1,7 +1,7 @@
 //! Draws one item cell (highlight, icon, label, and check box) and the
 //! rubber-band marquee.
 
-use super::edit::{EDIT_MAX_HEIGHT, draw_edit_buffer};
+use super::edit::{EDIT_MAX_HEIGHT, EditArea, EditWidth, draw_edit_buffer};
 use super::geometry::{color_f, draw_text, rect_f, to_rect_f};
 use super::*;
 use crate::render::{DetailsView, ItemLayout, ItemMetrics};
@@ -201,7 +201,8 @@ unsafe fn draw_item_label(
         if let (Some(buffer), Some((_, text_edit))) = (edit, &scene.editing_item) {
             // Explorer's rename box wraps the whole name and grows downward
             // over the items below it, so lay it out in the label's width
-            // but a tall box; `draw_edit_buffer` hugs the measured lines.
+            // but a tall box; in an icon cell the box spans that width with
+            // the name centred, while a row's box hugs the name.
             draw_edit_buffer(
                 ctx,
                 text_edit,
@@ -380,8 +381,9 @@ struct CellLayout {
     /// The label's box; `None` when the cell has no room below the icon.
     label: Option<D2D_RECT_F>,
     /// The rename box's: the label's width, and tall enough to grow over
-    /// the items below.
-    edit: D2D_RECT_F,
+    /// the items below. Explorer spans an icon cell's label, and a row's box
+    /// hugs its name.
+    edit: EditArea,
     /// The first label line's top and its height, for the extra rows Details,
     /// Tiles, and Content draw below the name.
     label_top: f32,
@@ -513,12 +515,19 @@ impl CellLayout {
             check_box,
             label: (label_bottom > label_top)
                 .then(|| rect_f(label_left, label_top, label_right, label_bottom)),
-            edit: rect_f(
-                label_left,
-                label_top,
-                label_right,
-                label_top + EDIT_MAX_HEIGHT,
-            ),
+            edit: EditArea {
+                rect: rect_f(
+                    label_left,
+                    label_top,
+                    label_right,
+                    label_top + EDIT_MAX_HEIGHT,
+                ),
+                extent: if beside_icon {
+                    EditWidth::Text
+                } else {
+                    EditWidth::Label
+                },
+            },
             label_top,
             line_height,
             name_left,
@@ -629,7 +638,10 @@ mod tests {
             2.0 * LABEL_LINE_HEIGHT,
             "two lines"
         );
-        assert!(layout.edit.bottom > label.bottom, "the rename box can grow");
+        assert!(
+            layout.edit.rect.bottom > label.bottom,
+            "the rename box can grow"
+        );
     }
 
     /// A grid cell's layout at `metrics` for a label taking `lines` lines.
@@ -692,6 +704,24 @@ mod tests {
                 "{mode:?}"
             );
         }
+    }
+
+    #[test]
+    fn only_an_icon_cell_spans_its_rename_box() {
+        let cell = rect_f(10.0, 20.0, 210.0, 300.0);
+        for mode in [
+            ItemLayout::Inline,
+            ItemLayout::Details,
+            ItemLayout::Tiles,
+            ItemLayout::Content,
+        ] {
+            let layout = CellLayout::new(cell, ItemMetrics::for_scale(1.0), 100, 1, mode, None);
+            assert_eq!(layout.edit.extent, EditWidth::Text, "{mode:?}");
+        }
+        assert_eq!(
+            grid(cell, ItemMetrics::for_scale(1.0), 1).edit.extent,
+            EditWidth::Label
+        );
     }
 
     #[test]
