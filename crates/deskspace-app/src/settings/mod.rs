@@ -321,6 +321,9 @@ pub enum ButtonAction {
     FitToContents,
     /// The General page's "Check for updates now".
     CheckForUpdates,
+    /// The General page's "Suggest icons": give spaces without an icon the
+    /// best match for their names.
+    SuggestIcons,
     /// The Lens page's "Open folder".
     OpenLensFolder,
     /// The Lens page's "Change folder…".
@@ -340,6 +343,7 @@ pub fn button_action(id: u32) -> Option<ButtonAction> {
         field::LOAD_THEME => Some(ButtonAction::LoadTheme),
         field::FIT_CONTENTS => Some(ButtonAction::FitToContents),
         field::CHECK_UPDATES_NOW => Some(ButtonAction::CheckForUpdates),
+        field::SUGGEST_ICONS => Some(ButtonAction::SuggestIcons),
         field::LENS_OPEN => Some(ButtonAction::OpenLensFolder),
         field::LENS_CHANGE => Some(ButtonAction::ChangeLensFolder),
         id if fonts::is_font_reset(id) => Some(ButtonAction::ResetFonts(id)),
@@ -722,6 +726,35 @@ mod tests {
         assert_eq!(
             install.enabled,
             available && deskspace_update::is_installed()
+        );
+    }
+
+    #[test]
+    fn suggest_icons_is_greyed_when_downloads_are_off() {
+        let (mut config, session) = setup();
+        let form = |config: &Config, session: &Session| {
+            build_form(
+                config,
+                session,
+                true,
+                true,
+                Path::new("x"),
+                SpacePreview::default(),
+            )
+        };
+        let first = form(&config, &session);
+        let button = first
+            .field(field::SUGGEST_ICONS)
+            .expect("the Suggest icons button");
+        assert!(matches!(button.kind, FieldKind::Button { .. }));
+        assert!(button.enabled, "Ask first still offers to suggest icons");
+
+        config.window.icon_downloads = IconDownloads::Declined;
+        assert!(
+            !form(&config, &session)
+                .field(field::SUGGEST_ICONS)
+                .expect("the Suggest icons button")
+                .enabled
         );
     }
 

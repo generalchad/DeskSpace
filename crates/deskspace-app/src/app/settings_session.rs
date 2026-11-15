@@ -396,6 +396,7 @@ impl App {
             // The button is grey for Global, which has no space to fit.
             (ButtonAction::FitToContents, None) => {}
             (ButtonAction::CheckForUpdates, _) => self.start_update_check(ui, true),
+            (ButtonAction::SuggestIcons, _) => self.suggest_icons(ui),
             (ButtonAction::OpenLensFolder, Some(id)) => self.open_lens_folder(ui, id),
             (ButtonAction::ChangeLensFolder, Some(id)) => {
                 let at = self.space_center(id);

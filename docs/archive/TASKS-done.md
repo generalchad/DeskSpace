@@ -7110,3 +7110,4 @@ takes an id listed here or used anywhere above
 - **T25.** One seeded Burn field per play (platform).
 - **Z5a.** Lens files (checks).
 - **C19.** The rename box as wide as Explorer's (platform; render).
+- **C22.** Better automatic icons, and "Suggest icons" (core, config, app).

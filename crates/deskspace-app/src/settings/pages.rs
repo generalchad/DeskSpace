@@ -359,6 +359,8 @@ pub(super) fn general_page(config: &Config) -> SettingsPage {
             )
             .enabled(deskspace_update::is_configured()),
             Field::note(field::ICON_DOWNLOADS_NOTE, icon_downloads_note()),
+            Field::button(field::SUGGEST_ICONS, "", "Suggest icons")
+                .enabled(config.window.icon_downloads != IconDownloads::Declined),
             Field::heading(field::UPDATES_HEADING, "Updates"),
             Field::toggle(
                 field::CHECK_UPDATES,

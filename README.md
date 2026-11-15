@@ -197,10 +197,13 @@ help inspect the look and the desktop layer.
   selected. On a lens, the title is a nickname; clear it and press `Enter` to
   show the folder's name again. While a space's title is being renamed, click
   its icon to choose another one: a space with no icon shows a placeholder to
-  click. `Alt+Enter` opens the selected item's Properties, or DeskSpace
-  Settings when no item is selected. `Enter` opens the selected item, `Escape`
-  clears the selection, `F5` refreshes the spaces, and the Menu key or
-  `Shift+F10` opens the context menu. `Ctrl+Plus` and `Ctrl+Minus` make the
+  click. A space with an automatic icon follows its name ("Email" gets a mail
+  icon, "Artcraft" a paint brush), and Settings > General's "Suggest icons"
+  fills in the spaces that have none, after asking once. `Alt+Enter` opens the
+  selected item's Properties, or DeskSpace Settings when no item is selected.
+  `Enter` opens the selected item, `Escape` clears the selection, `F5`
+  refreshes the spaces, and the Menu key or `Shift+F10` opens the context
+  menu. `Ctrl+Plus` and `Ctrl+Minus` make the
   icons larger and smaller, `Ctrl+0` resets them to 100 %, and `Ctrl+Shift+1`
   through `Ctrl+Shift+8` pick Extra large, Large, Medium, or Small icons, List,
   Details, Tiles, or Content.

@@ -22,7 +22,7 @@ use deskspace_core::icon_match::best_icon;
 use deskspace_core::icon_set::Glyph;
 use deskspace_core::icon_set::IconSet;
 use deskspace_core::theme::Color;
-use deskspace_core::{Command, Space, SpaceIcon, SpaceId};
+use deskspace_core::{Command, IconRef, Space, SpaceIcon, SpaceId};
 use deskspace_platform::{GlyphCache, Icon, IconChoice, IconPickerRequest, PickerSet, Ui};
 
 use super::App;
@@ -82,6 +82,22 @@ pub(super) fn next_step(
 /// store made of it.
 type WorkerResult = (String, Result<Option<IconSet>, String>);
 
+/// The spaces "Suggest icons" would give an icon to, with the matched name for
+/// each: every space with no icon that is not a lens and whose title matches
+/// the set. A lens without an icon shows its folder's icon instead, and a
+/// space that already has an icon keeps it.
+fn suggestions<'a>(
+    spaces: &[Space],
+    set: &'a IconSet,
+    words: &[(&str, &str)],
+) -> Vec<(SpaceId, &'a str)> {
+    spaces
+        .iter()
+        .filter(|space| !space.is_lens() && space.icon().is_none())
+        .filter_map(|space| best_icon(space.title(), set, words).map(|name| (space.id, name)))
+        .collect()
+}
+
 /// The app's title icons: the sets in use, their loaded forms, and the glyph
 /// cache the pictures come from.
 pub(super) struct SpaceIcons {
@@ -101,6 +117,8 @@ pub(super) struct SpaceIcons {
     /// The space whose icon picker waits for a set to load, opened by the
     /// next `ICONS_WAKE` if that space is still being renamed.
     pending_picker: Option<SpaceId>,
+    /// Whether "Suggest icons" waits for the default set to load.
+    pending_suggest: bool,
 }
 
 impl Default for SpaceIcons {
@@ -115,6 +133,7 @@ impl Default for SpaceIcons {
             pending: None,
             asked: false,
             pending_picker: None,
+            pending_suggest: false,
         }
     }
 }
@@ -184,6 +203,20 @@ impl SpaceIcons {
 
     pub(super) fn pending_picker(&self) -> Option<SpaceId> {
         self.pending_picker
+    }
+
+    /// Remembers that "Suggest icons" waits for the default set, or forgets it.
+    pub(super) fn set_pending_suggest(&mut self, pending: bool) {
+        self.pending_suggest = pending;
+    }
+
+    pub(super) fn pending_suggest(&self) -> bool {
+        self.pending_suggest
+    }
+
+    /// Whether the consent question for `prefix` is waiting or showing.
+    pub(super) fn consent_pending(&self, prefix: &str) -> bool {
+        self.pending.is_some_and(|spec| spec.prefix == prefix)
     }
 
     /// Reads the cache for `spec` on a worker, then wakes the app.
@@ -370,6 +403,105 @@ impl App {
         self.refresh_settings(ui);
     }
 
+    /// The General page's "Suggest icons": asks once, then gives every space
+    /// with no icon the best match for its title, as one undo entry. A set
+    /// that is not ready loads, asks, or downloads first, and the wake runs
+    /// the suggestion once it arrives.
+    pub(super) fn suggest_icons(&mut self, ui: &mut Ui) {
+        let spec = default_set();
+        if self.space_icons.ready(spec.prefix).is_some() {
+            self.offer_suggestions(ui);
+            return;
+        }
+        self.space_icons.set_pending_suggest(true);
+        self.need_icon_set(ui, spec);
+        let waiting = matches!(
+            self.space_icons.state(spec.prefix),
+            None | Some(SetState::Loading | SetState::Missing)
+        );
+        if !waiting {
+            self.space_icons.set_pending_suggest(false);
+            self.report_no_icons(ui, spec);
+        }
+    }
+
+    /// Runs a "Suggest icons" that waited for the default set, once its load
+    /// or download is over.
+    pub(super) fn resume_pending_suggestion(&mut self, ui: &mut Ui) {
+        let spec = default_set();
+        if !self.space_icons.pending_suggest()
+            || self.space_icons.loading(spec.prefix)
+            || self.space_icons.consent_pending(spec.prefix)
+        {
+            return;
+        }
+        self.space_icons.set_pending_suggest(false);
+        if self.space_icons.ready(spec.prefix).is_some() {
+            self.offer_suggestions(ui);
+        } else {
+            self.report_no_icons(ui, spec);
+        }
+    }
+
+    /// Asks once, then gives each suggested space its matched icon.
+    fn offer_suggestions(&mut self, ui: &mut Ui) {
+        let spec = default_set();
+        let Some(set) = self.space_icons.ready(spec.prefix) else {
+            return;
+        };
+        let found: Vec<(SpaceId, String)> =
+            suggestions(self.config.desktop.spaces(), set, spec.words)
+                .into_iter()
+                .map(|(id, name)| (id, name.to_owned()))
+                .collect();
+        if found.is_empty() {
+            ui.alert(
+                "Suggest icons",
+                "Every space already has an icon, or no space's name matches one in the icon set.",
+            );
+            return;
+        }
+        let question = if found.len() == 1 {
+            "Give the space without an icon the icon that best matches its name?".to_owned()
+        } else {
+            format!(
+                "Give the {} spaces without an icon the icon that best matches each name?",
+                found.len()
+            )
+        };
+        if !ui.confirm("Suggest icons", &question) {
+            return;
+        }
+        let prefix = spec.prefix.to_owned();
+        self.undo.begin("Suggest icons");
+        for (id, name) in found {
+            let Some(at) = self
+                .config
+                .desktop
+                .space(id)
+                .map(|space| space.rect().center())
+            else {
+                continue;
+            };
+            let icon = SpaceIcon::Chosen(IconRef {
+                set: prefix.clone(),
+                name,
+            });
+            self.commit(ui, Command::SetSpaceIcon { id, icon }, at);
+        }
+        self.undo.finish(&self.config.desktop);
+        self.refresh_settings(ui);
+    }
+
+    /// Says why "Suggest icons" cannot run: the set is missing, refused, or
+    /// failed.
+    fn report_no_icons(&mut self, ui: &mut Ui, spec: &'static IconSetSpec) {
+        let note = self
+            .icon_set_note(spec)
+            .unwrap_or_else(|| "The icon set is not available.".to_owned());
+        ui.alert("Suggest icons", &note);
+    }
+
     /// What the picker says about `spec`'s set, or `None` while it is ready.
     fn icon_set_note(&self, spec: &'static IconSetSpec) -> Option<String> {
         match self.space_icons.state(spec.prefix) {
@@ -505,6 +637,63 @@ mod tests {
         );
         let stuff = space_titled(SpaceIcon::Automatic, "Stuff");
         assert!(icons.space_glyph(&stuff).is_none());
+    }
+
+    #[test]
+    fn suggestions_cover_only_spaces_with_no_icon_and_a_match() {
+        let mut desktop = deskspace_core::Desktop::new();
+        let games_space = crate::fixtures::create_space(
+            &mut desktop,
+            "Games",
+            deskspace_core::geometry::Rect::new(0, 0, 200, 120),
+        );
+        let stuff = crate::fixtures::create_space(
+            &mut desktop,
+            "Stuff",
+            deskspace_core::geometry::Rect::new(0, 0, 200, 120),
+        );
+        let chosen_space = crate::fixtures::create_space(
+            &mut desktop,
+            "Photos",
+            deskspace_core::geometry::Rect::new(0, 0, 200, 120),
+        );
+        crate::fixtures::apply(
+            &mut desktop,
+            deskspace_core::Command::SetSpaceIcon {
+                id: chosen_space,
+                icon: chosen("fluent:games-20-regular"),
+            },
+        );
+        let automatic = crate::fixtures::create_space(
+            &mut desktop,
+            "Games",
+            deskspace_core::geometry::Rect::new(0, 0, 200, 120),
+        );
+        crate::fixtures::apply(
+            &mut desktop,
+            deskspace_core::Command::SetSpaceIcon {
+                id: automatic,
+                icon: SpaceIcon::Automatic,
+            },
+        );
+        let lens = crate::fixtures::create_lens(
+            &mut desktop,
+            "Games",
+            deskspace_core::geometry::Rect::new(0, 0, 200, 120),
+            "C:/Games",
+        );
+
+        let set = games();
+        let found: Vec<(SpaceId, String)> = suggestions(desktop.spaces(), &set, &[])
+            .into_iter()
+            .map(|(id, name)| (id, name.to_owned()))
+            .collect();
+        assert_eq!(found, [(games_space, "games-20-regular".to_owned())]);
+        assert!(
+            !found
+                .iter()
+                .any(|(id, _)| [stuff, chosen_space, automatic, lens].contains(id))
+        );
     }
 
     #[test]

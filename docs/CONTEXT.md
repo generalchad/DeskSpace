@@ -583,7 +583,10 @@ default in `Default`.
   `Declined` never downloads. `window.new_space_icon` is `Automatic` (match
   the title) or `None`, and is what the New space path passes to
   `CreateSpace`; the seeded first space is always `None`, so a first launch
-  never asks.
+  never asks. General's "Suggest icons" gives every space with no icon the
+  default set's match for its title, as a saved name, in one undo entry; it
+  asks once, and a set that is still missing goes through the same consent
+  and download before the suggestion runs.
 - `load_or_default` returns defaults when no file exists. A file that exists
   but cannot be read (another program holds it open, or a roaming profile has
   not synced it) is tried for about a second, then is an error, and the file

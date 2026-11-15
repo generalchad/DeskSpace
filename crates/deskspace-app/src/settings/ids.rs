@@ -187,6 +187,7 @@ pub mod field {
     pub const WINDOW_FONTS_NOTE: u32 = 222;
     pub const RESET_SPACE_FONTS: u32 = 223;
     pub const RESET_WINDOW_FONTS: u32 = 224;
+    pub const SUGGEST_ICONS: u32 = 225;
 }
 
 /// The pages, in build order. The first `LOOK_PAGE_COUNT` hold look settings,

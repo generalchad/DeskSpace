@@ -636,9 +636,13 @@ A native, lightweight, offline Windows desktop organizer that:
   - *Matching:* pure and unit-tested, outside the platform. The space's
     title is split into words and scored against a curated table of
     English words to icon names ("games", "work", "photos", "school"), then
-    against the set's own names and aliases. The best score wins; ties
-    break by a fixed order; below a threshold, no icon. Other languages
-    follow M9.
+    against the set's own names and aliases. A word that finds no icon as
+    written or in the singular also tries its "-ing" stem ("browsing" to
+    "browse"), and then a curated word or icon name at its start or end
+    ("artcraft" to "art"); the stem is tried only after the word itself
+    finds nothing, so a title that picks an icon today keeps it. The best
+    score wins; ties break by a fixed order; below a threshold, no icon.
+    Other languages follow M9.
   - *Model:* each space stores its icon as automatic, none, or a chosen
     set and name, a `#[serde(default)]` field changed through a `Command`.
     Icon names are saved, so a set's trimmed copy never renames or drops

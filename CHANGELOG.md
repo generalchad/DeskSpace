@@ -7,6 +7,14 @@ Notable changes to DeskSpace, newest first. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Settings > General's "Suggest icons" gives every space without an icon the
+  best match for its name, after asking once. Automatic icons also find more
+  names now: "Email & Communication" gets a mail icon, "Artcraft" a paint
+  brush, and "Web Browsing" a globe, while a title that already had an icon
+  keeps it.
+
 ### Changed
 
 - An item's rename box in the icon views is the width of the item's label,

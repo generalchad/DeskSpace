@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use deskspace_config::{Config, ConfigStore, IconDownloads, IconSetSpec};
+use deskspace_config::{Config, ConfigStore, IconDownloads, IconSetSpec, default_set};
 use deskspace_core::geometry::Point;
 use deskspace_core::{Column, Command, Desktop, ItemId, SortKey, Space, SpaceId, ViewMode};
 use deskspace_platform::{
@@ -748,13 +748,7 @@ impl App {
     /// the user once, download it, or leave it. The one place a download is
     /// decided (D16).
     pub(super) fn need_icon_set(&mut self, ui: &mut Ui, spec: &'static IconSetSpec) {
-        let step = space_icons::next_step(
-            self.space_icons.state(spec.prefix),
-            self.config.window.icon_downloads,
-            self.space_icons.asked(),
-            deskspace_update::is_configured(),
-        );
-        match step {
+        match self.icon_step(spec) {
             IconStep::Nothing | IconStep::Unavailable => {}
             IconStep::Load => self.space_icons.load(&self.store, ui, spec),
             IconStep::Fetch => self.space_icons.fetch(&self.store, ui, spec),
@@ -763,6 +757,16 @@ impl App {
                 Self::set_timer(ui, Timer::IconConsent, ICON_CONSENT_DELAY_MS);
             }
         }
+    }
+
+    /// The next step for one icon set, from its state and the user's answer.
+    pub(in crate::app) fn icon_step(&self, spec: &'static IconSetSpec) -> IconStep {
+        space_icons::next_step(
+            self.space_icons.state(spec.prefix),
+            self.config.window.icon_downloads,
+            self.space_icons.asked(),
+            deskspace_update::is_configured(),
+        )
     }
 
     /// Asks whether DeskSpace may download the icon set once, and remembers
@@ -793,6 +797,13 @@ impl App {
             for spec in SpaceIcons::sets_in_use(self.config.desktop.spaces()) {
                 self.need_icon_set(ui, spec);
             }
+            // "Suggest icons" needs the default set even when no space asks
+            // for it yet.
+            if self.space_icons.pending_suggest() {
+                self.need_icon_set(ui, default_set());
+            }
+        } else {
+            self.space_icons.set_pending_suggest(false);
         }
     }
 
@@ -965,6 +976,8 @@ impl EventHandler for App {
                     // The settings window shows the icons too.
                     self.refresh_settings(ui);
                 }
+                // "Suggest icons" waits for the default set too.
+                self.resume_pending_suggestion(ui);
                 // A picker that waited for a set to load opens now, unless
                 // the rename or settings page it belonged to has gone.
                 if let Some(space) = self.space_icons.pending_picker() {

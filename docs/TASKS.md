@@ -747,49 +747,6 @@ drop side is `win32/drop_target.rs` (`DragKind`, `drag_kind`, `DropPlan`,
     against v0.3.0's behavior until those tasks land (maintainer,
     2026-11-15).
 
-- [ ] **C22. Better automatic icons, and "Suggest icons" (core, config,
-  app).** Asked by the maintainer, 2026-11-15: "Email & Communication" and
-  "Artcraft" got no icon.
-  - Why, read from the scratch config: neither space had an icon set, so
-    automatic matching never ran on them (a space picks an icon only while
-    its icon is Automatic). Run on their titles, `best_icon`
-    (`deskspace-core/src/icon_match.rs`) would give "Email & Communication"
-    the set's `communication` icon, but nothing for "Artcraft": one word,
-    and only whole words are matched.
-  - Decided (maintainer, 2026-11-15): add a "Suggest icons" action that
-    fills in icons for spaces that have none, after the user confirms.
-  - Matching (pure, in `icon_match.rs`):
-    - More curated rows in `FLUENT_WORDS` (`deskspace-config/src/icons.rs`)
-      for the common titles that miss today, each checked against
-      `fluent-names.txt`: for example `email`, `inbox`, and `message` to
-      mail or chat icons, and `browse`, `browser`, and `internet` to
-      `globe`.
-    - A word that ends in "-ing" also tries its stem ("browsing" to
-      "browse"), as plurals try their singular, scored just below them.
-    - A word that matches nothing tries a curated word or an icon name of
-      at least `MIN_WORD_LEN` letters at its start or end ("artcraft" to
-      `art`), scored below `SCORE_FIRST_PART`.
-    - A title that picks an icon today picks the same one after the change
-      (Automatic resolves live, so a change would alter users' spaces).
-      Test that with today's cases kept and a table of titles that gain an
-      icon; if a new rule would change an existing pick, stop and ask.
-  - "Suggest icons": a button on Settings > General's "Space icons" card
-    (the global setting recipe's button steps). It needs the icon set: with
-    downloads on "Ask first" it asks for consent first (the `IconStep` path),
-    and with "Never" it is greyed. It asks once, naming how many spaces
-    would get an icon, then sets each space with no icon to its best match
-    as a saved name (`fluent:<name>`). Spaces that match nothing, spaces
-    that already have an icon, and lenses with their folder's icon stay as
-    they are. One undo entry, "Undo Suggest icons", through
-    `App::record_effects`.
-  - Docs: `README.md` (the Themes or Control center line that covers space
-    icons), and a `CHANGELOG.md` "Unreleased" line.
-  - **[needs human]** check: with the icon set downloaded, spaces titled
-    "Email & Communication", "Artcraft", "Web Browsing", and "Stuff" and no
-    icon: Suggest icons asks once naming three spaces, gives the first
-    three icons and leaves "Stuff" alone; Ctrl+Z takes all three away; a
-    space with its own icon keeps it.
-
 - [ ] **C23. The "Folder moved" notice as plain text (platform; render).**
   **(junior)** Asked by the maintainer, 2026-11-15, after W45 passed.
   - Why: the notice a lens shows after following its folder
@@ -2606,6 +2563,7 @@ that has it.
 | Page switching | In dark and light, at 100 % and 150 %: click through every page of Global and of a space, by mouse and with the arrow keys. Each page appears in one step, with no blank frame or flash of the window body and no card drawn before its controls; a page taller than the window still starts at its top. With `--debug`, the console shows a "settings: switched page" line per switch; note its elapsed_us before and after this change if you can. Open a space's Shortcuts page, switch away before its icons load, then back: the icons are there. Edit a field, switch pages, then Cancel and OK: both still work, and Settings reopens on the last page. |
 | S12 (part script) (D16, D26) | On a space's page, at 100 % and 150 %, in light and dark: double-click the name: an edit opens over it with the name selected. Type, then Enter: the top line, the scopes pane, and the space on the desktop show the new name, and the window stays open. Esc in the edit keeps the old name and the window open, and neither key presses OK or Cancel. Click elsewhere in the window, or press OK, while editing: the typed name is kept. Clearing a lens's name puts its default title back. Double-click the icon, once with the edit closed and once with it open: the picker opens over the settings window each time, an open edit stays open behind it and has the focus again afterwards, and a choice shows at once on the top line, in the scopes pane, and on the desktop. While the picker is open, typing goes only to the picker, and after it closes other apps get their keys (nothing stays captured). A single click on the icon does nothing; the cursor over it is a hand and its tooltip says "Double-click to change the icon", dark in dark mode. A space with no icon: double-click the +, pick one, and it replaces the +. With an icon set still downloading, the picker opens once it arrives, while the page shows. Cancel afterwards keeps both changes, and Ctrl+Z undoes the rename. Global's top line does not edit and has no icon. |
 | S11 (D16, D26) | In light and dark, at 100 % and 150 %: a space with an icon shows it in the scopes pane in place of its kind's symbol (decided 2026-11-05: the icon replaces the symbol), and on its page's top line left of its name, aligned with the text. A space without an icon keeps its kind's symbol in the scopes pane, laid out as before, and shows an outlined + on the top line. A dimmed scope's icon is dimmed. The top-line icon takes no click yet (S12). Global's top line has no icon and its title has not moved. Change a space's icon from the desktop while Settings is open: both places follow; an icon set that finishes downloading while Settings is open fills in. Switch dark mode: the icons redraw in the new text color. |
+| C22 (D16) | With the icon set downloaded, at 100 % and 150 %, light and dark: spaces titled "Email & Communication", "Artcraft", "Web Browsing", and "Stuff", each with no icon. Settings > General's "Suggest icons" asks once, naming three spaces; the first three get a mail, paint brush, and globe icon, and "Stuff" stays bare. Ctrl+Z takes all three away in one step ("Undo Suggest icons"), and redo puts them back. A space with its own icon keeps it, and a lens without one keeps its folder's icon. A space titled "Playing Cards" keeps its playing-cards icon, not a play icon. With "Icon downloads" set to "Never" the button is greyed; with "Ask first" and no cached set, clicking it asks before downloading, then suggests. |
 | Rail groups | At 100 % and 150 %, in light and dark: Global's pane shows Look, Fonts, New items, DeskSpace, and Animations, each title with a caret pointing down, and a space shows This space (View, Shortcuts) then Look, a lens This space (Lens, View, Shortcuts) then Look. Switching from Global's General to a space opens its first page. Click a title: its pages hide and the caret points right; click again: they return. The click never selects the title or changes the page. Collapse the group of the page shown: the page stays, and no row is selected until you pick one. Switch scopes: Look stays collapsed if it was. With the arrow keys, Up and Down step over titles in both directions (Up from Startup reaches About), and moving into a collapsed group opens it at its first entry going down and its last going up. Reopen Settings: every group is open again. |
 | Dark scroll bars | In dark mode, at 100 % and 150 %: every scroll bar is dark, with no white track. Settings: a page taller than the window (G10), the scopes pane with enough spaces to scroll, and the open list of a font family drop-down. Debug window: the section pane, the section list, a long readout (Model or Diagnostics), the console, and an open family list. The installed-apps picker's list and the icon picker's set drop-down. Switch to light mode with each window open: every bar turns light again. The debug readouts' borders still look right in both modes. |
 | G10 (part script) (D26) | At 100 % and 150 %, in light and dark, on Appearance, Colors, and New spaces (at 150 % on a 1080p screen they are taller than the window): a scrollbar shows while the page does not fit; dragging it, its arrows, the wheel, and PageUp/PageDown/Home/End (with a check box or button focused) reach every group; the cards and hairlines scroll with the controls, with no card or seam left behind; switching pages starts the next page at the top; a short page has no scrollbar; the OK/Cancel/Apply bar is always on screen. Scroll with the pointer passing over drop-downs and sliders: none of them changes, and an open drop-down's list still scrolls itself. With a drop-down, a text box, or a slider focused, PageUp/PageDown/Home/End still work that control as before. |
