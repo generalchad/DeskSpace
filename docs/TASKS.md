@@ -680,6 +680,147 @@ drop side is `win32/drop_target.rs` (`DragKind`, `drag_kind`, `DropPlan`,
     by Status. A lens outside OneDrive and a normal space offer no Status
     column. Showing the column downloads nothing.
 
+- [ ] **C19. The rename box as wide as Explorer's (platform; render).**
+  Asked by the maintainer, 2026-11-15, with screenshots: Explorer's box on a
+  desktop folder spans the item's width with the name centered in it, while
+  ours, on a shortcut named "Firefox", hugs the text.
+  - Why: `draw_edit_buffer` (`render/d2d/edit.rs`) sizes the field from the
+    measured lines plus `EDIT_PAD_X` and `EDIT_PAD_Y`, so a short name gets a
+    narrow box.
+  - Decided (maintainer, 2026-11-15): in the icon views (Medium, Large, and
+    Extra large icons, Match Explorer and Custom) and on the desktop layer,
+    the box spans the item's label width, the width D28's highlight gives
+    the label (`CellLayout`'s edit rect), with the text centered and wrapping
+    inside it; a name too long for one line grows the box downward as now.
+    It may be 1 px taller than ours: unconfirmed, so measure it.
+  - Measure Explorer's box on the desktop and in an Explorer window at
+    100 % and 150 % (left, right, top, and bottom against the icon and the
+    text, the border, and the colors), and name each value as measured, as
+    the lens recipe says. Measure Small icons, List, Details, Tiles, and
+    Content the same way; change a view only where it differs from
+    Explorer, and record the numbers in the commit body.
+  - The title rename keeps its own box. A pure helper that turns the label
+    rect and the measured lines into the field rect, with tests for one
+    line, two lines, and a name wider than the label.
+  - **[needs human]** check: beside Explorer at 100 % and 150 %, F2 on a
+    short name, a long name, and a two-line name in each icon view and on
+    the taken-over desktop: the box's edges, height, and text placement
+    match Explorer's; the caret, the selection, mouse selection in the box,
+    and the Esc and Enter keys behave as before.
+
+- [ ] **C20. A folder picture for why a lens's folder is unavailable
+  (core, platform, app).** Asked by the maintainer, 2026-11-15.
+  - Why: a lens whose folder is gone and one whose network share is down
+    both show the generic folder and "Folder not available", so the user
+    cannot tell a deleted folder from a dropped connection.
+  - Decided (maintainer, 2026-11-15):
+    - Two cases: a missing folder, and a disconnected network location (a
+      UNC share or a mapped drive). Anything else (refused as the store,
+      access denied) keeps today's picture and wording.
+    - Pictures: the shell's stock icons, so they match Explorer and stay
+      sharp at any DPI. A disconnected location shows Windows' disconnected
+      network drive icon (`SIID_DRIVENETDISABLED`); a missing folder shows
+      the folder icon (`SIID_FOLDER`) with the warning icon
+      (`SIID_WARNING`) small at its bottom right.
+    - Where: the lens's title-bar icon, and its row in Settings' scopes
+      pane and its page header (where S11 shows a space's icon).
+    - Wording: "Folder not found" and "Network location not available" in
+      place of "Folder not available" for those two cases, in the lens's
+      body, its title tooltip, and its Lens page note (`scene.rs` and
+      `settings/pages.rs` hold today's text).
+  - Data first: the lens's `folder_unavailable: bool` (`scene.rs`'s view
+    state) becomes the reason, an enum with Missing, Network, and Other.
+    The watch worker (`win32/folder_watch.rs`) already holds the error in
+    `OpenFailure::Failed`; map it in one pure function with a test per code:
+    `ERROR_FILE_NOT_FOUND` and `ERROR_PATH_NOT_FOUND` to Missing; the
+    network errors (`ERROR_BAD_NETPATH`, `ERROR_BAD_NET_NAME`,
+    `ERROR_NETNAME_DELETED`, `ERROR_UNEXP_NET_ERR`,
+    `ERROR_NETWORK_UNREACHABLE`, `ERROR_HOST_UNREACHABLE`,
+    `ERROR_NOT_CONNECTED`, and what a disconnected mapped drive returns,
+    read on screen) to Network; everything else to Other.
+  - The stock icons load through the icon cache like the folder's own icon
+    (`icons.folder_icon`), never on the paint path. A reason that changes
+    on a retry updates the picture.
+  - Tests: the error mapping, the scene's wording per reason, and the
+    title-icon request per reason.
+  - **[needs human]** check: at 100 % and 150 %, light and dark: a lens on
+    a folder deleted in Explorer, one on a share whose server is off, and
+    one on a disconnected mapped drive each show their picture in the title
+    bar, the scopes pane, and the page header, and their wording in the
+    body, the tooltip, and the Lens page; bringing the folder or share back
+    restores the folder's own icon.
+
+- [ ] **C21. Spaces hold shortcuts; lenses hold files (model change).**
+  **[needs decision]** for the parts listed as open. Decided by the
+  maintainer, 2026-11-15, during Z5a's W3d check; amends ROADMAP D3, whose
+  normal spaces move dropped files into a store.
+  - Decided: a lens is a window into a real folder with real files; a
+    normal space is a container for `.lnk` shortcuts.
+    - A `.lnk` (or other shortcut) dropped on a normal space is moved into
+      the store, as today.
+    - A plain file or folder dropped on a normal space gets a `.lnk` made
+      for it in the store, through `App::add_shortcuts` (section L's one
+      shortcut writer); the file stays where it is.
+    - A lens item dropped on a normal space becomes a shortcut, and its
+      file stays in the lens's folder (today W3d moves it).
+    - Real files already in the store keep working as they do (never break
+      users); nothing is migrated.
+  - Open, for the maintainer before any code: what becomes of Shift
+    (keep in place, an item that is the real file) and Alt (shortcut, now
+    the default); the right-drop menu's Move here and Copy here on a normal
+    space; a paste of copied or cut files on a normal space; "Add files…"
+    (L6 moves the picked files); a drop on the taken-over desktop (D7 opens
+    a new space holding the item); and the README's "Real files" feature
+    line.
+  - Then split it into one-commit tasks here. Each lists the section V rows
+    it rewrites; today's rows that test moving files into the store (W3d,
+    G5b, L2, L6, P37, U5, X7, Desktop drop, Drag and drop) are checked
+    against v0.3.0's behavior until those tasks land (maintainer,
+    2026-11-15).
+
+- [ ] **C22. Better automatic icons, and "Suggest icons" (core, config,
+  app).** Asked by the maintainer, 2026-11-15: "Email & Communication" and
+  "Artcraft" got no icon.
+  - Why, read from the scratch config: neither space had an icon set, so
+    automatic matching never ran on them (a space picks an icon only while
+    its icon is Automatic). Run on their titles, `best_icon`
+    (`deskspace-core/src/icon_match.rs`) would give "Email & Communication"
+    the set's `communication` icon, but nothing for "Artcraft": one word,
+    and only whole words are matched.
+  - Decided (maintainer, 2026-11-15): add a "Suggest icons" action that
+    fills in icons for spaces that have none, after the user confirms.
+  - Matching (pure, in `icon_match.rs`):
+    - More curated rows in `FLUENT_WORDS` (`deskspace-config/src/icons.rs`)
+      for the common titles that miss today, each checked against
+      `fluent-names.txt`: for example `email`, `inbox`, and `message` to
+      mail or chat icons, and `browse`, `browser`, and `internet` to
+      `globe`.
+    - A word that ends in "-ing" also tries its stem ("browsing" to
+      "browse"), as plurals try their singular, scored just below them.
+    - A word that matches nothing tries a curated word or an icon name of
+      at least `MIN_WORD_LEN` letters at its start or end ("artcraft" to
+      `art`), scored below `SCORE_FIRST_PART`.
+    - A title that picks an icon today picks the same one after the change
+      (Automatic resolves live, so a change would alter users' spaces).
+      Test that with today's cases kept and a table of titles that gain an
+      icon; if a new rule would change an existing pick, stop and ask.
+  - "Suggest icons": a button on Settings > General's "Space icons" card
+    (the global setting recipe's button steps). It needs the icon set: with
+    downloads on "Ask first" it asks for consent first (the `IconStep` path),
+    and with "Never" it is greyed. It asks once, naming how many spaces
+    would get an icon, then sets each space with no icon to its best match
+    as a saved name (`fluent:<name>`). Spaces that match nothing, spaces
+    that already have an icon, and lenses with their folder's icon stay as
+    they are. One undo entry, "Undo Suggest icons", through
+    `App::record_effects`.
+  - Docs: `README.md` (the Themes or Control center line that covers space
+    icons), and a `CHANGELOG.md` "Unreleased" line.
+  - **[needs human]** check: with the icon set downloaded, spaces titled
+    "Email & Communication", "Artcraft", "Web Browsing", and "Stuff" and no
+    icon: Suggest icons asks once naming three spaces, gives the first
+    three icons and leaves "Stuff" alone; Ctrl+Z takes all three away; a
+    space with its own icon keeps it.
+
 ### Draw a space on the desktop (ROADMAP F-69, D27)
 
 A right-drag lasso on the desktop, then "New space here" or "New lens here…"
@@ -1907,6 +2048,34 @@ Logs, tooling, readability, docs, and checks that may close a task.
 
 These are in the order we would take them. Each lands alone.
 
+- [ ] **P52. Stay responsive when a lens's network share drops (fix;
+  thread).** Found 2026-11-15 (maintainer, Z5a's W25 sitting).
+  - Seen: with a lens on `\\MINAS-MORGUL\Share` and DeskSpace running, the
+    maintainer disconnected the share: the whole app became mostly
+    unresponsive and had to be killed (`dev.ps1` reported exit code -1).
+    Starting with the share already unreachable is fine: W25's row passed.
+  - The `-Verbosity 1` log: the watch worker's 5-second "folder is still
+    unavailable" retry for another lens ran like clockwork until
+    17:57:25Z, then the log went silent until the kill. Before that,
+    "opened item path=\\MINAS-MORGUL\Share" twice (17:56:53Z, 17:57:05Z),
+    while the share was still up. Nothing names the call that blocked.
+  - First, find where it is stuck: reproduce (a lens on a share, Open folder
+    on it once, then disconnect the share or its server), and read every
+    thread's stack with `TOOLS.md` section 4's `cdb -pv` recipe (ask before
+    installing WinDbg). Candidates to rule in or out: a shell call on a UNC
+    path on the UI thread (the title's folder icon, `ShellExecuteExW`
+    behind "opened item", `item_facts`), the watch worker blocked in
+    `CancelIoEx` or `GetOverlappedResult` on the share's handle while the
+    UI thread waits for it, and the icon worker.
+  - Then move the blocking call off the UI thread, or stop waiting on it,
+    by `ENGINEERING.md` section 6 ("Never wait on something only you can
+    complete"). If the fix needs a new thread or a design change, bring the
+    stacks and a proposal to the maintainer first.
+  - **[needs human]** check: with a lens on a share, disconnect it while
+    DeskSpace runs: every other space keeps responding, the lens shows its
+    unavailable state within the retry period, and reconnecting lists it
+    again. Exit still ends the process at once while the share is down.
+
 - [ ] **P12. Mask a swallowed Alt combination, if it matters (fix; key hook).**
   Swallowing Alt+Enter, Alt+Left, or Alt+Up leaves the foreground window a lone
   Alt tap (`handle_watched`, `win32/keyboard.rs`). The original note worried
@@ -2117,6 +2286,28 @@ These are in the order we would take them. Each lands alone.
   - Done when: the gates pass. **[needs human]** check: spaces still draw, and a
     `-v` log shows no new errors over a session of clicks, folds, and settings
     changes.
+
+- [ ] **P53. Settings shows another scope's pages after a scope click (fix;
+  settings window).** Found 2026-11-15 (maintainer), seen once.
+  - Seen: with a lens's pages showing, a single click on Global in the
+    scopes pane selected Global, but the categories pane and the page kept
+    the lens's categories and settings. A click in the categories pane then
+    showed Global's pages correctly.
+  - The path: `on_scope_changed` (`win32/settings_window/nav.rs`) reads
+    `LB_GETCURSEL` and posts `SettingsEvent::ScopeChanged`; the app's
+    `SettingsSession::select_scope` (`settings/session.rs`) switches and
+    answers with a new form. Look for what can drop or overtake that answer:
+    a selection change the window makes itself while `updating`, a
+    `ScopeChanged` that arrives while an earlier form is being built, a
+    click that lands between `LBN_SELCHANGE` and the form, or a scope index
+    that no longer matches the list after a space was added or deleted
+    (this sitting created and deleted lenses while Settings was open).
+  - Reproduce first: switch between a lens, a space, and Global quickly,
+    with and without spaces added or deleted while Settings is open, with
+    `--debug` logging the "settings: switched page" lines. If it will not
+    reproduce, write down what was tried here and ask the maintainer.
+  - **[needs human]** check: the same clicks always show the clicked
+    scope's categories and page at once.
 
 ## D. Reserved (strong model or maintainer; do not start)
 
