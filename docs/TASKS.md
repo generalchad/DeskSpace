@@ -23,7 +23,7 @@ are collected in section V instead of blocking:
 - section G (settings window polish): the pure half of G13;
 - section K (K10-K13, K15), each a pure move with rules that
   leave nothing to design;
-- section T: T42, and T25-T31 in order, then T44 and T46-T48;
+- section T: T42, and T26-T31 in order, then T44 and T46-T48;
 - O5 and the O6-O9 harness abilities;
 - anything else not marked **[needs decision]**, "still to design", or in
   section D.
@@ -1211,7 +1211,7 @@ T24-T33 make Burn read as fire rather than an orange wipe: it takes its
 time and kindles, spreads unevenly, smoulders, throws turbulent flames and
 ash, and looks the same at every DPI. One commit each, in order.
 
-- **When to start.** T41 has landed, so T25 can start now. T25-T33 build on
+- **When to start.** T41 has landed, so T26 can start now. T25-T33 build on
   the groundwork ported from `feat/color-picker-redesign` (as of `c1ad0f3`). Where a
   task below names the branch's types, read `main`'s:
   `EffectOverlay` and `Art::Burn` are `FlameOverlay` (the burn's state, in
@@ -1233,40 +1233,6 @@ ash, and looks the same at every DPI. One commit each, in order.
   to that row's first column, instead of adding a new row.
 - **Burn's smoke.** If Burn's smoke (`render/burn_smoke.rs`) has landed,
   keep the overlay's drawing order: smoke, then flames, then ash.
-
-- [ ] **T25. One seeded Burn field per play (platform).**
-  **(junior)** **[needs human]**
-  - Why: every burn has the same shape, because the noise has no seed.
-    At exit, same-sized spaces burn identically one after another. The
-    painter (`Effects::burn` in `render/d2d/effects.rs`) and the overlay
-    (`Art::Burn`) also each build a `BurnField`, and they agree only
-    because both happen to compute the same columns and rows.
-  - `render/noise.rs`: `fractal` and `RisingField::new` take `seed: u32`.
-    Mix it into the lattice hash as the octave is mixed in:
-    `^ seed.wrapping_mul(0x27D4_EB2F)`. Seed 0 must give exactly today's
-    values; callers other than Burn pass 0.
-  - `render/burn.rs`: `BurnField::for_space(size: (f32, f32), detail: u8,
-    seed: u32) -> Self` becomes the only public constructor (`new` goes
-    private). It is the one place the cell grid is worked out from a size
-    in pixels. The painter passes its `size`, and the overlay passes
-    `(rect.width as f32, rect.height as f32)`.
-  - `Play` (`render/transition.rs`) gains `seed: u32`, its first reader being
-    this task. The app leaves it 0, and the platform sets it when a play
-    starts, from a counter and the clock, as the branch's `next_seed` in
-    `win32/space_animation.rs` does, so spaces starting together differ.
-  - `Mask::Burn` gains `seed: u32`, filled from `play.seed` in the Burn
-    arm of `frame`. The painter's rebuild check
-    (`fits` in `Effects::burn`) compares the seed too. `Art::Burn` takes
-    the seed from the `Play` it is made for.
-  - Tests:
-    - noise: seed 0 gives the values it gave before; pin three values
-      in a test before changing the hash.
-    - burn: two seeds give different fields; one seed twice gives equal
-      fields; `for_space((301.0, 199.0), 5, 1)` has the cols and rows the
-      painter and the overlay used to compute.
-  - **[needs human]** check: at exit, two spaces of the same size burn
-    along different edges; one space burns differently each time it is
-    hidden; reversing mid-burn still un-burns along the same edge.
 
 - [ ] **T26. Burn scales with DPI (platform).** **(junior)** **[needs human]**
   - Why: `burn::CELL` (3), the overlay `Margins`, and the flame sizes
@@ -2415,7 +2381,7 @@ for a machine that has it.
 | Flat material (part script) | Fade, Pixelate, Gradient, Dissolve, and Burn on hide, show, and delete (and in the debug preview) on Acrylic, Blur, and Solid spaces with a border, with Windows' "Transparency effects" off and on: no outline stays around the fading space, and it comes back once a show ends; with the switch off, no dark box either, the dark fill coming back only once a show ends; with it on, see the T13 row; Roll, Fly, and CRT look as before. |
 | T12 (part script) (D12) | Windows 11 with "Transparency effects" on: the log says "spaces use composition"; the R3 list passes unchanged with each backdrop (Acrylic and Blur blurred, Clear and Solid not), at 100 % and 150 %, corners and border as before, and the T8 row still passes, the blur stepping on and off as today. With the switch off at startup, the log names it and spaces look as before T12. Windows 10, `--placement desktop-*`, and `--click-through` change nothing. Idle CPU and GPU no higher than before. |
 | T13 (D12) | Windows 11 confirmed 2026-10-18 (maintainer). Still to check: on Windows 10 the blur still steps; idle GPU no higher than before. |
-| T17, T18, T24, B54 (part script) (D12) | Burn on Startup (hide, show, a new space, startup, exit) and on Delete, on each backdrop at 100 % and 150 %: the space burns from the bottom up along a ragged edge that glows, chars, and scorches ahead of itself, like paper; flames lick up from the edge and past the top and sides of the frame with no box or blur around them, and never show over another application (cover the space with a window and they stay behind it), while with `--on-top` they follow the space above other windows; Detail changes how ragged the edge is; reversing mid-burn (the hotkey twice) un-burns it; no flame window is left behind after it ends, after a delete, or after quitting mid-burn; a desktop-hosted space burns without flames; Burn at 250 ms plays for about half a second, catching slowly and then racing to the end; un-burning starts fast and settles; every other effect looks and times as before; no flame pixel is left behind where a tongue was. |
+| T17, T18, T24, T25, B54 (part script) (D12) | Burn on Startup (hide, show, a new space, startup, exit) and on Delete, on each backdrop at 100 % and 150 %: the space burns from the bottom up along a ragged edge that glows, chars, and scorches ahead of itself, like paper; flames lick up from the edge and past the top and sides of the frame with no box or blur around them, and never show over another application (cover the space with a window and they stay behind it), while with `--on-top` they follow the space above other windows; Detail changes how ragged the edge is; reversing mid-burn (the hotkey twice) un-burns it; no flame window is left behind after it ends, after a delete, or after quitting mid-burn; a desktop-hosted space burns without flames; Burn at 250 ms plays for about half a second, catching slowly and then racing to the end; un-burning starts fast and settles; every other effect looks and times as before; no flame pixel is left behind where a tongue was; at exit, two spaces of the same size burn along different edges; one space burns differently each time it is hidden; reversing mid-burn still un-burns along the same edge. |
 | U3 (v0.3) (part script) (D11) | Space menu and tray menu list Undo and Redo at the top, greyed when empty and named for the top action ("Undo Move space", "Redo Move space"); moving, resizing, reordering, sorting, fitting, locking, folding, renaming, creating, and deleting an empty space each undo and redo from both menus. |
 | U4 (v0.3) (script) (D11) | Ctrl+Z after a space move puts it back, Ctrl+Y moves it again; with no space current, Ctrl+Z on the desktop still undoes an Explorer rename. |
 | U5 (v0.3) (part script) (D11) | Drop a file into a space and undo (it is back where it was); delete a space with stored files, undo, then redo; rename an item and undo. |

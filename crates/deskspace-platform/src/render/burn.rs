@@ -37,11 +37,11 @@ pub fn front(gone: f32) -> f32 {
 }
 
 /// The cells that cover a space of `size` pixels.
-pub fn grid_for(size: (f32, f32)) -> Grid {
+fn grid_for(size: (f32, f32)) -> Grid {
     Grid::covering(size, CELL)
 }
 
-/// The burn field of a space, one value per cell of its `grid_for`.
+/// The burn field of a space, one value per cell.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BurnField {
     field: RisingField,
@@ -49,17 +49,18 @@ pub struct BurnField {
 
 impl BurnField {
     /// The field for a space of `size` pixels; `detail` (`DETAIL_RANGE`)
-    /// coarsens the ragged front. The painter and the flames each make one
-    /// from the same size, so the flames stand on the edge the paper burns.
-    pub fn for_size(size: (f32, f32), detail: u8) -> Self {
-        Self::new(grid_for(size), detail)
+    /// coarsens the ragged front and `seed` varies its shape. The painter
+    /// and the flames each make one from the same play, so the flames stand
+    /// on the edge the paper burns.
+    pub fn for_space(size: (f32, f32), detail: u8, seed: u32) -> Self {
+        Self::new(grid_for(size), detail, seed)
     }
 
-    fn new(grid: Grid, detail: u8) -> Self {
+    fn new(grid: Grid, detail: u8, seed: u32) -> Self {
         let detail = detail.clamp(DETAIL_RANGE.0, DETAIL_RANGE.1);
         let lattice = LATTICE_BASE + LATTICE_PER_DETAIL * f32::from(detail);
         Self {
-            field: RisingField::new(grid.cols, grid.rows, lattice, NOISE_SHARE),
+            field: RisingField::new(grid.cols, grid.rows, lattice, NOISE_SHARE, seed),
         }
     }
 
@@ -187,7 +188,7 @@ mod tests {
 
     #[test]
     fn flames_stand_on_the_burning_edge() {
-        let field = BurnField::new(Grid { cols: 60, rows: 40 }, 5);
+        let field = BurnField::new(Grid { cols: 60, rows: 40 }, 5, 0);
         let mut bases = Vec::new();
         field.flame_bases(0.4, 4, &mut bases);
         assert!(!bases.is_empty());
@@ -202,7 +203,7 @@ mod tests {
 
     #[test]
     fn the_field_stays_in_range_and_burns_the_bottom_first() {
-        let field = BurnField::new(Grid { cols: 80, rows: 60 }, 5);
+        let field = BurnField::new(Grid { cols: 80, rows: 60 }, 5, 0);
         assert!(
             field
                 .field
@@ -221,7 +222,7 @@ mod tests {
 
     #[test]
     fn the_front_is_ragged() {
-        let field = BurnField::new(Grid { cols: 80, rows: 60 }, 5);
+        let field = BurnField::new(Grid { cols: 80, rows: 60 }, 5, 0);
         let row = 30;
         let (low, high) = (0..80)
             .map(|col| field.value(col, row))
@@ -236,7 +237,7 @@ mod tests {
 
     #[test]
     fn the_front_runs_from_untouched_to_all_gone() {
-        let field = BurnField::new(Grid { cols: 40, rows: 30 }, 5);
+        let field = BurnField::new(Grid { cols: 40, rows: 30 }, 5, 0);
         let at = |gone| {
             field
                 .field
@@ -280,14 +281,33 @@ mod tests {
 
     #[test]
     fn the_field_covers_the_space() {
-        let field = BurnField::for_size((100.0, 31.0), 5);
-        assert_eq!(field.grid(), Grid::covering((100.0, 31.0), CELL));
+        let field = BurnField::for_space((301.0, 199.0), 5, 1);
+        assert_eq!(
+            field.grid(),
+            Grid {
+                cols: 101,
+                rows: 67
+            }
+        );
+        assert_eq!(field.grid(), Grid::covering((301.0, 199.0), CELL));
         assert_eq!(field.field.values().len(), field.grid().cell_count());
     }
 
     #[test]
+    fn the_seed_varies_the_field_and_repeats() {
+        assert_eq!(
+            BurnField::for_space((200.0, 160.0), 5, 7),
+            BurnField::for_space((200.0, 160.0), 5, 7)
+        );
+        assert_ne!(
+            BurnField::for_space((200.0, 160.0), 5, 1),
+            BurnField::for_space((200.0, 160.0), 5, 2)
+        );
+    }
+
+    #[test]
     fn the_field_values_are_pinned() {
-        let field = BurnField::new(Grid { cols: 60, rows: 40 }, 5);
+        let field = BurnField::new(Grid { cols: 60, rows: 40 }, 5, 0);
         assert_eq!(
             (
                 field.value(0, 0).to_bits(),

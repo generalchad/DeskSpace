@@ -24,14 +24,14 @@ pub(crate) struct FlameOverlay {
 
 impl FlameOverlay {
     /// The flames for `space`'s window `owner` at `rect` (screen
-    /// coordinates), burning with `detail`. `None` for a desktop-hosted
-    /// space, a child window with nothing to float above, or when Windows
-    /// refuses the window or its bitmap.
-    pub(crate) fn create(owner: HWND, rect: Rect, detail: u8) -> Option<Self> {
+    /// coordinates), burning with `detail` and `seed`. `None` for a
+    /// desktop-hosted space, a child window with nothing to float above, or
+    /// when Windows refuses the window or its bitmap.
+    pub(crate) fn create(owner: HWND, rect: Rect, detail: u8, seed: u32) -> Option<Self> {
         let overlay = LayeredOverlay::create(owner, overlay_rect(rect))?;
         Some(Self {
             overlay,
-            field: BurnField::for_size((rect.width as f32, rect.height as f32), detail),
+            field: BurnField::for_space((rect.width as f32, rect.height as f32), detail, seed),
             bases: Vec::new(),
             tongues: Vec::new(),
             drawn: Rows::ALL,

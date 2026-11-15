@@ -7107,3 +7107,4 @@ takes an id listed here or used anywhere above
 - **T41.** Port the effect groundwork (platform).
 - **B54.** Upload only the rows the flames changed (platform; Win32).
 - **P32.** Keep the keyboard hook alive through a stall (fix; key hook).
+- **T25.** One seeded Burn field per play (platform).

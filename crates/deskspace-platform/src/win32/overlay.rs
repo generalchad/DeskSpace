@@ -47,7 +47,9 @@ impl Overlay {
     /// Windows refuses the window.
     pub(crate) fn for_play(owner: HWND, rect: Rect, play: &Play) -> Option<Self> {
         match kind_for(play.effect)? {
-            OverlayKind::Flames => FlameOverlay::create(owner, rect, play.detail).map(Self::Flames),
+            OverlayKind::Flames => {
+                FlameOverlay::create(owner, rect, play.detail, play.seed).map(Self::Flames)
+            }
         }
     }
 

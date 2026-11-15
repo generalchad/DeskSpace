@@ -575,7 +575,7 @@ mod tests {
     fn a_burn_through_one_buffer_gives_the_reference_frames() {
         let space = (300.0, 200.0);
         let (width, height) = (300 + 2 * MARGIN_SIDE, 200 + MARGIN_TOP);
-        let field = burn::BurnField::for_size(space, 5);
+        let field = burn::BurnField::for_space(space, 5, 0);
         let (mut bases, mut flames) = (Vec::new(), Vec::new());
         let mut pixels = vec![7; (width * height) as usize];
         let mut expected = vec![0; (width * height) as usize];

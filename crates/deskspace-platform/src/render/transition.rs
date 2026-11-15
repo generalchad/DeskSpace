@@ -37,6 +37,8 @@ pub struct Play {
     /// `DETAIL_RANGE`: the block size, grain, or edge width.
     pub detail: u8,
     pub edge: Edge,
+    /// Seeds an effect's random field, so two plays never take the same shape.
+    pub seed: u32,
 }
 
 impl Play {
@@ -49,6 +51,7 @@ impl Play {
             delay: Duration::ZERO,
             detail: DETAIL_RANGE.0,
             edge: Edge::Auto,
+            seed: 0,
         }
     }
 
@@ -150,10 +153,12 @@ pub enum Mask {
         grain: u8,
     },
     /// Paper burning up from the bottom (`render::burn`): `front` is how far
-    /// the burn has got, and `detail` how ragged its edge is.
+    /// the burn has got, `detail` how ragged its edge is, and `seed` which
+    /// burn shape it takes.
     Burn {
         front: f32,
         detail: u8,
+        seed: u32,
     },
 }
 
@@ -430,6 +435,7 @@ fn frame(play: &Play, geometry: &Geometry, shown: f32) -> TransitionFrame {
             mask: Mask::Burn {
                 front: burn::front(gone),
                 detail: play.detail,
+                seed: play.seed,
             },
             ..whole
         },
@@ -530,6 +536,7 @@ mod tests {
             delay: Duration::ZERO,
             detail: 5,
             edge: Edge::Auto,
+            seed: 0,
         }
     }
 
@@ -928,5 +935,23 @@ mod tests {
         assert!(opening.rect.height > CRT_LINE_THICKNESS && opening.rect.height < rect.height);
         assert!(matches!(opening.content, Content::Lit { glow } if glow < 1.0));
         assert_eq!(opening.rect.center(), rect.center());
+    }
+
+    #[test]
+    fn burn_carries_the_plays_seed_even_when_reversed() {
+        let play = Play {
+            seed: 42,
+            ..play(Effect::Burn, Way::Out)
+        };
+        let mut transition = Transition::new(play, geometry_for(&play), Duration::ZERO);
+        assert!(matches!(
+            transition.frame(ms(100)).mask,
+            Mask::Burn { seed: 42, .. }
+        ));
+        transition.reverse(ms(100));
+        assert!(matches!(
+            transition.frame(ms(140)).mask,
+            Mask::Burn { seed: 42, .. }
+        ));
     }
 }

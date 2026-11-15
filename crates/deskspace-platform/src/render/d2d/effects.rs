@@ -136,8 +136,8 @@ struct NoiseMask {
 /// Burn's paper: one pixel per `burn::CELL`-sized cell, drawn smoothly.
 struct BurnMask {
     field: BurnField,
-    /// The space size and detail it was made for.
-    made_for: ((f32, f32), u8),
+    /// The space size, detail, and seed it was made for.
+    made_for: ((f32, f32), u8, u32),
     /// Where the paper still shows: the contents' opacity mask.
     paper: CellMask,
     /// The glowing edge, the char, and the scorch, laid over the paper.
@@ -210,8 +210,12 @@ impl Effects {
                 noise.shown.upload()?;
                 Ok(Some(noise.shown.brush.clone().into()))
             }
-            Mask::Burn { front, detail } => {
-                let burn = self.burn(target, detail, size)?;
+            Mask::Burn {
+                front,
+                detail,
+                seed,
+            } => {
+                let burn = self.burn(target, detail, size, seed)?;
                 burn.field
                     .fill_pixels(front, &mut burn.paper.pixels, &mut burn.marks.pixels);
                 burn.paper.upload()?;
@@ -236,14 +240,15 @@ impl Effects {
         target: &ID2D1RenderTarget,
         detail: u8,
         size: (f32, f32),
+        seed: u32,
     ) -> Result<&mut BurnMask, PlatformError> {
-        let made_for = (size, detail);
+        let made_for = (size, detail, seed);
         if self
             .burn
             .as_ref()
             .is_none_or(|burn| burn.made_for != made_for)
         {
-            let field = BurnField::for_size(size, detail);
+            let field = BurnField::for_space(size, detail, seed);
             let grid = field.grid();
             self.burn = Some(BurnMask {
                 field,

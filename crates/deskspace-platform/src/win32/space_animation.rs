@@ -10,7 +10,10 @@
 //! `Playing` makes every decision and touches no window, so its tests cover
 //! them; the functions below it only carry them out.
 
-use std::sync::OnceLock;
+use std::sync::{
+    OnceLock,
+    atomic::{AtomicU32, Ordering},
+};
 use std::time::{Duration, Instant};
 
 use deskspace_core::animation::Effect;
@@ -483,8 +486,20 @@ unsafe fn turn_around(
     true
 }
 
-unsafe fn start(window: HWND, play: Play, geometry: Geometry, purpose: Purpose<PreparedScene>) {
+/// A fresh seed for a starting play, mixing a counter with the clock so
+/// spaces starting on the same frame still differ and runs never repeat.
+fn next_seed(now: Duration) -> u32 {
+    // Process state: the next play seed, so spaces starting on the same frame
+    // get different seeds without a shared owner; only ever incremented.
+    static NEXT: AtomicU32 = AtomicU32::new(0x9E37_79B1);
+    let count = NEXT.fetch_add(0x9E37_79B1, Ordering::Relaxed);
+    let nanos = now.as_nanos() as u32;
+    count ^ nanos ^ ((now.as_nanos() >> 32) as u32)
+}
+
+unsafe fn start(window: HWND, mut play: Play, geometry: Geometry, purpose: Purpose<PreparedScene>) {
     let now = now();
+    play.seed = next_seed(now);
     let mut playing = Playing::new(play, geometry, purpose, now);
     let step = playing.step(now);
     let overlay = Overlay::for_play(window, geometry.rect, &play);
@@ -755,6 +770,7 @@ mod tests {
             delay: Duration::ZERO,
             detail: 5,
             edge: Edge::Auto,
+            seed: 0,
         }
     }
 
@@ -885,5 +901,10 @@ mod tests {
             show.frame.opacity, 1.0,
             "the painted frame is the last step"
         );
+    }
+
+    #[test]
+    fn next_seed_varies_on_the_same_frame() {
+        assert_ne!(next_seed(ms(10)), next_seed(ms(10)));
     }
 }

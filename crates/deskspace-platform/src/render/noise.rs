@@ -2,7 +2,7 @@
 //! along a ragged front (Burn today). Pure and seeded by a lattice hash, so
 //! a burn always takes the same shape and a reversed one retraces it.
 
-use super::math::{hash, smoothstep, unit};
+use super::math::{smoothstep, unit};
 
 /// The octaves: each halves the lattice, with these weights (summing to 1).
 const OCTAVES: [f32; 3] = [0.55, 0.3, 0.15];
@@ -18,14 +18,14 @@ pub struct RisingField {
 }
 
 impl RisingField {
-    /// `lattice` is the noise's coarsest grid in cells, and `noise_share`
-    /// how much of each value is noise rather than height.
-    pub fn new(cols: u32, rows: u32, lattice: f32, noise_share: f32) -> Self {
+    /// `lattice` is the noise's coarsest grid in cells, `noise_share` how much
+    /// of each value is noise rather than height, and `seed` varies the noise.
+    pub fn new(cols: u32, rows: u32, lattice: f32, noise_share: f32, seed: u32) -> Self {
         let rows_f = rows.max(1) as f32;
         let values = (0..rows)
             .flat_map(|row| (0..cols).map(move |col| (col, row)))
             .map(|(col, row)| {
-                let noise = fractal(col as f32, row as f32, lattice);
+                let noise = fractal(col as f32, row as f32, lattice, seed);
                 let from_bottom = 1.0 - (row as f32 + 0.5) / rows_f;
                 noise_share * noise + (1.0 - noise_share) * from_bottom
             })
@@ -52,24 +52,24 @@ impl RisingField {
 
 /// Fractal value noise at cell (`x`, `y`): `OCTAVES` of smooth noise, the
 /// first on a `lattice`-cell grid and each next on half of it; 0 to 1.
-pub fn fractal(x: f32, y: f32, lattice: f32) -> f32 {
+pub fn fractal(x: f32, y: f32, lattice: f32, seed: u32) -> f32 {
     OCTAVES
         .iter()
         .enumerate()
         .map(|(octave, weight)| {
             let size = lattice / (1 << octave) as f32;
-            weight * value_noise(x / size, y / size, octave as u32)
+            weight * value_noise(x / size, y / size, octave as u32, seed)
         })
         .sum()
 }
 
 /// Smooth noise: random values on an integer lattice, blended with
 /// smoothstep weights; 0 to 1.
-fn value_noise(x: f32, y: f32, octave: u32) -> f32 {
+fn value_noise(x: f32, y: f32, octave: u32, seed: u32) -> f32 {
     let (x0, y0) = (x.floor(), y.floor());
     let (tx, ty) = (smoothstep(x - x0), smoothstep(y - y0));
     let (ix, iy) = (x0 as i32, y0 as i32);
-    let corner = |dx: i32, dy: i32| lattice_value(ix + dx, iy + dy, octave);
+    let corner = |dx: i32, dy: i32| lattice_value(ix + dx, iy + dy, octave, seed);
     let top = corner(0, 0) + (corner(1, 0) - corner(0, 0)) * tx;
     let bottom = corner(0, 1) + (corner(1, 1) - corner(0, 1)) * tx;
     top + (bottom - top) * ty
@@ -77,8 +77,15 @@ fn value_noise(x: f32, y: f32, octave: u32) -> f32 {
 
 /// A lattice point's fixed random value, 0 to 1, so a burn always takes the
 /// same shape and a reversed one retraces it.
-fn lattice_value(x: i32, y: i32, octave: u32) -> f32 {
-    unit(hash(x as u32, y as u32, octave))
+fn lattice_value(x: i32, y: i32, octave: u32, seed: u32) -> f32 {
+    let mut hash = (x as u32).wrapping_mul(0x9E37_79B1)
+        ^ (y as u32).wrapping_mul(0x85EB_CA77)
+        ^ octave.wrapping_mul(0xC2B2_AE3D)
+        ^ seed.wrapping_mul(0x27D4_EB2F);
+    hash ^= hash >> 15;
+    hash = hash.wrapping_mul(0x2C1B_3C6D);
+    hash ^= hash >> 12;
+    unit(hash)
 }
 
 #[cfg(test)]
@@ -87,7 +94,7 @@ mod tests {
 
     #[test]
     fn the_field_stays_in_range_and_rises_from_the_bottom() {
-        let field = RisingField::new(80, 60, 21.0, 0.55);
+        let field = RisingField::new(80, 60, 21.0, 0.55, 0);
         assert_eq!((field.cols(), field.rows()), (80, 60));
         assert!(
             field
@@ -101,8 +108,23 @@ mod tests {
 
     #[test]
     fn noise_is_fixed_and_in_range() {
-        let at = fractal(12.3, 4.5, 8.0);
+        let at = fractal(12.3, 4.5, 8.0, 0);
         assert!((0.0..=1.0).contains(&at));
-        assert_eq!(at, fractal(12.3, 4.5, 8.0));
+        assert_eq!(at, fractal(12.3, 4.5, 8.0, 0));
+        assert_ne!(at, fractal(12.3, 4.5, 8.0, 1));
+    }
+
+    #[test]
+    fn seed_zero_keeps_todays_values() {
+        let field = RisingField::new(50, 40, 21.0, 0.55, 0);
+        assert_eq!(
+            (
+                fractal(12.3, 4.5, 8.0, 0).to_bits(),
+                field.value(0, 0).to_bits(),
+                field.value(25, 20).to_bits(),
+            ),
+            (1_056_006_717, 1_058_637_254, 1_051_498_394)
+        );
+        assert_ne!(field, RisingField::new(50, 40, 21.0, 0.55, 1));
     }
 }

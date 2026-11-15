@@ -197,6 +197,7 @@ fn play_for(
         delay: Duration::ZERO,
         detail: resolved.detail,
         edge: resolved.direction,
+        seed: 0,
     }
 }
 
