@@ -450,8 +450,9 @@ pub fn remember_color(recent: &mut Vec<Color>, color: Color) {
 pub const MARQUEE_COLOR_DEFAULT: Color = Color::rgb(0x00, 0x78, 0xD4);
 
 /// Colors of an inline rename field, matching the box Explorer puts over the
-/// name it is editing: an opaque system-window fill, a border, and the system
-/// highlight for the selected text.
+/// name it is editing: an opaque system-window fill, a border (white on the
+/// dark fill and black on the light one, as Explorer's thin outline is), and
+/// the system highlight for the selected text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EditColors {
     pub fill: Color,
@@ -472,7 +473,7 @@ impl EditColors {
                 text: Color::rgb(0xFF, 0xFF, 0xFF),
                 selection: HIGHLIGHT,
                 selection_text: Color::rgb(0xFF, 0xFF, 0xFF),
-                border: Color::rgb(0x5A, 0x5A, 0x5A),
+                border: Color::rgb(0xFF, 0xFF, 0xFF),
             }
         } else {
             Self {
@@ -784,6 +785,14 @@ mod tests {
                 (edit.selection.r, edit.selection.g, edit.selection.b),
                 (0, 120, 212)
             );
+            // Explorer outlines the box in one thin line: white on the dark
+            // fill, black on the light one.
+            let outline = if dark { 255 } else { 0 };
+            assert_eq!(
+                (edit.border.r, edit.border.g, edit.border.b),
+                (outline, outline, outline)
+            );
+            assert_eq!(edit.border.a, 255);
         }
     }
 

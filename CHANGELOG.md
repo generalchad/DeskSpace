@@ -20,6 +20,8 @@ Notable changes to DeskSpace, newest first. The format follows
 
 ### Fixed
 
+- In dark mode the rename box's border is Explorer's thin white line,
+  instead of a grey one.
 - Keys on spaces (F2, Delete, the arrows, Ctrl+C, typing to select) keep
   working after DeskSpace stalls for a second or more. They used to stop
   until every space was left; this was a known issue of 0.3.0. The pointer
