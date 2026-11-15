@@ -236,7 +236,8 @@ pub enum Content {
     Whole,
     /// In square blocks `block` pixels wide, more than 1 (Pixelate).
     Pixelated { block: u32 },
-    /// Whole, under a bright line's light, `glow` from above 0 to 1 (CRT).
+    /// Whole, under the beam's light, `glow` from above 0 to 1: CRT's line,
+    /// then the flash as its raster fills.
     Lit { glow: f32 },
 }
 
@@ -378,6 +379,9 @@ const PIXELATE_FADE: f32 = 0.35;
 const CRT_LINE: f32 = 0.3;
 /// The thickness of CRT's line, and the size of its dot, in pixels.
 const CRT_LINE_THICKNESS: i32 = 2;
+/// How much of the time after the line the flash takes to build and then to
+/// fade, so the raster finishes filling in its middle.
+const CRT_FLASH: f32 = 0.25;
 
 fn frame(play: &Play, geometry: &Geometry, shown: f32) -> TransitionFrame {
     let whole = TransitionFrame {
@@ -456,14 +460,25 @@ fn frame(play: &Play, geometry: &Geometry, shown: f32) -> TransitionFrame {
 
 fn crt(rect: Rect, shown: f32, whole: TransitionFrame) -> TransitionFrame {
     let center = rect.center();
+    // Where the frame is in the time after the line: 0 at the line and 1 at
+    // rest.
+    let after = (shown - CRT_LINE) / (1.0 - CRT_LINE);
+    // The raster finishes filling in the middle of the flash.
+    let raster_full = 1.0 - CRT_FLASH;
     let (width, height, glow) = if shown < CRT_LINE {
         let along = shown / CRT_LINE;
         let width = lerp(CRT_LINE_THICKNESS as f32, rect.width as f32, along);
         (width, CRT_LINE_THICKNESS as f32, 1.0)
-    } else {
-        let along = (shown - CRT_LINE) / (1.0 - CRT_LINE);
+    } else if after < raster_full {
+        let along = after / raster_full;
         let height = lerp(CRT_LINE_THICKNESS as f32, rect.height as f32, along);
-        (rect.width as f32, height, 1.0 - along)
+        (rect.width as f32, height, crt_light(after, raster_full))
+    } else {
+        (
+            rect.width as f32,
+            rect.height as f32,
+            crt_light(after, raster_full),
+        )
     };
     let (width, height) = if shown == 0.0 {
         (0, 0)
@@ -477,6 +492,21 @@ fn crt(rect: Rect, shown: f32, whole: TransitionFrame) -> TransitionFrame {
         content: Content::lit(glow),
         ..whole
     }
+}
+
+/// CRT's light `after` the line (0 there, 1 at rest), with the raster filling
+/// at `raster_full`: the line's light dies away, the flash builds as the
+/// raster fills, and it fades to the space as it is at rest. It peaks at the
+/// fill either way, so a hide plays it as a flash too.
+fn crt_light(after: f32, raster_full: f32) -> f32 {
+    let light = if after < raster_full - CRT_FLASH {
+        1.0 - after / (raster_full - CRT_FLASH)
+    } else if after < raster_full {
+        (after - (raster_full - CRT_FLASH)) / CRT_FLASH
+    } else {
+        1.0 - (after - raster_full) / CRT_FLASH
+    };
+    light.clamp(0.0, 1.0)
 }
 
 /// `rect` moved `gone` of the way past `side` of `work_area`: at 1 it is
@@ -579,6 +609,15 @@ mod tests {
         match frame.content {
             Content::Pixelated { block } => block,
             Content::Whole | Content::Lit { .. } => 1,
+        }
+    }
+
+    /// How brightly `frame` lights its contents: 0 when it does not light
+    /// them.
+    fn glow(frame: &TransitionFrame) -> f32 {
+        match frame.content {
+            Content::Lit { glow } => glow,
+            Content::Whole | Content::Pixelated { .. } => 0.0,
         }
     }
 
@@ -935,6 +974,49 @@ mod tests {
         assert!(opening.rect.height > CRT_LINE_THICKNESS && opening.rect.height < rect.height);
         assert!(matches!(opening.content, Content::Lit { glow } if glow < 1.0));
         assert_eq!(opening.rect.center(), rect.center());
+    }
+
+    #[test]
+    fn crt_flashes_white_as_the_raster_fills() {
+        let rect = geometry().rect;
+        let transition = start(Effect::Crt, Way::In);
+        let frames: Vec<_> = (0..=200).map(|at| (at, transition.frame(ms(at)))).collect();
+        let (at, flash) = frames
+            .iter()
+            .filter(|(_, frame)| frame.rect == rect)
+            .max_by(|a, b| glow(&a.1).total_cmp(&glow(&b.1)))
+            .expect("the raster fills");
+        assert!(glow(flash) > 0.9, "it flashes: {}", glow(flash));
+        assert!(*at < 200, "it flashes before the play ends");
+        assert_eq!(flash.content_offset, Point::new(0, 0), "the whole space");
+        // The opening clears before the flash, which then fades to the space
+        // as it is at rest.
+        let opening = frames
+            .iter()
+            .filter(|(_, frame)| frame.rect.height > CRT_LINE_THICKNESS && frame.rect != rect)
+            .map(|(_, frame)| glow(frame))
+            .fold(1.0, f32::min);
+        assert!(opening < 0.1, "the opening clears: {opening}");
+        assert!(
+            glow(&transition.frame(ms(*at + 20))) < glow(flash),
+            "the flash fades"
+        );
+        assert!(is_whole(&transition.frame(ms(200))));
+    }
+
+    #[test]
+    fn a_hiding_crt_flashes_white_before_it_collapses() {
+        let rect = geometry().rect;
+        let transition = start(Effect::Crt, Way::Out);
+        let (at, flash) = (0..=200)
+            .map(|at| (at, transition.frame(ms(at))))
+            .filter(|(_, frame)| frame.rect == rect)
+            .max_by(|a, b| glow(&a.1).total_cmp(&glow(&b.1)))
+            .expect("it starts whole");
+        assert!(glow(&flash) > 0.9, "it flashes: {}", glow(&flash));
+        let collapsing = transition.frame(ms(at + 40));
+        assert!(collapsing.rect.height < rect.height, "it collapses after");
+        assert!(glow(&collapsing) > 0.0, "the band keeps the beam's light");
     }
 
     #[test]

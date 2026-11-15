@@ -21,8 +21,8 @@ use crate::render::dissolve::DissolveField;
 use crate::render::math::Grid;
 use crate::render::transition::{Content, Mask, Side, TransitionFrame};
 
-/// CRT's bright line at full glow: a cool white, slightly translucent so the
-/// line still reads as light over the contents.
+/// CRT's light at full glow: a cool white, slightly translucent so the line
+/// and the flash still read as light over the contents.
 const CRT_GLOW: Color = Color::rgba(0xF0, 0xF6, 0xFF, 0xE6);
 
 impl Painter {

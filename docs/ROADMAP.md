@@ -346,7 +346,9 @@ A native, lightweight, offline Windows desktop organizer that:
     Dissolve, Fly (to and from the nearest edge of the space's monitor's
     work area, clipped to that work area so it never shows on another
     monitor or over the taskbar), CRT (a bright line that opens to the
-    full space, and closes to a line, then a dot), and Burn (amended
+    full space, and closes to a line, then a dot; amended 2026-11-15,
+    maintainer: the whole space flashes white as the raster finishes
+    filling, as a real monitor does when it switches on), and Burn (amended
     2026-10-18: the space burns up like a sheet of paper, from the bottom
     up along a ragged front, charring ahead of a glowing edge, with flames
     licking up around its frame; the flames rise past the space, so they

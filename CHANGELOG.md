@@ -17,6 +17,10 @@ Notable changes to DeskSpace, newest first. The format follows
 
 ### Changed
 
+- CRT plays like a monitor switching on: the line's light fades as the
+  raster opens, and the whole space flashes white as it finishes filling
+  before the picture settles. Hiding plays it backwards, so a space flashes
+  white as it starts to collapse.
 - Burn plays more smoothly when several spaces burn at once: each frame now
   writes and uploads only the cells its edge reached, and draws only the band
   of char and scorch it made, instead of the whole space twice. A space
