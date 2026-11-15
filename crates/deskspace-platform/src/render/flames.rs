@@ -214,7 +214,20 @@ fn paint_tongue(pixels: &mut [u32], width: u32, height: u32, tongue: &Tongue, ti
         let wave = (up * SWAY_WAVES - time * SWAY_RATE + tongue.phase).sin();
         let center = tongue.x + wave * tongue.width * SWAY_SHARE * up;
         let falloff = below.powf(TIP_FALLOFF);
-        for px in left..right {
+        // When even the row's brightest pixel is below the cutoff, nothing in
+        // it is lit. Otherwise `heat` falls away as the square of the distance
+        // from the centre, so only the pixels within `reach` of it can pass; a
+        // pixel each side is kept, so rounding never drops a lit pixel.
+        let level = falloff * brightness;
+        if level <= HEAT_CUTOFF {
+            continue;
+        }
+        let reach = half * (1.0 - HEAT_CUTOFF / level).max(0.0).sqrt();
+        let first = ((center - reach - 0.5).floor() - 1.0).max(left as f32) as u32;
+        let last = (((center + reach - 0.5).ceil() + 1.0)
+            .min(right as f32)
+            .max(0.0)) as u32;
+        for px in first..last {
             let across = ((px as f32 + 0.5 - center).abs() / half).min(1.0);
             // Kept as two factors: one product of the row's falloff and the
             // tongue's brightness would round differently in its last bit.

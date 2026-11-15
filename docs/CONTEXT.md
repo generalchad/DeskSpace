@@ -844,7 +844,9 @@ one arm in `App::on_event`, whose match is exhaustive.
 - Animations are pure frame math in `render/`; the window applies each frame,
   and an effect that draws past the window gets an overlay
   (`win32/overlay.rs`). An effect's row may stretch the chosen duration, which
-  the app applies when it makes the `Play`. `TASKS.md` section T has the
+  the app applies when it makes the `Play`. A frame rewrites only what its
+  progress changed: Burn fills and uploads the field rows its front crossed
+  and draws only the band of cells it marks. `TASKS.md` section T has the
   recipe.
 - The zoom pop-up is its own topmost, never-activated window using the space
   material; `win32/zoom_bar.rs` and `render/zoom_bar.rs` own it.

@@ -171,8 +171,9 @@ struct FrameResources {
     mask: Option<ID2D1Brush>,
     /// Pixelate's small scene, and the part of it the scene covers.
     pixelated: Option<(ID2D1Bitmap, D2D_RECT_F)>,
-    /// Burn's glow, char, and scorch, laid over the contents.
-    burn_marks: Option<ID2D1Bitmap>,
+    /// Burn's glow, char, and scorch, laid over the contents: the bitmap,
+    /// the part of it to draw, and where that goes on the space.
+    burn_marks: Option<(ID2D1Bitmap, D2D_RECT_F, D2D_RECT_F)>,
 }
 
 /// Clears `target` for a new frame: to the opaque tint on a window with no
@@ -352,7 +353,7 @@ impl Painter {
                 .effects
                 .mask_brush(window.target, transition.mask, size)?,
             pixelated,
-            burn_marks: self.effects.burn_marks(transition.mask),
+            burn_marks: self.effects.burn_marks(transition.mask, size),
         })
     }
 

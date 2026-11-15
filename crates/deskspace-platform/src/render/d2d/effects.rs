@@ -4,6 +4,7 @@
 //! frame only updates them; they go with the device.
 
 use std::mem::ManuallyDrop;
+use std::ops::Range;
 
 use windows::Win32::Graphics::Direct2D::Common::{D2D_RECT_U, D2D_SIZE_F, D2D1_GRADIENT_STOP};
 use windows::Win32::Graphics::Direct2D::{
@@ -67,13 +68,16 @@ impl Painter {
                     None => self.draw_scene(ctx, prepared, frame, size),
                 },
             );
-            if let Some(marks) = &resources.burn_marks {
+            // Only the band of cells the burn marks is drawn: the rest of
+            // the bitmap is clear, and drawing all of it every frame was a
+            // large part of Burn's paint.
+            if let Some((marks, source, band)) = &resources.burn_marks {
                 target.DrawBitmap(
                     marks,
-                    Some(&whole),
+                    Some(band),
                     transition.opacity,
                     D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
-                    None,
+                    Some(source),
                 );
             }
             if let Content::Lit { glow } = transition.content {
@@ -142,6 +146,11 @@ struct BurnMask {
     paper: CellMask,
     /// The glowing edge, the char, and the scorch, laid over the paper.
     marks: CellMask,
+    /// The front the two masks were last written for; `None` before the
+    /// first frame.
+    front: Option<f32>,
+    /// The rows a burn at that front marks at all (`BurnField::rows_marked`).
+    marked_rows: Range<u32>,
 }
 
 /// One pixel per cell, rewritten each frame and stretched over the space by
@@ -216,23 +225,43 @@ impl Effects {
                 seed,
             } => {
                 let burn = self.burn(target, detail, size, seed)?;
-                burn.field
-                    .fill_pixels(front, &mut burn.paper.pixels, &mut burn.marks.pixels);
-                burn.paper.upload()?;
-                burn.marks.upload()?;
+                let rows = match burn.front {
+                    Some(previous) => burn.field.rows_changed(previous, front),
+                    None => Some(0..burn.field.grid().rows),
+                };
+                if let Some(rows) = rows {
+                    burn.field.fill_rows(
+                        front,
+                        rows.clone(),
+                        &mut burn.paper.pixels,
+                        &mut burn.marks.pixels,
+                    );
+                    burn.paper.upload_rows(rows.clone())?;
+                    burn.marks.upload_rows(rows)?;
+                }
+                burn.front = Some(front);
+                burn.marked_rows = burn.field.rows_marked(front);
                 Ok(Some(burn.paper.brush.clone().into()))
             }
         }
     }
 
-    /// The color Burn lays over the paper this frame (`render::burn`);
-    /// `None` for any other mask. Call after `mask_brush` for the same
+    /// The color Burn lays over the paper this frame (`render::burn`) and the
+    /// part of the space it covers: the bitmap, the part of it to draw, and
+    /// where that goes on the space. `None` for any other mask, or when the
+    /// burn marks nothing this frame. Call after `mask_brush` for the same
     /// frame, which writes it.
-    pub(super) fn burn_marks(&self, mask: Mask) -> Option<ID2D1Bitmap> {
+    pub(super) fn burn_marks(
+        &self,
+        mask: Mask,
+        size: (f32, f32),
+    ) -> Option<(ID2D1Bitmap, D2D_RECT_F, D2D_RECT_F)> {
         let Mask::Burn { .. } = mask else {
             return None;
         };
-        self.burn.as_ref().map(|burn| burn.marks.bitmap.clone())
+        let burn = self.burn.as_ref()?;
+        let (source, band) = marks_band(burn.field.grid(), burn.marked_rows.clone(), size)?;
+        Some((burn.marks.bitmap.clone(), source, band))
     }
 
     fn burn(
@@ -255,6 +284,8 @@ impl Effects {
                 made_for,
                 paper: CellMask::new(target, grid, burn::CELL, SMOOTH)?,
                 marks: CellMask::new(target, grid, burn::CELL, SMOOTH)?,
+                front: None,
+                marked_rows: 0..0,
             });
         }
         Ok(self.burn.as_mut().expect("made above"))
@@ -364,6 +395,36 @@ impl Effects {
     }
 }
 
+/// The part of Burn's marks bitmap to draw for a burn that marks `marked`
+/// rows of `grid`, and where it goes on a space of `size`: a band of cell
+/// rows, a row wider at each end so the linear filter between cells still has
+/// its neighbours. `None` when it marks nothing.
+///
+/// The whole bitmap stretches over the space (`DrawBitmap` maps the source to
+/// the destination), so a cell row is `size.1 / rows` tall; a band keeps the
+/// pixels the whole draw would have put there.
+fn marks_band(
+    grid: Grid,
+    marked: Range<u32>,
+    size: (f32, f32),
+) -> Option<(D2D_RECT_F, D2D_RECT_F)> {
+    if marked.is_empty() {
+        return None;
+    }
+    let top = marked.start.saturating_sub(1);
+    let bottom = (marked.end + 1).min(grid.rows);
+    let row_height = size.1 / grid.rows.max(1) as f32;
+    Some((
+        rect_f(0.0, top as f32, grid.cols as f32, bottom as f32),
+        rect_f(
+            0.0,
+            top as f32 * row_height,
+            size.0,
+            bottom as f32 * row_height,
+        ),
+    ))
+}
+
 /// The scale Pixelate draws the scene at on each axis, and the part of the
 /// offscreen target that scene then covers, for a space of `size`.
 ///
@@ -430,18 +491,30 @@ impl CellMask {
 
     /// Copies this frame's pixels to the bitmap.
     fn upload(&self) -> Result<(), PlatformError> {
+        self.upload_rows(0..self.rows)
+    }
+
+    /// Copies `rows` of this frame's pixels to the bitmap, leaving the rest
+    /// as they were.
+    fn upload_rows(&self, rows: Range<u32>) -> Result<(), PlatformError> {
+        let top = rows.start.min(self.rows);
+        let bottom = rows.end.min(self.rows);
+        if top >= bottom {
+            return Ok(());
+        }
+        let start = top as usize * self.cols as usize;
         // SAFETY: `pixels` holds `cols * rows` BGRA pixels (made so in `new`
-        // and never resized), so `cols * 4` is its row pitch; D2D copies the
-        // data.
+        // and never resized), so `cols * 4` is its row pitch and `start` is
+        // the first pixel of `rows`'s top row; D2D copies the data.
         unsafe {
             self.bitmap.CopyFromMemory(
                 Some(&D2D_RECT_U {
                     left: 0,
-                    top: 0,
+                    top,
                     right: self.cols,
-                    bottom: self.rows,
+                    bottom,
                 }),
-                self.pixels.as_ptr() as *const core::ffi::c_void,
+                self.pixels.as_ptr().add(start) as *const core::ffi::c_void,
                 self.cols * 4,
             )?;
         }
@@ -520,6 +593,34 @@ mod tests {
             gradient_points(Side::Right, 0.5, 0.25, size),
             ((150.0, 0.0), (100.0, 0.0))
         );
+    }
+
+    #[test]
+    fn the_marks_band_draws_where_the_whole_bitmap_did() {
+        let grid = Grid { cols: 40, rows: 30 };
+        let size = (120.0, 90.0);
+        // The whole grid, padded and clamped: the whole bitmap over the whole
+        // space, as Burn always drew it.
+        let (source, band) = marks_band(grid, 0..30, size).expect("a band");
+        assert_eq!(
+            (source.left, source.top, source.right, source.bottom),
+            (0.0, 0.0, 40.0, 30.0)
+        );
+        assert_eq!((band.left, band.top), (0.0, 0.0));
+        assert_eq!((band.right, band.bottom), (120.0, 90.0));
+
+        // A middle band is a cell row taller each way, and keeps the whole
+        // draw's scale: three pixels a cell row.
+        let (source, band) = marks_band(grid, 10..12, size).expect("a band");
+        assert_eq!((source.top, source.bottom), (9.0, 13.0));
+        assert_eq!((band.top, band.bottom), (27.0, 39.0));
+
+        // The ends clamp to the grid.
+        let (source, band) = marks_band(grid, 0..1, size).expect("a band");
+        assert_eq!((source.top, source.bottom), (0.0, 2.0));
+        assert_eq!((band.top, band.bottom), (0.0, 6.0));
+
+        assert!(marks_band(grid, 4..4, size).is_none(), "nothing marked");
     }
 
     #[test]

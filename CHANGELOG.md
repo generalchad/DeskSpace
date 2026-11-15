@@ -17,6 +17,11 @@ Notable changes to DeskSpace, newest first. The format follows
 
 ### Changed
 
+- Burn plays more smoothly when several spaces burn at once: each frame now
+  writes and uploads only the cells its edge reached, and draws only the band
+  of char and scorch it made, instead of the whole space twice. A space
+  1200 × 900 burned in a quarter of the time it took, and its flames shade
+  with less work per pixel. A burn looks exactly as it did.
 - An item's rename box in the icon views is the width of the item's label,
   as Explorer's is, with the name centered in it, instead of hugging the
   name. A long name still wraps inside it and grows the box downward.

@@ -8,6 +8,8 @@
 //! each cell's distance above it picks its `Stage`, from gone through the
 //! glowing edge, char, and scorch, to untouched paper.
 
+use std::ops::Range;
+
 use deskspace_core::animation::DETAIL_RANGE;
 
 use super::math::Grid;
@@ -22,6 +24,9 @@ pub const CHAR: f32 = 0.045;
 pub const SCORCH: f32 = 0.07;
 /// Everything the burn touches beyond what is already gone.
 pub const BANDS: f32 = GLOW + CHAR + SCORCH;
+/// The distances above the front where a cell's `Stage` changes: a front
+/// that does not pass one of these changes nothing.
+const EDGES: [f32; 4] = [0.0, GLOW, GLOW + CHAR, BANDS];
 
 /// How much of a cell's value is noise; the rest burns the bottom first.
 const NOISE_SHARE: f32 = 0.55;
@@ -45,6 +50,9 @@ fn grid_for(size: (f32, f32)) -> Grid {
 #[derive(Debug, Clone, PartialEq)]
 pub struct BurnField {
     field: RisingField,
+    /// Each row's lowest and highest cell value, which say what a moving
+    /// front can have changed without reading every cell.
+    extremes: Vec<(f32, f32)>,
 }
 
 impl BurnField {
@@ -59,9 +67,18 @@ impl BurnField {
     fn new(grid: Grid, detail: u8, seed: u32) -> Self {
         let detail = detail.clamp(DETAIL_RANGE.0, DETAIL_RANGE.1);
         let lattice = LATTICE_BASE + LATTICE_PER_DETAIL * f32::from(detail);
-        Self {
-            field: RisingField::new(grid.cols, grid.rows, lattice, NOISE_SHARE, seed),
-        }
+        let field = RisingField::new(grid.cols, grid.rows, lattice, NOISE_SHARE, seed);
+        let extremes = field
+            .values()
+            .chunks(grid.cols.max(1) as usize)
+            .map(|row| {
+                row.iter()
+                    .fold((f32::INFINITY, f32::NEG_INFINITY), |(low, high), &value| {
+                        (low.min(value), high.max(value))
+                    })
+            })
+            .collect();
+        Self { field, extremes }
     }
 
     pub fn grid(&self) -> Grid {
@@ -75,11 +92,72 @@ impl BurnField {
         self.field.value(col, row)
     }
 
-    /// Writes each cell's two pixels for a burn at `front`: into `paper`,
+    /// Writes the pixels of `rows` for a burn at `front`: into `paper`,
     /// whether the paper still shows, and into `marks`, the glow, char, or
-    /// scorch over it (`cell_pixels`).
-    pub fn fill_pixels(&self, front: f32, paper: &mut [u32], marks: &mut [u32]) {
-        fill_pixels(self.field.values(), front, paper, marks);
+    /// scorch over it (`cell_pixels`). Every other row keeps what it had.
+    pub fn fill_rows(&self, front: f32, rows: Range<u32>, paper: &mut [u32], marks: &mut [u32]) {
+        let cols = self.field.cols().max(1) as usize;
+        let values = self.field.values();
+        let start = (rows.start as usize * cols).min(values.len());
+        let end = (rows.end as usize * cols)
+            .min(values.len())
+            .min(paper.len())
+            .min(marks.len());
+        if start >= end {
+            return;
+        }
+        fill_pixels(
+            &values[start..end],
+            front,
+            &mut paper[start..end],
+            &mut marks[start..end],
+        );
+    }
+
+    /// The rows a front moving from `previous` to `front` can have changed,
+    /// so a painter writes and uploads only those. A cell's `Stage` changes
+    /// only when its value passes one of `EDGES` as the front moves, so a row
+    /// with no value within the move of an edge stays as it was. `None` when
+    /// the front did not move.
+    pub fn rows_changed(&self, previous: f32, front: f32) -> Option<Range<u32>> {
+        if previous == front {
+            return None;
+        }
+        let (low, high) = (previous.min(front), previous.max(front));
+        self.rows_where(|min, max| {
+            EDGES
+                .iter()
+                .any(|edge| max >= low + edge && min < high + edge)
+        })
+        // `stage` compares `value - front` in `f32`, and that subtraction can
+        // land a cell an edge's width the other side of one than the values
+        // predict; a row each side costs little and keeps it from going stale.
+        .map(|rows| rows.start.saturating_sub(1)..(rows.end + 1).min(self.field.rows()))
+    }
+
+    /// The rows a burn at `front` marks at all: where a cell is burning,
+    /// charred, or scorched. Empty when it marks none, at the start and the
+    /// end of the burn.
+    pub fn rows_marked(&self, front: f32) -> Range<u32> {
+        self.rows_where(|min, max| max >= front && min < front + BANDS)
+            .unwrap_or(0..0)
+    }
+
+    /// The first and last rows (as a run, `None` when there are none) whose
+    /// lowest and highest values satisfy `holds`.
+    fn rows_where(&self, holds: impl Fn(f32, f32) -> bool) -> Option<Range<u32>> {
+        let mut run: Option<Range<u32>> = None;
+        for (row, &(min, max)) in self.extremes.iter().enumerate() {
+            if !holds(min, max) {
+                continue;
+            }
+            let row = row as u32;
+            run = Some(match run {
+                Some(run) => run.start..row + 1,
+                None => row..row + 1,
+            });
+        }
+        run
     }
 
     /// Where flames stand at `front`, into `bases`: in every `every`-th
@@ -277,6 +355,90 @@ mod tests {
             (u32::MAX, 0),
             "far above is untouched"
         );
+    }
+
+    #[test]
+    fn a_moving_front_touches_every_row_whose_cells_it_changes() {
+        let (cols, rows) = (80, 60);
+        let field = BurnField::new(Grid { cols, rows }, 5, 0);
+        let mut previous = front(0.0);
+        let mut moved = 0;
+        for step in 1..=40 {
+            let current = front(step as f32 / 40.0);
+            let changed_rows = field.rows_changed(previous, current);
+            moved += usize::from(changed_rows.is_some());
+            for row in 0..rows {
+                let changed = (0..cols).any(|col| {
+                    let value = field.value(col, row);
+                    stage(value - previous) != stage(value - current)
+                });
+                assert!(
+                    !changed
+                        || changed_rows
+                            .clone()
+                            .is_some_and(|changed| changed.contains(&row)),
+                    "step {step}: row {row} changed outside {changed_rows:?}"
+                );
+            }
+            previous = current;
+        }
+        assert!(
+            moved > 20,
+            "the ragged field changes on most steps, not {moved}"
+        );
+        assert_eq!(
+            field.rows_changed(0.25, 0.25),
+            None,
+            "a still front changes nothing"
+        );
+    }
+
+    #[test]
+    fn the_marked_rows_hold_every_marked_cell() {
+        let (cols, rows) = (60, 40);
+        let field = BurnField::new(Grid { cols, rows }, 5, 0);
+        for step in 0..=40 {
+            let front = front(step as f32 / 40.0);
+            let marked_rows = field.rows_marked(front);
+            for row in 0..rows {
+                let marked = (0..cols).any(|col| {
+                    !matches!(
+                        stage(field.value(col, row) - front),
+                        Stage::Whole | Stage::Gone
+                    )
+                });
+                assert!(
+                    !marked || marked_rows.contains(&row),
+                    "step {step}: row {row} is marked outside {marked_rows:?}"
+                );
+            }
+        }
+        assert!(
+            field.rows_marked(front(0.0)).is_empty(),
+            "nothing is marked before the burn"
+        );
+        assert!(
+            field.rows_marked(front(1.0)).is_empty(),
+            "nothing is marked once it has burned through"
+        );
+    }
+
+    #[test]
+    fn fill_rows_leaves_the_rows_it_is_not_given() {
+        let (cols, rows) = (10, 4);
+        let field = BurnField::new(Grid { cols, rows }, 5, 0);
+        let (mut paper, mut marks) = ([7u32; 40], [7u32; 40]);
+        field.fill_rows(0.5, 1..3, &mut paper, &mut marks);
+
+        let (mut all_paper, mut all_marks) = ([7u32; 40], [7u32; 40]);
+        for row in 0..rows {
+            field.fill_rows(0.5, row..row + 1, &mut all_paper, &mut all_marks);
+        }
+        let written = cols as usize..3 * cols as usize;
+        assert_eq!(paper[written.clone()], all_paper[written.clone()]);
+        assert_eq!(marks[written.clone()], all_marks[written]);
+        assert!(paper[..cols as usize].iter().all(|&pixel| pixel == 7));
+        assert!(marks[3 * cols as usize..].iter().all(|&pixel| pixel == 7));
     }
 
     #[test]
