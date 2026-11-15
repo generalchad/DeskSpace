@@ -587,6 +587,99 @@ drop side is `win32/drop_target.rs` (`DragKind`, `drag_kind`, `DropPlan`,
     It grows with the remaining Explorer item settings (hidden/protected
     files once F-22 exists).
 
+- [ ] **C17. Delete a space with its shortcuts (app).** Asked by the
+  maintainer, 2026-11-15.
+  - Why: deleting a normal space always moves its stored items back to the
+    desktop (`App::delete_space`, `app/files.rs`), so a user who wants the
+    space and its shortcuts gone has to clean the desktop by hand.
+  - Decided (maintainer, 2026-11-15): when the space holds stored items,
+    the confirm prompt offers "Move to the desktop" (the default, so Enter
+    keeps today's behavior), "Delete them", and Cancel. "Delete them" sends
+    the stored items to the Recycle Bin. Items listed in place
+    (Shift-dropped, or on another drive) are only unlisted, never deleted
+    (ROADMAP D3). Either choice is one undo entry, "Undo Delete space"; after
+    "Delete them" it restores the space and its items from the Recycle Bin,
+    as an item delete's undo does (`app/undo/files.rs`, the U7 row). A lens,
+    an empty space, and a space with no stored items keep today's prompt.
+  - `App::delete_space`: when `stored > 0`, ask with `ui.choose` (the icon
+    consent prompt in `app.rs` is the pattern) in place of `ui.confirm`,
+    and map the answer to `StoredFiles`. `delete_consequence` (`app.rs`)
+    gets wording that names both choices; extend its tests.
+  - `delete_space_now` cancels the undo entry for
+    `StoredFiles::ToRecycleBin` today. The debug window's "Delete all
+    spaces" (`app/debug/spaces.rs`) uses that path and must stay without an
+    undo entry (the debug control recipe). If the two callers cannot share
+    the path without a special case, stop and ask.
+  - Tests: the answer-to-`StoredFiles` mapping, and an undo test copied from
+    the closest one in `app/undo/mod.rs` that restores a space deleted with
+    its items recycled.
+  - Docs: ROADMAP D3's "Deleting a space moves its stored files back to the
+    desktop" gains the choice; `CONTEXT.md` where it describes a space
+    delete; a `CHANGELOG.md` "Unreleased" line.
+  - **[needs human]**: delete a space holding two dropped shortcuts and one
+    Shift-dropped file, from the space menu and from the settings header.
+    The prompt names both choices, with Move to the desktop the default;
+    Enter moves them to the desktop as before; "Delete them" puts the two
+    shortcuts in the Recycle Bin and leaves the Shift-dropped file where it
+    is; Ctrl+Z brings the space back with both shortcuts; Cancel and Esc
+    change nothing; a lens and an empty space ask as before.
+
+- [ ] **C18. OneDrive's Status column in a lens (core, platform, app).**
+  Asked by the maintainer, 2026-11-15.
+  - Why: Explorer shows a Status column in a OneDrive folder (online-only,
+    available on this device, always available), and a lens on the same
+    folder cannot.
+  - Decided (maintainer, 2026-11-15):
+    - Lenses only, and only a lens whose folder is inside a OneDrive folder.
+      No other space or lens offers the column.
+    - The steady states first, read from file attributes: online-only
+      (`FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS`, `FILE_ATTRIBUTE_OFFLINE`, or
+      `FILE_ATTRIBUTE_RECALL_ON_OPEN` on a folder), always available
+      (`FILE_ATTRIBUTE_PINNED`), and otherwise available on this device.
+      Syncing, Sync pending, and errors are a later task, because they need
+      a shell property read per file
+      (`System.StorageProviderUIStatus`).
+    - Drawn as Explorer draws it: an icon per state, with Explorer's wording
+      as the cell's tooltip; a header click sorts by state.
+  - Facts: `ItemFacts` (`deskspace-core/src/item.rs`) gains the cloud state
+    (an enum with a `None` default, so other folders and old configs are
+    unchanged), read in `read_item_facts`
+    (`win32/desktop_items.rs`) from the same `file_attributes()` that gives
+    `compressed` and `encrypted`. Reading attributes never downloads a
+    placeholder; nothing may open the file.
+  - Which lenses: a OneDrive folder is one under a OneDrive account's root.
+    The candidate source is each `HKCU\Software\Microsoft\OneDrive\Accounts\*`
+    key's `UserFolder` value (and the `OneDrive*` environment variables).
+    Read it off the UI thread when a lens binds or changes its folder, not
+    per paint. Confirm on a signed-in machine that it also covers a
+    SharePoint library synced into the account; if the keys differ from
+    this, stop and ask.
+  - Column: a `Column` variant and a `DETAILS_COLUMNS` row
+    (`settings/tables.rs`), with a sort key. The header's column menu
+    (`app/menus.rs`) lists Status only on a OneDrive lens. A new OneDrive
+    lens shows it after Name, as Explorer does there; an existing lens only
+    offers it in the menu. For whether Sort by ▸ and Group by ▸ list
+    Status, match Explorer on the same folder.
+  - Glyphs: follow the lens recipe's rule (only code points both Segoe Fluent
+    Icons and Segoe MDL2 Assets have, each named beside its constant), with
+    Explorer's colors measured from a screenshot and named as measured.
+  - The lens recipe's rules hold: 50,000 files without a hitch, no IO on the
+    UI thread, and config values untrusted (an unknown state loads as none).
+  - Tests: the attribute-to-state mapping, the column offered only for a
+    OneDrive lens, sorting by state, and a serde round-trip of a config
+    holding the column.
+  - Docs: `README.md` Controls (the Details line), `CONTEXT.md` where it
+    describes Details columns, the ROADMAP feature index, and a
+    `CHANGELOG.md` "Unreleased" line.
+  - **[needs human]**: on a machine signed in to OneDrive, a lens on a
+    OneDrive folder in Details, beside Explorer on the same folder, at 100 %
+    and 150 %, light and dark. Make one file online-only ("Free up space"),
+    one always available ("Always keep on this device"), and leave one
+    available: each row's icon and tooltip match Explorer's, and they follow
+    a change made in Explorer once the lens refreshes. A header click sorts
+    by Status. A lens outside OneDrive and a normal space offer no Status
+    column. Showing the column downloads nothing.
+
 ### Draw a space on the desktop (ROADMAP F-69, D27)
 
 A right-drag lasso on the desktop, then "New space here" or "New lens here…"
