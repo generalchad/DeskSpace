@@ -1,6 +1,7 @@
 //! The icon cache's load worker: a thread that reads icons from the shell and
 //! reports them to the UI thread in batches. With no icon waiting it reads
-//! item facts, the other file reads that must stay off the UI thread.
+//! the items' own files, for their facts and to find the ones that are gone:
+//! the other file reads that must stay off the UI thread.
 
 use std::path::PathBuf;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
@@ -13,7 +14,7 @@ use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 use crate::fact_jobs::FactJobs;
 use crate::icon_queue::IconQueue;
 use crate::render::Icon;
-use crate::win32::desktop_items::read_item_facts;
+use crate::win32::desktop_items::file_state;
 use crate::win32::messages;
 
 use super::load::{load_folder_icon, load_icon};
@@ -35,7 +36,7 @@ pub(super) struct WorkerState {
     /// A report is on its way to the UI thread, which takes everything loaded
     /// by then, so another would be wasted.
     pub(super) reported: bool,
-    /// Item facts to read while no icon is waiting.
+    /// Items' files to read while no icon is waiting.
     pub(super) facts: FactJobs,
     pub(super) stop: bool,
 }
@@ -44,7 +45,7 @@ pub(super) struct WorkerState {
 #[derive(Debug, PartialEq, Eq)]
 enum Request {
     Icon(Key),
-    /// Read the facts of the file at this path, for `WorkerState::facts`.
+    /// Read the file at this path, for `WorkerState::facts`.
     Facts(PathBuf),
 }
 
@@ -115,8 +116,8 @@ fn run_worker(worker: &Worker, target: isize) {
                 }
             }
             Request::Facts(path) => {
-                let facts = read_item_facts(&path);
-                if worker.lock().facts.record(facts) {
+                let state = file_state(&path);
+                if worker.lock().facts.record(state) {
                     report_facts(target);
                 }
             }
@@ -231,6 +232,7 @@ mod tests {
 
     #[test]
     fn an_icon_goes_ahead_of_every_fact() {
+        use crate::fact_jobs::FileState;
         use deskspace_core::{ItemId, SpaceId};
 
         let worker = Worker::new();
@@ -244,12 +246,12 @@ mod tests {
             ],
         );
         assert_eq!(take_request(&mut state), fact("a"));
-        state.facts.record(None);
+        state.facts.record(FileState::Unreachable);
         // A scene asks for an icon while the batch is half read.
         state.queue.set_wanted(&SPACE, &[key("icon")]);
         assert_eq!(take_request(&mut state), Some(Request::Icon(key("icon"))));
         assert_eq!(take_request(&mut state), fact("b"));
-        state.facts.record(None);
+        state.facts.record(FileState::Unreachable);
         assert_eq!(take_request(&mut state), None);
     }
 }

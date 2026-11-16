@@ -355,9 +355,9 @@ pub enum Event {
     /// The icon worker has loaded icons. `IconCache::take_loaded` collects
     /// them and names the windows to draw again.
     IconsLoaded,
-    /// The icon worker has read a batch of the item facts asked for with
+    /// The icon worker has read a space's items again, as asked with
     /// `IconCache::read_item_facts`. `IconCache::take_item_facts` collects
-    /// it.
+    /// what it found.
     ItemFactsRead,
     /// A mouse button went down outside every space (on the desktop, another
     /// app, or the taskbar). Only reported while `Ui::watch_outside_clicks`

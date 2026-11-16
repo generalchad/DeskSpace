@@ -885,7 +885,6 @@ impl App {
         if self.debug.is_some() {
             self.open_debug(ui);
         }
-        self.prune_all_missing(ui);
         self.sync_windows_at_startup(ui);
         // Positions are derived from the grid; recompute them so a
         // stored layout from another icon size or DPI is refreshed.
@@ -895,8 +894,10 @@ impl App {
             dark = self.system.dark(),
             "spaces created"
         );
-        // The spaces' scenes have asked for their icons by now, and the
-        // worker reads the items' facts again once those are loaded.
+        // The spaces' scenes have asked for their icons by now. Once those
+        // are loaded the worker reads the items' files, which refreshes
+        // their facts and drops the items whose files went while DeskSpace
+        // was closed; reading them here would stall on a slow drive.
         self.request_item_facts();
         if std::mem::take(&mut self.new_space_on_start) {
             self.create_space(ui, cursor_pos());

@@ -200,11 +200,7 @@ impl App {
 
 /// What a command owes once dispatched: when it applied, `lead`, then a
 /// repaint of what it changed and a save; otherwise nothing.
-pub(super) fn commit_effects(
-    outcome: CommandOutcome,
-    touched: Touched,
-    lead: Vec<Effect>,
-) -> Vec<Effect> {
+fn commit_effects(outcome: CommandOutcome, touched: Touched, lead: Vec<Effect>) -> Vec<Effect> {
     if !outcome.is_applied() {
         return Vec::new();
     }

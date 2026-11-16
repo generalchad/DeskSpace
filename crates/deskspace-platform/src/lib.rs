@@ -49,8 +49,8 @@ pub use win32::desktop_icons::{
     restore as restore_desktop_icons, take_explorer_rename,
 };
 pub use win32::desktop_items::{
-    DesktopEntry, desktop_directory, enumerate_desktop_items, format_bytes, format_date, format_kb,
-    item_facts, local_today, notify_moved, profile_directory, type_name,
+    DesktopEntry, desktop_directory, enumerate_desktop_items, file_is_gone, format_bytes,
+    format_date, format_kb, item_facts, local_today, notify_moved, profile_directory, type_name,
 };
 pub use win32::display_settings::{
     CheckBoxMode, DESKTOP_ICON_RANGE, DESKTOP_ICON_STEP, ShellDisplay, desktop_display,

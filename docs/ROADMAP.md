@@ -87,6 +87,11 @@ A native, lightweight, offline Windows desktop organizer that:
       therefore never touches the file.
     - Two kinds of file stay in place: one dropped with Shift held, and one on
       another drive, where a move would be a copy.
+    - Decided 2026-11-16 (maintainer): an item whose drive or share cannot
+      be reached stays listed. Only a file that is gone for certain, on a
+      drive that answers, takes its item with it. Before, a USB stick left
+      out or a share that was down when DeskSpace started cost the space its
+      items for good.
     - Name clashes get " (2)" as in Explorer, and nothing is overwritten.
     - Deleting a space moves its stored files back to the desktop.
     - Removing a single item is a delete (amended 2026-10-13): a stored file

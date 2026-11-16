@@ -13,7 +13,9 @@ use deskspace_core::geometry::Point;
 use deskspace_core::grouping::LocalDay;
 use deskspace_core::item::{ItemFacts, ItemKind};
 use deskspace_core::source::FolderEntry;
-use windows::Win32::Foundation::{FILETIME, SYSTEMTIME};
+use windows::Win32::Foundation::{
+    ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND, FILETIME, SYSTEMTIME,
+};
 use windows::Win32::Globalization::{
     DATE_SHORTDATE, GetDateFormatEx, GetTimeFormatEx, TIME_FORMAT_FLAGS,
 };
@@ -34,6 +36,7 @@ use windows::Win32::UI::Shell::{
 use windows::core::{GUID, Interface, PCWSTR};
 
 use crate::error::PlatformError;
+use crate::fact_jobs::FileState;
 use crate::win32::display_settings::{ShellDisplay, desktop_display};
 use crate::win32::system::wide;
 
@@ -134,20 +137,59 @@ fn enumerate_via_folder(
     Ok(entries)
 }
 
-/// What the file system says about `path`, or `None` when it cannot be read.
-/// The compressed and encrypted attributes drive Explorer's label colors:
+/// Reads the file at `path`. The compressed and encrypted attributes drive
+/// Explorer's label colors:
 /// <https://learn.microsoft.com/windows/win32/fileio/file-attribute-constants>
+pub(crate) fn file_state(path: &Path) -> FileState {
+    match std::fs::metadata(path) {
+        Ok(metadata) => {
+            let attributes = metadata.file_attributes();
+            FileState::Present(ItemFacts {
+                is_folder: metadata.is_dir(),
+                size: metadata.is_file().then_some(metadata.len()),
+                modified: metadata.modified().ok().and_then(epoch_seconds),
+                created: metadata.created().ok().and_then(epoch_seconds),
+                compressed: attributes & FILE_ATTRIBUTE_COMPRESSED.0 != 0,
+                encrypted: attributes & FILE_ATTRIBUTE_ENCRYPTED.0 != 0,
+            })
+        }
+        Err(error) => failed_read_state(error.raw_os_error(), || {
+            path.ancestors().last().is_some_and(Path::exists)
+        }),
+    }
+}
+
+/// What a failed read says about the file. Only "file not found" and "path
+/// not found" can mean it is gone, and an unplugged drive reports the same
+/// "path not found" as a deleted folder, so the path's root (its drive or
+/// share) is asked too. Every other failure leaves the file's fate unknown,
+/// and is answered without a second read, which a dead share would make as
+/// slow as the first.
+/// <https://learn.microsoft.com/windows/win32/debug/system-error-codes--0-499->
+fn failed_read_state(os_error: Option<i32>, root_answers: impl FnOnce() -> bool) -> FileState {
+    let not_found = os_error.is_some_and(|code| {
+        code as u32 == ERROR_FILE_NOT_FOUND.0 || code as u32 == ERROR_PATH_NOT_FOUND.0
+    });
+    if not_found && root_answers() {
+        FileState::Gone
+    } else {
+        FileState::Unreachable
+    }
+}
+
+/// Whether the file at `path` is gone for certain, so an item for it can be
+/// dropped. A file on a drive or share that does not answer is not: it is
+/// kept until its drive is back.
+pub fn file_is_gone(path: &Path) -> bool {
+    file_state(path) == FileState::Gone
+}
+
+/// What the file system says about `path`, or `None` when it cannot be read.
 pub fn read_item_facts(path: &Path) -> Option<ItemFacts> {
-    let metadata = std::fs::metadata(path).ok()?;
-    let attributes = metadata.file_attributes();
-    Some(ItemFacts {
-        is_folder: metadata.is_dir(),
-        size: metadata.is_file().then_some(metadata.len()),
-        modified: metadata.modified().ok().and_then(epoch_seconds),
-        created: metadata.created().ok().and_then(epoch_seconds),
-        compressed: attributes & FILE_ATTRIBUTE_COMPRESSED.0 != 0,
-        encrypted: attributes & FILE_ATTRIBUTE_ENCRYPTED.0 != 0,
-    })
+    match file_state(path) {
+        FileState::Present(facts) => Some(facts),
+        FileState::Gone | FileState::Unreachable => None,
+    }
 }
 
 /// What the file system says about `path`, read when an item is listed.
@@ -629,5 +671,64 @@ mod tests {
         assert_eq!(folder_facts.size, None);
         assert_eq!(missing_facts, ItemFacts::default());
         assert_eq!(missing, None, "a missing path is not an empty one");
+    }
+
+    #[test]
+    fn a_failed_read_means_gone_only_when_not_found_under_a_root_that_answers() {
+        const NOT_FOUND: Option<i32> = Some(2);
+        const PATH_NOT_FOUND: Option<i32> = Some(3);
+        const ACCESS_DENIED: Option<i32> = Some(5);
+        const NOT_READY: Option<i32> = Some(21);
+        const BAD_NETPATH: Option<i32> = Some(53);
+        let answers = || true;
+        let silent = || false;
+        assert_eq!(failed_read_state(NOT_FOUND, answers), FileState::Gone);
+        assert_eq!(failed_read_state(PATH_NOT_FOUND, answers), FileState::Gone);
+        // An unplugged drive says "path not found" too.
+        assert_eq!(
+            failed_read_state(PATH_NOT_FOUND, silent),
+            FileState::Unreachable
+        );
+        for unknown in [ACCESS_DENIED, NOT_READY, BAD_NETPATH, None] {
+            let asked_the_root = || panic!("a dead share must not be read twice");
+            assert_eq!(
+                failed_read_state(unknown, asked_the_root),
+                FileState::Unreachable
+            );
+        }
+    }
+
+    #[test]
+    fn a_deleted_file_is_gone_and_one_on_a_missing_drive_is_not() {
+        let folder =
+            std::env::temp_dir().join(format!("deskspace-file-state-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let file = folder.join("here.txt");
+        std::fs::write(&file, "x").unwrap();
+
+        let present = file_state(&file);
+        let deleted = file_state(&folder.join("deleted.txt"));
+        let in_a_deleted_folder = file_state(&folder.join("no folder").join("a.txt"));
+        let _ = std::fs::remove_dir_all(&folder);
+
+        assert!(matches!(present, FileState::Present(_)));
+        assert_eq!(deleted, FileState::Gone);
+        assert_eq!(in_a_deleted_folder, FileState::Gone);
+        assert!(file_is_gone(&file), "its folder was just removed");
+
+        // A drive letter nothing is mounted on, when this machine has one.
+        let unplugged = ('D'..='Z')
+            .map(|letter| PathBuf::from(format!(r"{letter}:\")))
+            .find(|root| !root.exists());
+        if let Some(root) = unplugged {
+            let on_it = root.join("folder").join("a.txt");
+            assert_eq!(file_state(&on_it), FileState::Unreachable);
+            assert!(!file_is_gone(&on_it));
+        }
+        assert_eq!(
+            file_state(Path::new(r"relative\a.txt")),
+            FileState::Unreachable,
+            "a path with no root is never called gone"
+        );
     }
 }

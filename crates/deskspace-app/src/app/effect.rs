@@ -27,6 +27,8 @@ pub(super) enum Effect {
     ScheduleSave,
     /// Push the current form to an open settings window.
     RefreshSettings,
+    /// Set the tray tooltip again, after the count of items changed.
+    RefreshTray,
     /// Re-read Explorer's display options and repaint if they changed.
     RefreshShellDisplay,
     /// Show the zoom pop-up. It carries no data: the pop-up shows the size
@@ -71,6 +73,7 @@ impl App {
                 Effect::RelayoutAll => self.relayout_all(ui),
                 Effect::ScheduleSave => self.schedule_save(ui),
                 Effect::RefreshSettings => self.refresh_settings(ui),
+                Effect::RefreshTray => self.refresh_tray(ui),
                 Effect::RefreshShellDisplay => self.refresh_shell_display(ui),
                 Effect::ShowZoomBar => self.show_zoom_bar(ui),
                 Effect::HideZoomBar => ui.hide_zoom_bar(),

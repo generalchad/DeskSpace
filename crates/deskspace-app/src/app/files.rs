@@ -9,7 +9,7 @@ use deskspace_core::geometry::Point;
 use deskspace_core::{Command, ItemId, Space, SpaceId};
 use deskspace_platform::{
     CustomShortcut, DropAction, IconUser, OnCollision, ShellItem, Ui, create_custom_shortcut,
-    create_shortcut, desktop_directory, is_inside, item_facts, notify_moved,
+    create_shortcut, desktop_directory, file_is_gone, is_inside, item_facts, notify_moved,
 };
 
 use super::undo::{
@@ -714,8 +714,9 @@ impl App {
         self.pointer.clear_hover_for_item(item);
     }
 
-    /// Drops items whose files no longer exist in every space. Called once at
-    /// startup so leftovers from a move made while DeskSpace was closed go away.
+    /// Drops items whose files are gone in every space, after a drag that
+    /// may have moved files out of any of them. Startup's check runs on the
+    /// icon worker instead (`app/facts.rs`).
     pub(super) fn prune_all_missing(&mut self, ui: &mut Ui) {
         let ids: Vec<SpaceId> = self
             .config
@@ -729,34 +730,50 @@ impl App {
         }
     }
 
-    /// Removes items whose files no longer exist, for example after a shell
-    /// command deleted one or a drag moved it elsewhere.
+    /// Removes items whose files are gone, for example after a shell command
+    /// deleted one or a drag moved it elsewhere.
     pub(super) fn prune_missing(&mut self, ui: &mut Ui, id: SpaceId) {
-        let missing: Vec<ItemId> = self
+        let items: Vec<ItemId> = self
             .config
             .desktop
             .space(id)
-            .map(|space| {
-                space
-                    .items()
-                    .iter()
-                    .filter(|item| !item.path.exists())
-                    .map(|item| item.id)
-                    .collect()
-            })
+            .map(|space| space.items().iter().map(|item| item.id).collect())
             .unwrap_or_default();
-        if missing.is_empty() {
+        if self.remove_gone(id, &items) == 0 {
             return;
-        }
-        for item in missing {
-            let near = self.space_center(id);
-            // Not `commit`: one of several commands, refreshed once below.
-            self.dispatch(Command::RemoveItem { id: item }, near);
-            self.forget_item(item);
         }
         self.refresh_space(ui, id);
         self.refresh_tray(ui);
         self.save(ui);
+    }
+
+    /// Removes those of `items` in space `id` whose files are gone, and
+    /// returns how many went. The one place an item is dropped for its file:
+    /// each file is read here, at the path the item has now, so an item
+    /// renamed since someone found its file missing is kept, and so is one
+    /// whose drive or share does not answer (`file_is_gone`).
+    pub(super) fn remove_gone(&mut self, id: SpaceId, items: &[ItemId]) -> usize {
+        let gone: Vec<ItemId> = self
+            .config
+            .desktop
+            .space(id)
+            .map(|space| {
+                items
+                    .iter()
+                    .filter_map(|item| space.item(*item))
+                    .filter(|item| file_is_gone(&item.path))
+                    .map(|item| item.id)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let near = self.space_center(id);
+        for item in &gone {
+            // Not `commit`: one of several commands, which the caller
+            // repaints and saves once.
+            self.dispatch(Command::RemoveItem { id: *item }, near);
+            self.forget_item(*item);
+        }
+        gone.len()
     }
 
     pub(super) fn delete_space(&mut self, ui: &mut Ui, id: SpaceId) {

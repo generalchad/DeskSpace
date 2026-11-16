@@ -1,20 +1,39 @@
-//! The item facts the load worker reads again when no icon is waiting: one
+//! The item files the load worker reads again when no icon is waiting: one
 //! batch per space, handed out a file at a time, so an icon request waits for
-//! one read at most. Pure: the worker and the read are in `win32/icons/`.
+//! one read at most. Pure: the worker and the read are in `win32/`.
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
 use deskspace_core::{ItemFacts, ItemId, SpaceId};
 
-/// The facts read for one space's items, as `Command::RefreshItemFacts`
-/// takes them.
-pub type FactBatch = (SpaceId, Vec<(ItemId, ItemFacts)>);
+/// What reading an item's file found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FileState {
+    /// The file is there, with these facts.
+    Present(ItemFacts),
+    /// The file is gone: its drive or share answers, and it is not there.
+    Gone,
+    /// Nothing can be said: the drive is unplugged or not ready, the share
+    /// does not answer, or the read was refused. The file may well be there.
+    Unreachable,
+}
+
+/// What reading one space's items again found. An item whose file could not
+/// be reached is in neither list, so it keeps its place and the facts it has.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FactBatch {
+    pub space: SpaceId,
+    /// The facts of each file that was read, as `Command::RefreshItemFacts`
+    /// takes them.
+    pub facts: Vec<(ItemId, ItemFacts)>,
+    /// The items whose files are gone for certain.
+    pub gone: Vec<ItemId>,
+}
 
 struct Job {
-    space: SpaceId,
     waiting: VecDeque<(ItemId, PathBuf)>,
-    read: Vec<(ItemId, ItemFacts)>,
+    found: FactBatch,
 }
 
 /// The batches waiting to be read, oldest first, and the ones finished.
@@ -29,15 +48,18 @@ pub(crate) struct FactJobs {
 }
 
 impl FactJobs {
-    /// Queues the facts of `space`'s `items`, each with the path to read.
+    /// Queues `space`'s `items`, each with the path to read.
     pub(crate) fn push(&mut self, space: SpaceId, items: Vec<(ItemId, PathBuf)>) {
         if items.is_empty() {
             return;
         }
         self.jobs.push_back(Job {
-            space,
             waiting: items.into(),
-            read: Vec::new(),
+            found: FactBatch {
+                space,
+                facts: Vec::new(),
+                gone: Vec::new(),
+            },
         });
     }
 
@@ -49,15 +71,16 @@ impl FactJobs {
         Some(path)
     }
 
-    /// Notes what the file `next` named holds, leaving out one that could not
-    /// be read (`None`) so a missing file keeps the facts it has. Returns
-    /// whether that finished a batch with something to hand over.
-    pub(crate) fn record(&mut self, facts: Option<ItemFacts>) -> bool {
+    /// Notes what reading the file `next` named found. Returns whether that
+    /// finished a batch with something to hand over.
+    pub(crate) fn record(&mut self, state: FileState) -> bool {
         let (Some(item), Some(job)) = (self.reading.take(), self.jobs.front_mut()) else {
             return false;
         };
-        if let Some(facts) = facts {
-            job.read.push((item, facts));
+        match state {
+            FileState::Present(facts) => job.found.facts.push((item, facts)),
+            FileState::Gone => job.found.gone.push(item),
+            FileState::Unreachable => {}
         }
         if !job.waiting.is_empty() {
             return false;
@@ -65,10 +88,10 @@ impl FactJobs {
         let Some(job) = self.jobs.pop_front() else {
             return false;
         };
-        if job.read.is_empty() {
+        if job.found.facts.is_empty() && job.found.gone.is_empty() {
             return false;
         }
-        self.done.push((job.space, job.read));
+        self.done.push(job.found);
         true
     }
 
@@ -99,19 +122,31 @@ mod tests {
         }
     }
 
+    fn present(size: u64) -> FileState {
+        FileState::Present(sized(size))
+    }
+
+    fn batch(space: SpaceId, facts: &[(u64, u64)], gone: &[u64]) -> FactBatch {
+        FactBatch {
+            space,
+            facts: facts
+                .iter()
+                .map(|(id, size)| (ItemId(*id), sized(*size)))
+                .collect(),
+            gone: gone.iter().map(|id| ItemId(*id)).collect(),
+        }
+    }
+
     #[test]
     fn a_batch_is_handed_over_once_its_last_file_is_read() {
         let mut jobs = FactJobs::default();
         jobs.push(WORK, items(&[(1, "a"), (2, "b")]));
         assert_eq!(jobs.next(), Some(PathBuf::from("a")));
-        assert!(!jobs.record(Some(sized(10))), "one file is still to read");
+        assert!(!jobs.record(present(10)), "one file is still to read");
         assert!(jobs.take_done().is_empty());
         assert_eq!(jobs.next(), Some(PathBuf::from("b")));
-        assert!(jobs.record(Some(sized(20))));
-        assert_eq!(
-            jobs.take_done(),
-            [(WORK, vec![(ItemId(1), sized(10)), (ItemId(2), sized(20))])]
-        );
+        assert!(jobs.record(present(20)));
+        assert_eq!(jobs.take_done(), [batch(WORK, &[(1, 10), (2, 20)], &[])]);
         assert_eq!(jobs.next(), None);
         assert!(jobs.take_done().is_empty(), "each batch is taken once");
     }
@@ -122,31 +157,42 @@ mod tests {
         jobs.push(WORK, items(&[(1, "a")]));
         jobs.push(PLAY, items(&[(2, "b")]));
         assert_eq!(jobs.next(), Some(PathBuf::from("a")));
-        assert!(jobs.record(Some(sized(1))));
+        assert!(jobs.record(present(1)));
         assert_eq!(jobs.next(), Some(PathBuf::from("b")));
-        assert!(jobs.record(Some(sized(2))));
-        let spaces: Vec<SpaceId> = jobs.take_done().into_iter().map(|batch| batch.0).collect();
+        assert!(jobs.record(present(2)));
+        let spaces: Vec<SpaceId> = jobs.take_done().iter().map(|batch| batch.space).collect();
         assert_eq!(spaces, [WORK, PLAY]);
     }
 
     #[test]
-    fn a_file_that_cannot_be_read_is_left_out() {
+    fn a_file_that_is_gone_is_named_and_one_out_of_reach_is_left_out() {
         let mut jobs = FactJobs::default();
-        jobs.push(WORK, items(&[(1, "gone"), (2, "b")]));
+        jobs.push(WORK, items(&[(1, "deleted"), (2, "unplugged"), (3, "c")]));
         jobs.next();
-        assert!(!jobs.record(None));
+        assert!(!jobs.record(FileState::Gone));
         jobs.next();
-        assert!(jobs.record(Some(sized(20))));
-        assert_eq!(jobs.take_done(), [(WORK, vec![(ItemId(2), sized(20))])]);
+        assert!(!jobs.record(FileState::Unreachable));
+        jobs.next();
+        assert!(jobs.record(present(30)));
+        assert_eq!(jobs.take_done(), [batch(WORK, &[(3, 30)], &[1])]);
     }
 
     #[test]
-    fn a_batch_with_nothing_read_is_not_handed_over() {
+    fn a_batch_of_gone_files_alone_is_handed_over() {
         let mut jobs = FactJobs::default();
-        jobs.push(WORK, items(&[(1, "gone")]));
+        jobs.push(WORK, items(&[(1, "deleted")]));
+        jobs.next();
+        assert!(jobs.record(FileState::Gone));
+        assert_eq!(jobs.take_done(), [batch(WORK, &[], &[1])]);
+    }
+
+    #[test]
+    fn a_batch_with_nothing_reached_is_not_handed_over() {
+        let mut jobs = FactJobs::default();
+        jobs.push(WORK, items(&[(1, "unplugged")]));
         jobs.push(PLAY, items(&[(2, "b")]));
         jobs.next();
-        assert!(!jobs.record(None));
+        assert!(!jobs.record(FileState::Unreachable));
         assert!(jobs.take_done().is_empty());
         assert_eq!(jobs.next(), Some(PathBuf::from("b")), "the next batch");
     }
@@ -161,9 +207,9 @@ mod tests {
     #[test]
     fn an_answer_nothing_asked_for_is_ignored() {
         let mut jobs = FactJobs::default();
-        assert!(!jobs.record(Some(sized(1))));
+        assert!(!jobs.record(present(1)));
         jobs.push(WORK, items(&[(1, "a")]));
-        assert!(!jobs.record(Some(sized(1))), "no file was handed out yet");
+        assert!(!jobs.record(present(1)), "no file was handed out yet");
         assert_eq!(jobs.next(), Some(PathBuf::from("a")));
     }
 }

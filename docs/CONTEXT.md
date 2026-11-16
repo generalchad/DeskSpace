@@ -134,11 +134,20 @@ system.
 read with `deskspace_platform::item_facts` (to `Item::new` or
 `Command::AddItem`): `kind`, `size`, `modified`, `compressed`, and
 `encrypted`; tests pass `ItemFacts::default()`. A lens's listing brings
-them again each time. A normal space's are read again at each startup
+them again each time. A normal space's files are read again at each startup
 (`app/facts.rs`): the icon worker reads them once no icon is waiting, a
-file at a time, and hands back one batch per space, without the files it
-could not read. The app applies each batch as a `RefreshItemFacts` outside
-every undo entry, waiting for an open one to finish first. `ItemKind::classify(path, is_folder)` is pure: a
+file at a time, and hands back one batch per space: the facts of each file
+it read, and the items whose files are gone. The app applies each batch
+outside every undo entry, waiting for an open one to finish first: it
+drops the gone items, then writes the facts as one `RefreshItemFacts`.
+
+An item is dropped for its file only when the file is gone for certain
+(`file_is_gone`): the read says "not found" and the path's drive or share
+still answers. An unplugged drive, a share that is down, and a refused
+read all leave the item listed with the facts it has (ROADMAP D3).
+`App::remove_gone` is the one place that decides, for the startup batch
+and for the prune after an item action alike, and it reads the path the
+item has now. `ItemKind::classify(path, is_folder)` is pure: a
 folder, else by extension; a path with no extension is `Other`, and only
 `with_kind` yields `Drive`. `label` defaults to the file stem. `position` is
 the top-left of the item's grid cell **relative to the space's content
@@ -1071,10 +1080,11 @@ in `ui.rs`. What spans them:
    binding in `HOTKEY_BINDINGS`, syncs the desktop "Show spaces" verb and the
    start-with-Windows Run value, reads Explorer's display options and the
    desktop items, applies takeover and start-hidden, creates one window per
-   space with its style and scene, re-flows every space, prunes items whose
-   files are gone, asks the icon worker to read the normal spaces' item facts
-   again, creates a space when `--new-space` could not hand off, and
-   optionally opens settings (`--settings`).
+   space with its style and scene, re-flows every space, asks the icon
+   worker to read the normal spaces' files again (which refreshes their
+   facts and prunes the items whose files are gone, a moment after the
+   spaces appear), creates a space when `--new-space` could not hand off,
+   and optionally opens settings (`--settings`).
 4. Pointer events update selection and hover (re-pushing that space's scene),
    drag spaces through `SetSpaceRect` (moving the window), resize them through
    `ResizeSpace` from the border band, scroll them on the wheel (per-space
@@ -1263,7 +1273,9 @@ section numbers stable.
   files to the desktop; files on another drive stay in place, since a move
   there would copy. Only the Desktop folder is watched (while the layer is drawn), so a stored
   file deleted, moved, or restored by an undo outside DeskSpace stays listed
-  until an item action or the next startup prunes it. A normal space's item
+  until an item action or the next startup prunes it. An item whose drive
+  or share cannot be reached is never pruned, so one whose drive is gone
+  for good stays until the user deletes it. A normal space's item
   facts (its size, dates, and attributes, which sorting, grouping, and
   Details use) are read when the item is added and again at each startup, so
   a file that changes while DeskSpace runs shows its old ones until the next

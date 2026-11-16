@@ -65,7 +65,7 @@ pub(crate) const NEW_SPACE: u32 = WM_APP + 17;
 /// (`--settings`).
 pub(crate) const OPEN_SETTINGS: u32 = WM_APP + 18;
 
-/// The icon worker read a batch of item facts for
+/// The icon worker read a space's items again, for
 /// `IconCache::take_item_facts` to collect.
 pub(crate) const ITEM_FACTS_READ: u32 = WM_APP + 19;
 

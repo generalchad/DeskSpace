@@ -47,6 +47,13 @@ Notable changes to DeskSpace, newest first. The format follows
   file edited since sorted, grouped, and showed in Details by its old size
   and date, and an item added before 0.3.0 had no Date created at all. A
   lens was not affected.
+- An item whose drive is unplugged, or whose network share is down, stays
+  in its space. Starting DeskSpace without the drive used to remove the item
+  for good; now only a file that is really gone takes its item with it.
+- DeskSpace no longer checks every item's file before it shows the spaces,
+  so a slow or sleeping drive does not hold up the start. Items whose files
+  were deleted while DeskSpace was closed disappear a moment after the
+  spaces appear.
 - A new shortcut never replaces a file. If another program put a file of
   the same name in a lens's folder at the moment the shortcut was written,
   the shortcut replaced it; it now takes the next free name, "name (2)".

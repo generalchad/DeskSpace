@@ -232,10 +232,11 @@ impl IconCache {
         users.into_iter().collect()
     }
 
-    /// Asks the load worker to read the facts of `space`'s `items` again,
-    /// each from the path given, behind every icon a scene asks for.
-    /// `Event::ItemFactsRead` says when `take_item_facts` has the batch.
-    /// Without a running UI there is no worker, and nothing is read.
+    /// Asks the load worker to read `space`'s `items` again, each from the
+    /// path given, behind every icon a scene asks for: their facts, and
+    /// whether each file is still there. `Event::ItemFactsRead` says when
+    /// `take_item_facts` has the batch. Without a running UI there is no
+    /// worker, and nothing is read.
     pub fn read_item_facts(&mut self, space: SpaceId, items: Vec<(ItemId, PathBuf)>) {
         if items.is_empty() {
             return;
@@ -247,8 +248,7 @@ impl IconCache {
         worker.ready.notify_one();
     }
 
-    /// Takes the batches of item facts the worker has finished reading, one
-    /// per space, without the files it could not read.
+    /// Takes the batches the worker has finished reading, one per space.
     pub fn take_item_facts(&mut self) -> Vec<FactBatch> {
         match &self.worker {
             Some(worker) => worker.lock().facts.take_done(),
@@ -659,23 +659,36 @@ mod tests {
 
     #[test]
     fn item_facts_asked_for_come_back_as_one_batch_per_space() {
+        use crate::fact_jobs::FileState;
         use deskspace_core::ItemFacts;
 
         let mut cache = cache_with_queue();
         assert!(cache.take_item_facts().is_empty());
-        cache.read_item_facts(SpaceId(7), vec![(ItemId(1), PathBuf::from("a"))]);
+        cache.read_item_facts(
+            SpaceId(7),
+            vec![
+                (ItemId(1), PathBuf::from("a")),
+                (ItemId(2), PathBuf::from("deleted")),
+            ],
+        );
         let facts = ItemFacts {
             size: Some(12),
             ..ItemFacts::default()
         };
-        // Play the worker: read the one file and record what it held.
+        // Play the worker: read each file and record what it found.
         let worker = cache.worker.clone().expect("a worker");
         assert_eq!(worker.lock().facts.next(), Some(PathBuf::from("a")));
+        assert!(!worker.lock().facts.record(FileState::Present(facts)));
         assert!(cache.take_item_facts().is_empty(), "still being read");
-        assert!(worker.lock().facts.record(Some(facts)));
+        assert_eq!(worker.lock().facts.next(), Some(PathBuf::from("deleted")));
+        assert!(worker.lock().facts.record(FileState::Gone));
         assert_eq!(
             cache.take_item_facts(),
-            [(SpaceId(7), vec![(ItemId(1), facts)])]
+            [FactBatch {
+                space: SpaceId(7),
+                facts: vec![(ItemId(1), facts)],
+                gone: vec![ItemId(2)],
+            }]
         );
         assert!(cache.take_item_facts().is_empty(), "each is taken once");
     }
