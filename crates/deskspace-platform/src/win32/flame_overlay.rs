@@ -67,11 +67,12 @@ impl FlameOverlay {
 /// Where the overlay goes for a space at `rect` (screen coordinates): with
 /// room beside and above the space for the flames to rise into.
 fn overlay_rect(rect: Rect) -> Rect {
+    let (width, height) = flames::overlay_size(rect.width as u32, rect.height as u32);
     Rect::new(
         rect.x - MARGIN_SIDE as i32,
         rect.y - MARGIN_TOP as i32,
-        rect.width + 2 * MARGIN_SIDE as i32,
-        rect.height + MARGIN_TOP as i32,
+        width as i32,
+        height as i32,
     )
 }
 

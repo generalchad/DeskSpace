@@ -2,6 +2,8 @@ pub mod burn;
 pub(crate) mod color_picker;
 pub mod d2d;
 pub mod dissolve;
+#[cfg(test)]
+mod effect_sheet;
 pub mod flames;
 pub(crate) mod glyph;
 pub(crate) mod highlight;

@@ -13,6 +13,14 @@ pub const MARGIN_TOP: u32 = 72;
 /// A flame every this many burn cells along the front.
 pub const SPACING: u32 = 5;
 
+/// The pixel size of the overlay a space `width` by `height` pixels burns on:
+/// the space plus the room beside and above it the flames rise into. The
+/// window that hosts the overlay and a composed frame (`effect_sheet`) both
+/// take their size from here, so they cannot disagree.
+pub fn overlay_size(width: u32, height: u32) -> (u32, u32) {
+    (width + 2 * MARGIN_SIDE, height + MARGIN_TOP)
+}
+
 /// A flame's height as a share of the space's, and its limits in pixels.
 const HEIGHT_SHARE: f32 = 0.2;
 const HEIGHT_RANGE: (f32, f32) = (18.0, 60.0);
@@ -327,6 +335,15 @@ mod tests {
             row,
             heat: 1.0,
         }
+    }
+
+    #[test]
+    fn the_overlay_leaves_room_beside_and_above_the_space() {
+        assert_eq!(
+            overlay_size(300, 200),
+            (300 + 2 * MARGIN_SIDE, 200 + MARGIN_TOP)
+        );
+        assert_eq!(overlay_size(1, 1), (1 + 2 * MARGIN_SIDE, 1 + MARGIN_TOP));
     }
 
     #[test]

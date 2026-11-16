@@ -23,7 +23,7 @@ are collected in section V instead of blocking:
 - section G (settings window polish): the pure half of G13;
 - section K (K10-K13, K15), each a pure move with rules that
   leave nothing to design;
-- section T: T42, and T26-T31 in order, then T44 and T46-T48;
+- section T: T26-T31 in order, then T44 and T46-T48;
 - O5 and the O6-O9 harness abilities;
 - anything else not marked **[needs decision]**, "still to design", or in
   section D.
@@ -1248,11 +1248,11 @@ Planned 2026-11-05. Burn's upgrade (T25-T33 below) waits on groundwork that
 was built on `feat/color-picker-redesign`, 330 commits behind `main`, and
 never ported. The same branch built two kinds of smoke, Burn's plume and a
 Smoke effect of its own, and left both tuned only for the debug window;
-`main` has neither, and D12 does not list them. T41 ports the groundwork,
-T42 lets anyone, an agent included, judge a frame without a screen. How
-smoke comes back was decided on 2026-11-05 (T43, archived; D12 amended):
-Burn's plume is part of Burn, always on, and Smoke is its own effect,
-shown only in the debug window until its look is approved.
+`main` has neither, and D12 does not list them. T41 ported the groundwork, and
+T42's contact sheet lets anyone, an agent included, judge a frame without a
+screen. How smoke comes back was decided on 2026-11-05 (T43, archived; D12
+amended): Burn's plume is part of Burn, always on, and Smoke is its own
+effect, shown only in the debug window until its look is approved.
 
 Rules for these, on top of section T's:
 
@@ -1263,34 +1263,13 @@ Rules for these, on top of section T's:
    origin/feat/color-picker-redesign:<path>`, keep `main`'s design wherever
    the two differ, and bring over only what the task names. Never merge or
    cherry-pick the branch.
-2. **Look before the human check.** From T42 on, each task that changes a
-   look writes T42's sheets before and after, and the commit body says what
-   changed in them. The **[needs human]** check still decides.
-
-- [ ] **T42. A contact sheet for Burn (platform; test tool).** **(junior)**
-  - Why: no one can judge Burn without a person at the screen, and every
-    look task below asks for that judgement. A picture of frames lets a
-    contributor, or an agent that can read an image, compare before and after
-    in seconds.
-  - Move the WIC PNG writing out of the ignored `render_preview` test
-    (`render/d2d/color_picker/mod.rs`) into a `#[cfg(test)]` helper both use.
-  - A new `#[cfg(test)]` module, `render/effect_sheet.rs`, composes a frame on
-    the CPU as the screen would: a sample space (its tint plus a few item-sized
-    squares and a title band), masked by the burn's paper pixels and covered by
-    its marks (bilinear between cells, as the painter draws them), with the
-    flame overlay's pixels on top at its margins, over a mid-gray backdrop.
-  - An ignored test, `burn_sheet`, writes one PNG per case to `%TEMP%`
-    (`deskspace-burn-<case>.png`): a grid of nine frames, gone 0.1 to 0.9,
-    with the clock at 0.05 s per frame. Cases: 320 × 240 and 1200 × 900 at
-    96 DPI, and 320 × 240 at 144 DPI once T26 has landed. Run it with
-    `cargo test -p deskspace-platform burn_sheet -- --ignored`.
-  - Tests: the composer's pure parts (a fully gone cell shows the backdrop, a
-    whole one shows the space).
-  - Done when: the sheets are written, and the commit body describes them.
-    Commit no PNG.
+2. **Look before the human check.** Each task that changes a look runs the
+   Burn contact sheet (`cargo test -p deskspace-platform burn_sheet --
+   --ignored`) before and after, and the commit body says what changed in the
+   pictures. The **[needs human]** check still decides.
 
 - [ ] **T44. Burn's smoke (platform).** **(junior, senior review)**
-  **[needs human]** After: T42 and T31.
+  **[needs human]** After: T31.
   - The senior review is for the port: say in the commit body what was kept
     from the branch's version and what was left, and why.
   - Pure, in `render/burn_smoke.rs`; read the branch's version first and
@@ -1361,7 +1340,7 @@ Rules for these, on top of section T's:
     picks along its climb: its brightness doubles, capped at 255, for
     `FLARE_PX` (6 px times the scale) of the climb. `FLARE_SALT` is a named
     constant. These numbers are a first guess (2026-11-07); tune them on
-    T42's sheet and say so in the commit body.
+    Burn's contact sheet and say so in the commit body.
   - Tests: the same inputs give the same pixels; a spark is cooler the higher
     it is; a flaring spark is brighter at its flare than just before it;
     pixels stay premultiplied and inside the buffer.

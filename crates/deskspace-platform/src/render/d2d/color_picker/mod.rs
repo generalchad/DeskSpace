@@ -595,13 +595,12 @@ unsafe fn paint_footer(pen: &Pen, view: &PickerView, layout: &PickerLayout) {
 
 #[cfg(test)]
 mod tests {
-    use windows::Win32::Foundation::GENERIC_WRITE;
-    use windows::Win32::Graphics::Imaging::{GUID_ContainerFormatPng, WICBitmapEncoderNoCache};
     use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
 
     use super::*;
     use crate::edit::TextEdit;
     use crate::render::color_picker::ValueFormat;
+    use crate::render::d2d::png;
 
     /// Renders the picker, dark and light, to PNGs in the temp folder, so its
     /// look can be checked without a screen. Opaque, since an offscreen
@@ -674,27 +673,7 @@ mod tests {
 
                 let name = if dark { "dark" } else { "light" };
                 let path = std::env::temp_dir().join(format!("deskspace-color-picker-{name}.png"));
-                let wide = crate::win32::system::wide(&path.to_string_lossy());
-                let stream = graphics.wic.CreateStream().unwrap();
-                stream
-                    .InitializeFromFilename(PCWSTR(wide.as_ptr()), GENERIC_WRITE.0)
-                    .unwrap();
-                let encoder = graphics
-                    .wic
-                    .CreateEncoder(&GUID_ContainerFormatPng, std::ptr::null())
-                    .unwrap();
-                encoder
-                    .Initialize(&stream, WICBitmapEncoderNoCache)
-                    .unwrap();
-                let mut frame = None;
-                encoder
-                    .CreateNewFrame(&mut frame, std::ptr::null_mut())
-                    .unwrap();
-                let frame = frame.unwrap();
-                frame.Initialize(None).unwrap();
-                frame.WriteSource(&bitmap, std::ptr::null()).unwrap();
-                frame.Commit().unwrap();
-                encoder.Commit().unwrap();
+                png::write_png(&bitmap, &path).unwrap();
                 println!("{}", path.display());
             }
         }

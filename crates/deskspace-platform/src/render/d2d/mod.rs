@@ -20,6 +20,8 @@ mod glyph;
 mod graphics;
 mod item;
 mod label_lines;
+#[cfg(test)]
+pub(crate) mod png;
 mod prepared;
 mod title;
 mod zoom_bar;
