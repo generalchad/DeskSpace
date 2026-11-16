@@ -846,8 +846,10 @@ one arm in `App::on_event`, whose match is exhaustive.
   (`win32/overlay.rs`). An effect's row may stretch the chosen duration, which
   the app applies when it makes the `Play`. A frame rewrites only what its
   progress changed: Burn fills and uploads the field rows its front crossed
-  and draws only the band of cells it marks. `TASKS.md` section T has the
-  recipe.
+  and draws only the band of cells it marks. Burn's cells, its flames'
+  margins, and the flames themselves scale with the window's DPI, so the
+  effect looks the same on a 150 % display, only bigger. `TASKS.md` section T
+  has the recipe.
 - The zoom pop-up is its own topmost, never-activated window using the space
   material; `win32/zoom_bar.rs` and `render/zoom_bar.rs` own it.
 

@@ -104,12 +104,16 @@ pub struct Geometry {
     pub rolled: Rect,
     /// The work area of the window's monitor; Fly and Bounce never leave it.
     pub work_area: Rect,
+    /// The window's display DPI. Burn's cells, its flames' margins, and the
+    /// flames themselves scale with it, so the effect looks the same at every
+    /// scale, only bigger or smaller.
+    pub dpi: u32,
 }
 
 impl Geometry {
     /// A window that hides and shows (or comes and goes) with `play`: Roll
     /// collapses it into the play's side, and Fly and Bounce use `work_area`.
-    pub fn for_visibility(rect: Rect, work_area: Rect, play: &Play) -> Self {
+    pub fn for_visibility(rect: Rect, work_area: Rect, play: &Play, dpi: u32) -> Self {
         let rolled = match play.side(rect, work_area) {
             Side::Top => Rect::new(rect.x, rect.y, rect.width, 0),
             Side::Bottom => Rect::new(rect.x, rect.bottom(), rect.width, 0),
@@ -120,15 +124,17 @@ impl Geometry {
             rect,
             rolled,
             work_area,
+            dpi,
         }
     }
 
     /// A space folding between `unfolded` and its title bar, `folded`.
-    pub fn for_fold(unfolded: Rect, folded: Rect, work_area: Rect) -> Self {
+    pub fn for_fold(unfolded: Rect, folded: Rect, work_area: Rect, dpi: u32) -> Self {
         Self {
             rect: unfolded,
             rolled: folded,
             work_area,
+            dpi,
         }
     }
 }
@@ -153,12 +159,13 @@ pub enum Mask {
         grain: u8,
     },
     /// Paper burning up from the bottom (`render::burn`): `front` is how far
-    /// the burn has got, `detail` how ragged its edge is, and `seed` which
-    /// burn shape it takes.
+    /// the burn has got, `detail` how ragged its edge is, `seed` which burn
+    /// shape it takes, and `dpi` the display whose cells it burns at.
     Burn {
         front: f32,
         detail: u8,
         seed: u32,
+        dpi: u32,
     },
 }
 
@@ -440,6 +447,7 @@ fn frame(play: &Play, geometry: &Geometry, shown: f32) -> TransitionFrame {
                 front: burn::front(gone),
                 detail: play.detail,
                 seed: play.seed,
+                dpi: geometry.dpi,
             },
             ..whole
         },
@@ -580,7 +588,7 @@ mod tests {
     }
 
     fn geometry_for(play: &Play) -> Geometry {
-        Geometry::for_visibility(Rect::new(300, 100, 240, 160), work_area(), play)
+        Geometry::for_visibility(Rect::new(300, 100, 240, 160), work_area(), play, 96)
     }
 
     fn start(effect: Effect, way: Way) -> Transition {
@@ -851,7 +859,7 @@ mod tests {
     fn a_fold_stops_at_the_title_bar() {
         let unfolded = Rect::new(300, 100, 240, 160);
         let title = Rect::new(300, 100, 240, 28);
-        let geometry = Geometry::for_fold(unfolded, title, work_area());
+        let geometry = Geometry::for_fold(unfolded, title, work_area(), 96);
         let fold = Transition::new(play(Effect::Roll, Way::Out), geometry, Duration::ZERO);
         assert_eq!(fold.frame(ms(200)).rect, title);
         assert!(!is_gone(&fold.frame(ms(200))));
@@ -861,7 +869,7 @@ mod tests {
     fn fly_leaves_by_the_nearest_edge_and_never_leaves_the_work_area() {
         let near_right = Rect::new(1600, 400, 240, 160);
         let fly = play(Effect::Fly, Way::Out);
-        let geometry = Geometry::for_visibility(near_right, work_area(), &fly);
+        let geometry = Geometry::for_visibility(near_right, work_area(), &fly, 96);
         let transition = Transition::new(fly, geometry, Duration::ZERO);
         for step in 0..=40 {
             let frame = transition.frame(ms(step * 5));
@@ -1035,5 +1043,17 @@ mod tests {
             transition.frame(ms(140)).mask,
             Mask::Burn { seed: 42, .. }
         ));
+    }
+
+    #[test]
+    fn burn_carries_the_windows_dpi() {
+        let play = play(Effect::Burn, Way::Out);
+        let geometry =
+            Geometry::for_visibility(Rect::new(300, 100, 240, 160), work_area(), &play, 144);
+        let frame = Transition::new(play, geometry, Duration::ZERO).frame(ms(100));
+        assert!(
+            matches!(frame.mask, Mask::Burn { dpi: 144, .. }),
+            "the field burns at the window's scale"
+        );
     }
 }

@@ -79,8 +79,8 @@ only prints what it would do. Never run a copy with the real steps in place.
   storage, and the per-user registry entries. Always use it when testing;
   `dev.ps1` does by default.
 - The Burn contact sheet (`burn_sheet`) composes nine frames of a burn on the
-  CPU and writes `%TEMP%\deskspace-burn-320x240.png` and
-  `%TEMP%\deskspace-burn-1200x900.png`:
+  CPU and writes one PNG per case to `%TEMP%` (`deskspace-burn-320x240.png`,
+  `-1200x900`, and `-320x240-144dpi`):
   `cargo test -p deskspace-platform burn_sheet -- --ignored`. It shows what
   Burn looks like without a screen, so compare its pictures before and after a
   change to Burn's paint.

@@ -43,12 +43,12 @@ pub(crate) enum Overlay {
 
 impl Overlay {
     /// The overlay `play`'s effect draws on, for the space window `owner` at
-    /// `rect` (screen coordinates). `None` for an effect with none, or when
-    /// Windows refuses the window.
-    pub(crate) fn for_play(owner: HWND, rect: Rect, play: &Play) -> Option<Self> {
+    /// `rect` (screen coordinates) on a display of `dpi`. `None` for an
+    /// effect with none, or when Windows refuses the window.
+    pub(crate) fn for_play(owner: HWND, rect: Rect, dpi: u32, play: &Play) -> Option<Self> {
         match kind_for(play.effect)? {
             OverlayKind::Flames => {
-                FlameOverlay::create(owner, rect, play.detail, play.seed).map(Self::Flames)
+                FlameOverlay::create(owner, rect, dpi, play.detail, play.seed).map(Self::Flames)
             }
         }
     }

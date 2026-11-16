@@ -137,11 +137,12 @@ struct NoiseMask {
     shown: CellMask,
 }
 
-/// Burn's paper: one pixel per `burn::CELL`-sized cell, drawn smoothly.
+/// Burn's paper: one pixel per cell-sized pixel (`burn::cell_px`), drawn
+/// smoothly.
 struct BurnMask {
     field: BurnField,
-    /// The space size, detail, and seed it was made for.
-    made_for: ((f32, f32), u8, u32),
+    /// The space size, detail, seed, and DPI it was made for.
+    made_for: ((f32, f32), u8, u32, u32),
     /// Where the paper still shows: the contents' opacity mask.
     paper: CellMask,
     /// The glowing edge, the char, and the scorch, laid over the paper.
@@ -223,8 +224,9 @@ impl Effects {
                 front,
                 detail,
                 seed,
+                dpi,
             } => {
-                let burn = self.burn(target, detail, size, seed)?;
+                let burn = self.burn(target, detail, size, seed, dpi)?;
                 let rows = match burn.front {
                     Some(previous) => burn.field.rows_changed(previous, front),
                     None => Some(0..burn.field.grid().rows),
@@ -270,20 +272,22 @@ impl Effects {
         detail: u8,
         size: (f32, f32),
         seed: u32,
+        dpi: u32,
     ) -> Result<&mut BurnMask, PlatformError> {
-        let made_for = (size, detail, seed);
+        let made_for = (size, detail, seed, dpi);
         if self
             .burn
             .as_ref()
             .is_none_or(|burn| burn.made_for != made_for)
         {
-            let field = BurnField::for_space(size, detail, seed);
+            let field = BurnField::for_space(size, detail, seed, dpi);
             let grid = field.grid();
+            let cell = burn::cell_px(dpi);
             self.burn = Some(BurnMask {
                 field,
                 made_for,
-                paper: CellMask::new(target, grid, burn::CELL, SMOOTH)?,
-                marks: CellMask::new(target, grid, burn::CELL, SMOOTH)?,
+                paper: CellMask::new(target, grid, cell, SMOOTH)?,
+                marks: CellMask::new(target, grid, cell, SMOOTH)?,
                 front: None,
                 marked_rows: 0..0,
             });

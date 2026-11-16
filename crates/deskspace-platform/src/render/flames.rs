@@ -3,22 +3,30 @@
 //! past the space's frame, shaded on the CPU into premultiplied pixels for a
 //! layered overlay window. Pure, so the layout and the shading are tested.
 
-use super::burn::{self, FlameBase};
+use super::burn::FlameBase;
 use super::math;
 
 /// How much room the overlay keeps beside and above the space for flames to
-/// rise into, in pixels.
-pub const MARGIN_SIDE: u32 = 24;
-pub const MARGIN_TOP: u32 = 72;
+/// rise into, in pixels at 96 DPI; `margins` scales them for a display.
+const MARGIN_SIDE: u32 = 24;
+const MARGIN_TOP: u32 = 72;
 /// A flame every this many burn cells along the front.
 pub const SPACING: u32 = 5;
 
-/// The pixel size of the overlay a space `width` by `height` pixels burns on:
-/// the space plus the room beside and above it the flames rise into. The
-/// window that hosts the overlay and a composed frame (`effect_sheet`) both
-/// take their size from here, so they cannot disagree.
-pub fn overlay_size(width: u32, height: u32) -> (u32, u32) {
-    (width + 2 * MARGIN_SIDE, height + MARGIN_TOP)
+/// The overlay's margins beside and above the space, in pixels, at `dpi`:
+/// `MARGIN_SIDE` and `MARGIN_TOP` at 96 DPI, scaled and rounded.
+pub fn margins(dpi: u32) -> (u32, u32) {
+    let dpi = dpi.max(1);
+    ((MARGIN_SIDE * dpi + 48) / 96, (MARGIN_TOP * dpi + 48) / 96)
+}
+
+/// The pixel size of the overlay a space `width` by `height` pixels at `dpi`
+/// burns on: the space plus the room beside and above it the flames rise
+/// into. The window that hosts the overlay and a composed frame
+/// (`effect_sheet`) both take their size from here, so they cannot disagree.
+pub fn overlay_size(width: u32, height: u32, dpi: u32) -> (u32, u32) {
+    let (side, top) = margins(dpi);
+    (width + 2 * side, height + top)
 }
 
 /// A flame's height as a share of the space's, and its limits in pixels.
@@ -97,14 +105,27 @@ pub struct Tongue {
     pub heat: f32,
     /// Its own flicker, so neighbours do not move in step.
     pub phase: f32,
+    /// The display it was made for, `dpi / 96`: the ember it throws is this
+    /// much bigger.
+    pub scale: f32,
 }
 
 /// The tongues standing on `bases` at `time` (seconds) for a space
-/// `space_height` tall, into `tongues`. The space's top-left is at
-/// (`MARGIN_SIDE`, `MARGIN_TOP`) in the overlay.
-pub fn tongues(bases: &[FlameBase], space_height: f32, time: f32, tongues: &mut Vec<Tongue>) {
+/// `space_height` tall, into `tongues`. The space's top-left is at (`side`,
+/// `top`) in the overlay and its burn cells are `cell` pixels square; `scale`
+/// is the display's (`dpi / 96`), which sizes the flames.
+pub fn tongues(
+    bases: &[FlameBase],
+    space_height: f32,
+    (side, top): (u32, u32),
+    cell: u32,
+    time: f32,
+    scale: f32,
+    tongues: &mut Vec<Tongue>,
+) {
     tongues.clear();
-    let tallest = (space_height * HEIGHT_SHARE).clamp(HEIGHT_RANGE.0, HEIGHT_RANGE.1);
+    let tallest =
+        (space_height * HEIGHT_SHARE).clamp(HEIGHT_RANGE.0 * scale, HEIGHT_RANGE.1 * scale);
     tongues.extend(bases.iter().map(|base| {
         let phase = phase_of(base.col);
         let waves = (time * FLICKER_RATES.0 + phase).sin()
@@ -112,12 +133,13 @@ pub fn tongues(bases: &[FlameBase], space_height: f32, time: f32, tongues: &mut 
         let flicker = FLICKER_BASE + FLICKER_DEPTH * waves;
         let height = tallest * (1.0 - HEAT_HEIGHT + HEAT_HEIGHT * base.heat) * flicker;
         Tongue {
-            x: MARGIN_SIDE as f32 + (base.col * burn::CELL) as f32 + burn::CELL as f32 / 2.0,
-            y: MARGIN_TOP as f32 + (base.row * burn::CELL) as f32 + burn::CELL as f32,
+            x: side as f32 + (base.col * cell) as f32 + cell as f32 / 2.0,
+            y: top as f32 + (base.row * cell) as f32 + cell as f32,
             height,
             width: height * WIDTH_SHARE,
             heat: base.heat,
             phase,
+            scale,
         }
     }));
 }
@@ -273,17 +295,26 @@ fn paint_ember(
     if x >= width || y >= height {
         return Rows::NONE;
     }
-    for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
-        let (px, py) = (x + dx, y + dy);
-        if px < width && py < height {
-            let pixel = &mut pixels[(py * width + px) as usize];
-            *pixel = brightest(*pixel, fire(EMBER_HEAT * fade));
+    let size = ember_px(tongue.scale);
+    for dy in 0..size {
+        for dx in 0..size {
+            let (px, py) = (x + dx, y + dy);
+            if px < width && py < height {
+                let pixel = &mut pixels[(py * width + px) as usize];
+                *pixel = brightest(*pixel, fire(EMBER_HEAT * fade));
+            }
         }
     }
     Rows {
         top: y,
-        bottom: (y + 2).min(height),
+        bottom: (y + size).min(height),
     }
+}
+
+/// The side of an ember's square at `scale`, in pixels: two at 100 %, three
+/// at 200 %, never less than one.
+fn ember_px(scale: f32) -> u32 {
+    (2.0 * scale).round().max(1.0) as u32
 }
 
 /// Fire's color at `heat` (0 to 1), premultiplied, faint where it is cool.
@@ -328,6 +359,7 @@ fn phase_of(col: u32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::render::burn;
 
     fn base(col: u32, row: u32) -> FlameBase {
         FlameBase {
@@ -339,24 +371,71 @@ mod tests {
 
     #[test]
     fn the_overlay_leaves_room_beside_and_above_the_space() {
-        assert_eq!(
-            overlay_size(300, 200),
-            (300 + 2 * MARGIN_SIDE, 200 + MARGIN_TOP)
-        );
-        assert_eq!(overlay_size(1, 1), (1 + 2 * MARGIN_SIDE, 1 + MARGIN_TOP));
+        let (side, top) = margins(96);
+        assert_eq!((side, top), (24, 72));
+        assert_eq!(overlay_size(300, 200, 96), (300 + 2 * side, 200 + top));
+        assert_eq!(overlay_size(1, 1, 96), (1 + 2 * side, 1 + top));
+        assert_eq!(margins(144), (36, 108), "1.5 times the 96-DPI margins");
+        assert_eq!(margins(192), (48, 144));
+        assert_eq!(margins(1), (0, 1), "rounds down to a whole pixel");
     }
 
     #[test]
     fn tongues_stand_on_their_bases_inside_the_overlay() {
+        let (side, top) = margins(96);
+        let cell = burn::cell_px(96);
         let mut out = Vec::new();
-        tongues(&[base(0, 10), base(20, 4)], 200.0, 0.5, &mut out);
+        tongues(
+            &[base(0, 10), base(20, 4)],
+            200.0,
+            (side, top),
+            cell,
+            0.5,
+            1.0,
+            &mut out,
+        );
         assert_eq!(out.len(), 2);
-        assert_eq!(out[0].y, (MARGIN_TOP + 11 * burn::CELL) as f32);
-        assert!(out[0].x > MARGIN_SIDE as f32);
+        assert_eq!(out[0].y, (top + 11 * cell) as f32);
+        assert!(out[0].x > side as f32);
         for tongue in &out {
             assert!((HEIGHT_RANGE.0 * 0.4..=HEIGHT_RANGE.1).contains(&tongue.height));
             assert!(tongue.height < tongue.y, "room above to rise into");
         }
+    }
+
+    #[test]
+    fn the_flames_grow_with_the_display_scale() {
+        // The same space on a 200 % display: twice the pixels, twice the
+        // cells, and the same base index, so the tongue should be twice the
+        // size at twice the distance from the overlay's corner.
+        let mut at_100 = Vec::new();
+        let mut at_200 = Vec::new();
+        tongues(
+            &[base(4, 10)],
+            200.0,
+            margins(96),
+            burn::cell_px(96),
+            0.3,
+            1.0,
+            &mut at_100,
+        );
+        tongues(
+            &[base(4, 10)],
+            400.0,
+            margins(192),
+            burn::cell_px(192),
+            0.3,
+            2.0,
+            &mut at_200,
+        );
+        let (small, large) = (at_100[0], at_200[0]);
+        assert!((large.height - 2.0 * small.height).abs() < 1e-3);
+        assert!((large.width - 2.0 * small.width).abs() < 1e-3);
+        assert!((large.x - 2.0 * small.x).abs() < 1e-3);
+        assert!((large.y - 2.0 * small.y).abs() < 1e-3);
+        assert_eq!(ember_px(1.0), 2);
+        assert_eq!(ember_px(2.0), 4);
+        assert_eq!(ember_px(0.4), 1, "never a zero-pixel ember");
     }
 
     #[test]
@@ -370,6 +449,7 @@ mod tests {
             width: 20.0,
             heat: 1.0,
             phase: 0.0,
+            scale: 1.0,
         };
         let mut drawn = Rows::ALL;
         paint(&mut pixels, width, height, &[tongue], 0.0, &mut drawn);
@@ -395,6 +475,7 @@ mod tests {
             width: 16.0,
             heat: 0.8,
             phase: 1.0,
+            scale: 1.0,
         };
         let mut first = vec![0; (width * height) as usize];
         let mut second = vec![1; (width * height) as usize];
@@ -434,6 +515,7 @@ mod tests {
                 width: 25.0,
                 heat: 1.0,
                 phase: index as f32,
+                scale: 1.0,
             })
             .collect();
         let mut drawn = Rows::ALL;
@@ -527,11 +609,14 @@ mod tests {
             return;
         }
         let (x, y) = (x as u32, y as u32);
-        for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
-            let (px, py) = (x + dx, y + dy);
-            if px < width && py < height {
-                let pixel = &mut pixels[(py * width + px) as usize];
-                *pixel = brightest(*pixel, fire(EMBER_HEAT * fade));
+        let size = ember_px(tongue.scale);
+        for dy in 0..size {
+            for dx in 0..size {
+                let (px, py) = (x + dx, y + dy);
+                if px < width && py < height {
+                    let pixel = &mut pixels[(py * width + px) as usize];
+                    *pixel = brightest(*pixel, fire(EMBER_HEAT * fade));
+                }
             }
         }
     }
@@ -551,6 +636,7 @@ mod tests {
                 width: rise * WIDTH_SHARE,
                 heat: 0.3 + 0.06 * index as f32,
                 phase: 0.7 * index as f32,
+                scale: 1.0,
             }
         });
         let clump = (0..5).map(|index| Tongue {
@@ -560,6 +646,7 @@ mod tests {
             width: 24.0,
             heat: 1.0 - 0.15 * index as f32,
             phase: 1.3 * index as f32,
+            scale: 1.0,
         });
         let feet = [
             (0.0, 0.0),
@@ -575,6 +662,7 @@ mod tests {
             width: 25.0,
             heat: 1.0,
             phase: index as f32,
+            scale: 1.0,
         });
         vec![row.collect(), clump.collect(), edges.collect(), Vec::new()]
     }
@@ -604,8 +692,10 @@ mod tests {
     #[test]
     fn a_burn_through_one_buffer_gives_the_reference_frames() {
         let space = (300.0, 200.0);
-        let (width, height) = (300 + 2 * MARGIN_SIDE, 200 + MARGIN_TOP);
-        let field = burn::BurnField::for_space(space, 5, 0);
+        let (side, top) = margins(96);
+        let cell = burn::cell_px(96);
+        let (width, height) = (300 + 2 * side, 200 + top);
+        let field = burn::BurnField::for_space(space, 5, 0, 96);
         let (mut bases, mut flames) = (Vec::new(), Vec::new());
         let mut pixels = vec![7; (width * height) as usize];
         let mut expected = vec![0; (width * height) as usize];
@@ -614,7 +704,7 @@ mod tests {
         for frame in 0..60 {
             let time = frame as f32 / 60.0;
             field.flame_bases(burn::front(frame as f32 / 59.0), SPACING, &mut bases);
-            tongues(&bases, space.1, time, &mut flames);
+            tongues(&bases, space.1, (side, top), cell, time, 1.0, &mut flames);
             burning += usize::from(!flames.is_empty());
             paint(&mut pixels, width, height, &flames, time, &mut drawn);
             reference_paint(&mut expected, width, height, &flames, time);
@@ -654,6 +744,7 @@ mod tests {
             width: 12.0,
             heat: 1.0,
             phase: 0.0,
+            scale: 1.0,
         };
         paint(&mut pixels, width, height, &[tongue], 0.0, &mut drawn);
         assert!(drawn.bottom < height, "the flames stop above the last row");

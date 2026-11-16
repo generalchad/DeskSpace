@@ -25,6 +25,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::render::{Geometry, Play, PreparedScene, Transition, TransitionFrame, Way};
+use crate::win32::dpi::window_dpi;
 use crate::win32::frame_clock;
 use crate::win32::overlay::Overlay;
 use crate::win32::runtime;
@@ -186,7 +187,12 @@ impl<S> Playing<S> {
     /// showing, or dying window ends up there instead, keeping its progress
     /// (`work_area_at` gives the work area of the monitor at a point); a
     /// fold heading there carries on, and any other rect ends a fold.
-    fn retarget(&mut self, rect: Rect, work_area_at: impl FnOnce(Point) -> Rect) -> Retarget {
+    fn retarget(
+        &mut self,
+        rect: Rect,
+        dpi: u32,
+        work_area_at: impl FnOnce(Point) -> Rect,
+    ) -> Retarget {
         if self.is_fold() {
             return if self.end_rect() == rect {
                 Retarget::Taken
@@ -195,7 +201,7 @@ impl<S> Playing<S> {
             };
         }
         let play = self.transition.play();
-        let geometry = Geometry::for_visibility(rect, work_area_at(rect.center()), &play);
+        let geometry = Geometry::for_visibility(rect, work_area_at(rect.center()), &play, dpi);
         self.transition.set_geometry(geometry);
         Retarget::Taken
     }
@@ -326,7 +332,8 @@ pub(crate) unsafe fn set_visible(window: HWND, visible: bool, play: Play) {
         }
         return;
     }
-    let geometry = Geometry::for_visibility(rect, work_area_at(rect.center()), &play);
+    let geometry =
+        Geometry::for_visibility(rect, work_area_at(rect.center()), &play, window_dpi(window));
     let purpose = Purpose::Visibility { then: None };
     // SAFETY: the caller's contract.
     unsafe { start(window, Play { way, ..play }, geometry, purpose) };
@@ -407,9 +414,10 @@ pub(crate) unsafe fn fold(window: HWND, rect: Rect, play: Play) {
         return;
     }
     let work_area = work_area_at(rect.center());
+    let dpi = window_dpi(window);
     let geometry = match play.way {
-        Way::Out => Geometry::for_fold(current, rect, work_area),
-        Way::In => Geometry::for_fold(rect, current, work_area),
+        Way::Out => Geometry::for_fold(current, rect, work_area, dpi),
+        Way::In => Geometry::for_fold(rect, current, work_area, dpi),
     };
     let purpose = Purpose::Fold { deferred: None };
     // SAFETY: the caller's contract.
@@ -440,7 +448,8 @@ pub(crate) unsafe fn dismiss(window: HWND, play: Play) {
         unsafe { destroy(window) };
         return;
     };
-    let geometry = Geometry::for_visibility(rect, work_area_at(rect.center()), &play);
+    let geometry =
+        Geometry::for_visibility(rect, work_area_at(rect.center()), &play, window_dpi(window));
     let play = Play {
         way: Way::Out,
         ..play
@@ -502,7 +511,7 @@ unsafe fn start(window: HWND, mut play: Play, geometry: Geometry, purpose: Purpo
     play.seed = next_seed(now);
     let mut playing = Playing::new(play, geometry, purpose, now);
     let step = playing.step(now);
-    let overlay = Overlay::for_play(window, geometry.rect, &play);
+    let overlay = Overlay::for_play(window, geometry.rect, geometry.dpi, &play);
     let flat_material = transparency_enabled() == Some(false);
     // Every caller ends a running animation first. One left over is dropped
     // here, outside the borrow and before the new subscription, which its
@@ -555,18 +564,19 @@ unsafe fn follow_overlay(window: HWND, rect: Rect) {
     let taken = unsafe {
         with_animation(window, |animation| {
             let play = animation.playing.transition.play();
-            animation.overlay.take().map(|overlay| (overlay, play))
+            let dpi = animation.playing.transition.geometry().dpi;
+            animation.overlay.take().map(|overlay| (overlay, play, dpi))
         })
     }
     .flatten();
-    let Some((mut overlay, play)) = taken else {
+    let Some((mut overlay, play, dpi)) = taken else {
         return;
     };
     let overlay = if overlay.follow(rect) {
         Some(overlay)
     } else {
         drop(overlay);
-        Overlay::for_play(window, rect, &play)
+        Overlay::for_play(window, rect, dpi, &play)
     };
     // SAFETY: as above.
     unsafe { with_animation(window, |animation| animation.overlay = overlay) };
@@ -664,11 +674,13 @@ unsafe fn finish(window: HWND) {
 /// # Safety
 /// `window` is a live space window; call it outside any state borrow.
 pub(crate) unsafe fn retarget(window: HWND, rect: Rect) -> bool {
+    // Read outside the borrow: a Win32 call has no place inside it.
+    let dpi = window_dpi(window);
     // SAFETY: the caller's contract; the borrow does not re-enter, and
     // reading a monitor's work area sends no messages.
     let retarget = unsafe {
         with_animation(window, |animation| {
-            animation.playing.retarget(rect, work_area_at)
+            animation.playing.retarget(rect, dpi, work_area_at)
         })
     };
     match retarget {
@@ -776,7 +788,7 @@ mod tests {
 
     fn showing(way: Way) -> Playing<Scene> {
         let play = play(way);
-        let geometry = Geometry::for_visibility(SPACE, WORK_AREA, &play);
+        let geometry = Geometry::for_visibility(SPACE, WORK_AREA, &play, 96);
         Playing::new(play, geometry, Purpose::Visibility { then: None }, ms(0))
     }
 
@@ -785,7 +797,7 @@ mod tests {
             effect: Effect::Roll,
             ..play(way)
         };
-        let geometry = Geometry::for_fold(SPACE, TITLE, WORK_AREA);
+        let geometry = Geometry::for_fold(SPACE, TITLE, WORK_AREA, 96);
         Playing::new(play, geometry, Purpose::Fold { deferred: None }, ms(0))
     }
 
@@ -869,7 +881,7 @@ mod tests {
         let mut show = showing(Way::In);
         let moved = SPACE.offset(100, 50);
         let before = show.step(ms(100));
-        assert_eq!(show.retarget(moved, |_| WORK_AREA), Retarget::Taken);
+        assert_eq!(show.retarget(moved, 96, |_| WORK_AREA), Retarget::Taken);
         let after = show.step(ms(100));
         assert_eq!(after.frame.shown, before.frame.shown);
         assert_eq!(after.frame.rect, moved);
@@ -879,10 +891,10 @@ mod tests {
     #[test]
     fn a_fold_keeps_its_own_rect_and_ends_for_any_other() {
         let mut fold = folding(Way::Out);
-        assert_eq!(fold.retarget(TITLE, |_| WORK_AREA), Retarget::Taken);
-        assert_eq!(fold.retarget(SPACE, |_| WORK_AREA), Retarget::EndFold);
+        assert_eq!(fold.retarget(TITLE, 96, |_| WORK_AREA), Retarget::Taken);
+        assert_eq!(fold.retarget(SPACE, 96, |_| WORK_AREA), Retarget::EndFold);
         let mut unfold = folding(Way::In);
-        assert_eq!(unfold.retarget(SPACE, |_| WORK_AREA), Retarget::Taken);
+        assert_eq!(unfold.retarget(SPACE, 96, |_| WORK_AREA), Retarget::Taken);
     }
 
     #[test]
@@ -891,7 +903,7 @@ mod tests {
             delay: ms(100),
             ..play(Way::In)
         };
-        let geometry = Geometry::for_visibility(SPACE, WORK_AREA, &delayed);
+        let geometry = Geometry::for_visibility(SPACE, WORK_AREA, &delayed, 96);
         let mut show: Playing<Scene> =
             Playing::new(delayed, geometry, Purpose::Visibility { then: None }, ms(0));
         let waiting = show.step(ms(50));

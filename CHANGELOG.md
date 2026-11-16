@@ -17,6 +17,9 @@ Notable changes to DeskSpace, newest first. The format follows
 
 ### Changed
 
+- Burn scales with the display, so on a 150 % or 200 % monitor its edge is as
+  ragged as at 100 % and its flames as tall, rather than a finer edge with
+  smaller flames.
 - CRT plays like a monitor switching on: the line's light fades as the
   raster opens, and the whole space flashes white as it finishes filling
   before the picture settles. Hiding plays it backwards, so a space flashes

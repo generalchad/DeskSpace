@@ -15,9 +15,16 @@ use deskspace_core::animation::DETAIL_RANGE;
 use super::math::Grid;
 use super::noise::RisingField;
 
-/// Pixels per field cell; the painter draws the cells with linear
-/// interpolation, so the edges stay soft.
+/// Pixels per field cell at 96 DPI; `cell_px` scales it for a display.
 pub const CELL: u32 = 3;
+
+/// Pixels per field cell at `dpi`: `CELL` scaled, rounded to a whole pixel
+/// and at least 1. At 100 % the edge is the same three-pixel mesh; a 150 %
+/// display gets five-pixel cells, so the burn looks the same, only bigger.
+pub fn cell_px(dpi: u32) -> u32 {
+    ((CELL * dpi.max(1) + 48) / 96).max(1)
+}
+
 /// How far above the front, in field units, each band reaches.
 pub const GLOW: f32 = 0.035;
 pub const CHAR: f32 = 0.045;
@@ -41,9 +48,9 @@ pub fn front(gone: f32) -> f32 {
     gone * (1.0 + BANDS) - BANDS
 }
 
-/// The cells that cover a space of `size` pixels.
-fn grid_for(size: (f32, f32)) -> Grid {
-    Grid::covering(size, CELL)
+/// The cells that cover a space of `size` pixels at `dpi`.
+fn grid_for(size: (f32, f32), dpi: u32) -> Grid {
+    Grid::covering(size, cell_px(dpi))
 }
 
 /// The burn field of a space, one value per cell.
@@ -56,12 +63,12 @@ pub struct BurnField {
 }
 
 impl BurnField {
-    /// The field for a space of `size` pixels; `detail` (`DETAIL_RANGE`)
-    /// coarsens the ragged front and `seed` varies its shape. The painter
-    /// and the flames each make one from the same play, so the flames stand
-    /// on the edge the paper burns.
-    pub fn for_space(size: (f32, f32), detail: u8, seed: u32) -> Self {
-        Self::new(grid_for(size), detail, seed)
+    /// The field for a space of `size` pixels at `dpi`; `detail`
+    /// (`DETAIL_RANGE`) coarsens the ragged front and `seed` varies its
+    /// shape. The painter and the flames each make one from the same play, so
+    /// the flames stand on the edge the paper burns.
+    pub fn for_space(size: (f32, f32), detail: u8, seed: u32, dpi: u32) -> Self {
+        Self::new(grid_for(size, dpi), detail, seed)
     }
 
     fn new(grid: Grid, detail: u8, seed: u32) -> Self {
@@ -443,7 +450,7 @@ mod tests {
 
     #[test]
     fn the_field_covers_the_space() {
-        let field = BurnField::for_space((301.0, 199.0), 5, 1);
+        let field = BurnField::for_space((301.0, 199.0), 5, 1, 96);
         assert_eq!(
             field.grid(),
             Grid {
@@ -451,19 +458,45 @@ mod tests {
                 rows: 67
             }
         );
-        assert_eq!(field.grid(), Grid::covering((301.0, 199.0), CELL));
+        assert_eq!(field.grid(), Grid::covering((301.0, 199.0), cell_px(96)));
         assert_eq!(field.field.values().len(), field.grid().cell_count());
+    }
+
+    #[test]
+    fn the_field_coarsens_with_the_displays_dpi() {
+        assert_eq!(cell_px(96), 3);
+        assert_eq!(cell_px(144), 5, "rounded up from 4.5");
+        assert_eq!(cell_px(192), 6);
+        assert_eq!(cell_px(1), 1, "a cell is never zero pixels");
+        let size = (600.0, 400.0);
+        let at_96 = BurnField::for_space(size, 5, 1, 96).grid();
+        let at_192 = BurnField::for_space(size, 5, 1, 192).grid();
+        assert_eq!(
+            at_96,
+            Grid {
+                cols: 200,
+                rows: 134
+            }
+        );
+        assert_eq!(
+            at_192,
+            Grid {
+                cols: 100,
+                rows: 67
+            }
+        );
+        assert_eq!(at_96.cols, at_192.cols * 2, "half the columns at 200 %");
     }
 
     #[test]
     fn the_seed_varies_the_field_and_repeats() {
         assert_eq!(
-            BurnField::for_space((200.0, 160.0), 5, 7),
-            BurnField::for_space((200.0, 160.0), 5, 7)
+            BurnField::for_space((200.0, 160.0), 5, 7, 96),
+            BurnField::for_space((200.0, 160.0), 5, 7, 96)
         );
         assert_ne!(
-            BurnField::for_space((200.0, 160.0), 5, 1),
-            BurnField::for_space((200.0, 160.0), 5, 2)
+            BurnField::for_space((200.0, 160.0), 5, 1, 96),
+            BurnField::for_space((200.0, 160.0), 5, 2, 96)
         );
     }
 

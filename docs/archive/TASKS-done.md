@@ -7112,3 +7112,4 @@ takes an id listed here or used anywhere above
 - **C19.** The rename box as wide as Explorer's (platform; render).
 - **C22.** Better automatic icons, and "Suggest icons" (core, config, app).
 - **T42.** A contact sheet for Burn (platform; test tool).
+- **T26.** Burn scales with DPI (platform).

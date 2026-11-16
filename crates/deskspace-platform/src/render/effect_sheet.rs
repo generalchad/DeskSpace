@@ -9,7 +9,7 @@
 //! soft here as it does on screen.
 
 use super::burn::{self, BurnField};
-use super::flames::{self, MARGIN_SIDE, MARGIN_TOP, Rows, SPACING};
+use super::flames::{self, Rows, SPACING};
 use super::math::Grid;
 use deskspace_core::animation::DETAIL_DEFAULT;
 
@@ -47,36 +47,44 @@ struct Picture {
     size: (u32, u32),
 }
 
-/// One frame of a burn on a space of `space` pixels at `front`, `time`
-/// seconds into the play: the backdrop, the sample space masked by the
-/// paper, the marks over it, and the flames over both at the overlay's
-/// margins.
-fn frame(field: &BurnField, space: (u32, u32), front: f32, time: f32) -> Picture {
+/// One frame of a burn on a space of `space` pixels on a display of `dpi` at
+/// `front`, `time` seconds into the play: the backdrop, the sample space
+/// masked by the paper, the marks over it, and the flames over both at the
+/// overlay's margins.
+fn frame(field: &BurnField, space: (u32, u32), dpi: u32, front: f32, time: f32) -> Picture {
     let grid = field.grid();
     let (mut paper, mut marks) = (vec![0; grid.cell_count()], vec![0; grid.cell_count()]);
     field.fill_rows(front, 0..grid.rows, &mut paper, &mut marks);
 
-    let (width, height) = flames::overlay_size(space.0, space.1);
+    let (side, top) = flames::margins(dpi);
+    let cell = burn::cell_px(dpi);
+    let scale = dpi as f32 / 96.0;
+    let (width, height) = flames::overlay_size(space.0, space.1, dpi);
     let mut flame_pixels = vec![0; (width * height) as usize];
     let mut bases = Vec::new();
     let mut tongues = Vec::new();
     field.flame_bases(front, SPACING, &mut bases);
-    flames::tongues(&bases, space.1 as f32, time, &mut tongues);
+    flames::tongues(
+        &bases,
+        space.1 as f32,
+        (side, top),
+        cell,
+        time,
+        scale,
+        &mut tongues,
+    );
     let mut drawn = Rows::ALL;
     flames::paint(&mut flame_pixels, width, height, &tongues, time, &mut drawn);
 
-    let sample = sample(space);
+    let sample = sample(space, scale);
     let mut pixels = vec![BACKDROP; (width * height) as usize];
     for y in 0..height {
         for x in 0..width {
             let mut pixel = BACKDROP;
-            let inside = x >= MARGIN_SIDE
-                && y >= MARGIN_TOP
-                && x - MARGIN_SIDE < space.0
-                && y - MARGIN_TOP < space.1;
+            let inside = x >= side && y >= top && x - side < space.0 && y - top < space.1;
             if inside {
-                let (sx, sy) = (x - MARGIN_SIDE, y - MARGIN_TOP);
-                let paper = sample_brush(&paper, grid, burn::CELL, sx, sy);
+                let (sx, sy) = (x - side, y - top);
+                let paper = sample_brush(&paper, grid, cell, sx, sy);
                 let under = over(
                     masked(sample[(sy * space.0 + sx) as usize], paper >> 24),
                     BACKDROP,
@@ -94,17 +102,18 @@ fn frame(field: &BurnField, space: (u32, u32), front: f32, time: f32) -> Picture
     }
 }
 
-/// The nine frames of a burn on a space of `space` pixels, three to a row:
-/// gone 0.1 to 0.9, with the clock 0.05 s further on at each frame.
-fn sheet(space: (u32, u32)) -> Picture {
-    let (cell_width, cell_height) = flames::overlay_size(space.0, space.1);
+/// The nine frames of a burn on a space of `space` pixels on a display of
+/// `dpi`, three to a row: gone 0.1 to 0.9, with the clock 0.05 s further on
+/// at each frame.
+fn sheet(space: (u32, u32), dpi: u32) -> Picture {
+    let (cell_width, cell_height) = flames::overlay_size(space.0, space.1, dpi);
     let rows = FRAMES.div_ceil(COLUMNS) as u32;
     let width = cell_width * COLUMNS as u32;
     let height = cell_height * rows;
     let mut pixels = vec![BACKDROP; (width * height) as usize];
-    let field = BurnField::for_space((space.0 as f32, space.1 as f32), DETAIL, SEED);
+    let field = BurnField::for_space((space.0 as f32, space.1 as f32), DETAIL, SEED, dpi);
     for frame_index in 0..FRAMES {
-        let picture = frame(&field, space, gone(frame_index), time(frame_index));
+        let picture = frame(&field, space, dpi, gone(frame_index), time(frame_index));
         let left = (frame_index % COLUMNS) as u32 * cell_width;
         let top = (frame_index / COLUMNS) as u32 * cell_height;
         for y in 0..cell_height {
@@ -121,23 +130,30 @@ fn sheet(space: (u32, u32)) -> Picture {
 }
 
 /// The sample space's pixels, `size.0` by `size.1`, opaque: its tint, a title
-/// band along the top, and a few item squares under it.
-fn sample(size: (u32, u32)) -> Vec<u32> {
+/// band along the top, and a few item squares under it, all at `scale`
+/// (`dpi / 96`), as a window's own content would be.
+fn sample(size: (u32, u32), scale: f32) -> Vec<u32> {
     let (width, height) = size;
+    let scaled = |value: u32| ((value as f32 * scale).round() as u32).max(1);
+    let (title, item, step, margin) = (
+        scaled(TITLE_HEIGHT),
+        scaled(ITEM_SIZE),
+        scaled(ITEM_STEP),
+        scaled(ITEM_MARGIN),
+    );
     let mut pixels = vec![TINT; (width * height) as usize];
-    for y in 0..TITLE_HEIGHT.min(height) {
+    for y in 0..title.min(height) {
         pixels[(y * width) as usize..((y + 1) * width) as usize].fill(TITLE);
     }
     for row in 0..ITEM_ROWS {
         for column in 0..ITEM_COLUMNS {
-            let left = ITEM_MARGIN + column * ITEM_STEP;
-            let top = TITLE_HEIGHT + ITEM_MARGIN + row * ITEM_STEP;
-            if left + ITEM_SIZE > width || top + ITEM_SIZE > height {
+            let left = margin + column * step;
+            let top = title + margin + row * step;
+            if left + item > width || top + item > height {
                 continue;
             }
-            for y in top..top + ITEM_SIZE {
-                pixels[(y * width + left) as usize..(y * width + left + ITEM_SIZE) as usize]
-                    .fill(ITEM);
+            for y in top..top + item {
+                pixels[(y * width + left) as usize..(y * width + left + item) as usize].fill(ITEM);
             }
         }
     }
@@ -226,16 +242,17 @@ mod tests {
     use super::*;
 
     const SPACE: (u32, u32) = (100, 100);
+    const DPI: u32 = 96;
 
-    fn field(space: (u32, u32)) -> BurnField {
-        BurnField::for_space((space.0 as f32, space.1 as f32), DETAIL, SEED)
+    fn field(space: (u32, u32), dpi: u32) -> BurnField {
+        BurnField::for_space((space.0 as f32, space.1 as f32), DETAIL, SEED, dpi)
     }
 
     #[test]
     fn a_gone_frame_shows_only_the_backdrop() {
-        let field = field(SPACE);
-        let picture = frame(&field, SPACE, 2.0, 0.0);
-        assert_eq!(picture.size, flames::overlay_size(SPACE.0, SPACE.1));
+        let field = field(SPACE, DPI);
+        let picture = frame(&field, SPACE, DPI, 2.0, 0.0);
+        assert_eq!(picture.size, flames::overlay_size(SPACE.0, SPACE.1, DPI));
         assert!(
             picture.pixels.iter().all(|&pixel| pixel == BACKDROP),
             "paper gone and no flames: nothing but the backdrop shows"
@@ -244,21 +261,19 @@ mod tests {
 
     #[test]
     fn a_whole_frame_shows_the_space_inside_the_margins() {
-        let field = field(SPACE);
+        let field = field(SPACE, DPI);
         // Below every cell's value: every cell is untouched paper, and
         // nothing burns.
-        let picture = frame(&field, SPACE, -1.0, 0.0);
-        let sample = sample(SPACE);
+        let picture = frame(&field, SPACE, DPI, -1.0, 0.0);
+        let sample = sample(SPACE, DPI as f32 / 96.0);
+        let (side, top) = flames::margins(DPI);
         let (width, height) = picture.size;
         for y in 0..height {
             for x in 0..width {
                 let pixel = picture.pixels[(y * width + x) as usize];
-                let inside = x >= MARGIN_SIDE
-                    && y >= MARGIN_TOP
-                    && x - MARGIN_SIDE < SPACE.0
-                    && y - MARGIN_TOP < SPACE.1;
+                let inside = x >= side && y >= top && x - side < SPACE.0 && y - top < SPACE.1;
                 let expected = if inside {
-                    sample[((y - MARGIN_TOP) * SPACE.0 + x - MARGIN_SIDE) as usize]
+                    sample[((y - top) * SPACE.0 + x - side) as usize]
                 } else {
                     BACKDROP
                 };
@@ -271,8 +286,9 @@ mod tests {
     fn the_paper_mask_fades_across_a_cell_edge() {
         let grid = Grid { cols: 2, rows: 1 };
         let cells = [u32::MAX, 0];
-        assert_eq!(sample_brush(&cells, grid, burn::CELL, 0, 0), u32::MAX);
-        let seam = sample_brush(&cells, grid, burn::CELL, burn::CELL, 0) >> 24;
+        let cell = burn::cell_px(96);
+        assert_eq!(sample_brush(&cells, grid, cell, 0, 0), u32::MAX);
+        let seam = sample_brush(&cells, grid, cell, cell, 0) >> 24;
         assert!(
             (127..=128).contains(&seam),
             "half covered at the seam: {seam}"
@@ -294,19 +310,20 @@ mod tests {
     #[test]
     fn the_sheet_holds_three_frames_to_a_row() {
         let space = (60, 40);
-        let (cell_width, cell_height) = flames::overlay_size(space.0, space.1);
-        let picture = sheet(space);
+        let (cell_width, cell_height) = flames::overlay_size(space.0, space.1, DPI);
+        let picture = sheet(space, DPI);
         assert_eq!(picture.size, (cell_width * 3, cell_height * 3));
         assert_eq!(
             picture.pixels.len(),
             (picture.size.0 * picture.size.1) as usize
         );
+        let scaled = flames::overlay_size(space.0, space.1, 144);
+        assert_eq!(sheet(space, 144).size, (scaled.0 * 3, scaled.1 * 3));
     }
 
     /// Writes one sheet per case to the temp folder, for judging Burn's look
     /// before and after a change. Run it by hand:
     /// `cargo test -p deskspace-platform burn_sheet -- --ignored`.
-    /// The 144-DPI case joins it once Burn scales with the display's DPI.
     #[test]
     #[ignore = "writes contact sheets; run by hand"]
     fn burn_sheet() {
@@ -314,8 +331,12 @@ mod tests {
         unsafe {
             let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
         }
-        for (name, space) in [("320x240", (320, 240)), ("1200x900", (1200, 900))] {
-            let picture = sheet(space);
+        for (name, space, dpi) in [
+            ("320x240", (320, 240), 96),
+            ("1200x900", (1200, 900), 96),
+            ("320x240-144dpi", (320, 240), 144),
+        ] {
+            let picture = sheet(space, dpi);
             let path = std::env::temp_dir().join(format!("deskspace-burn-{name}.png"));
             crate::render::d2d::png::write_pixels(
                 &picture.pixels,
