@@ -178,6 +178,50 @@ pub(crate) fn display_name(item: &IShellItem, form: SIGDN) -> Option<String> {
 mod tests {
     use super::*;
 
+    /// The app writes a shortcut under a temporary name and renames it, so
+    /// the link must not depend on the name it was saved under.
+    #[test]
+    fn a_link_saved_under_another_name_still_points_at_its_target() {
+        use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx, STGM_READ};
+
+        let folder =
+            std::env::temp_dir().join(format!("deskspace-shortcut-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        let target = folder.join("target.txt");
+        std::fs::write(&target, "x").unwrap();
+        let (temp, link_path) = (folder.join("~written.tmp"), folder.join("Target.lnk"));
+        // SAFETY: this test thread enters its own apartment for the shell
+        // link object, and leaves it to the thread's end.
+        let _ = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+
+        let shortcut = CustomShortcut {
+            target: ShortcutTarget::Path(target.clone()),
+            arguments: String::new(),
+            name: "Target".to_owned(),
+        };
+        create_custom_shortcut(&shortcut, &temp).unwrap();
+        std::fs::rename(&temp, &link_path).unwrap();
+
+        let file = wide(&link_path.to_string_lossy());
+        let mut read = [0u16; 520];
+        // SAFETY: COM is initialized above; `file` is NUL-terminated and
+        // outlives the load, and `read` is the buffer the path is copied to.
+        unsafe {
+            let link: IShellLinkW =
+                CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER).unwrap();
+            let persist: IPersistFile = link.cast().unwrap();
+            persist.Load(PCWSTR(file.as_ptr()), STGM_READ).unwrap();
+            link.GetPath(&mut read, std::ptr::null_mut(), 0).unwrap();
+        }
+        let length = read.iter().position(|unit| *unit == 0).unwrap_or(0);
+        let read = PathBuf::from(String::from_utf16_lossy(&read[..length]));
+        // The temp folder can be spelled with a short name; the link's is long.
+        let same_file = std::fs::canonicalize(&read).ok() == std::fs::canonicalize(&target).ok();
+        let _ = std::fs::remove_dir_all(&folder);
+        assert!(same_file, "the link points at {}", read.display());
+    }
+
     #[test]
     fn an_internet_shortcut_names_its_url() {
         assert_eq!(

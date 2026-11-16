@@ -47,6 +47,9 @@ Notable changes to DeskSpace, newest first. The format follows
   file edited since sorted, grouped, and showed in Details by its old size
   and date, and an item added before 0.3.0 had no Date created at all. A
   lens was not affected.
+- A new shortcut never replaces a file. If another program put a file of
+  the same name in a lens's folder at the moment the shortcut was written,
+  the shortcut replaced it; it now takes the next free name, "name (2)".
 - In dark mode the rename box's border is Explorer's thin white line,
   instead of a grey one.
 - Keys on spaces (F2, Delete, the arrows, Ctrl+C, typing to select) keep

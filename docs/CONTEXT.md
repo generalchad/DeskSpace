@@ -1169,6 +1169,10 @@ exact steps, ranges, edge cases, and the code behind them.
   a bare program on the search path); a missing one is reported in the
   dialog. A web address becomes `.url`, anything else `.lnk`. All paths end
   in `App::add_shortcuts`, which writes into the store or the lens's folder.
+  A shortcut is written under a temporary name beside its place and takes
+  its name with a move that never replaces (`storage::write_new`), so a
+  file that appears there meanwhile keeps its contents and the shortcut
+  takes the next numbered name.
 - Add files… uses `Ui::pick_files` (multi-select, starting on the Desktop)
   and moves through the drop path (`App::add_dropped`); Cancel adds nothing.
 

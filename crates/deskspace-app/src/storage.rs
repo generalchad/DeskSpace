@@ -7,7 +7,8 @@
 //! touches the file. Names are never overwritten: a clash gets " (2)", " (3)",
 //! and so on, like Explorer, and every move fails rather than replace a file
 //! that appears at its target after the name was picked
-//! (`deskspace_platform::move_no_replace`).
+//! (`deskspace_platform::move_no_replace`). A file DeskSpace creates in a
+//! folder, such as a shortcut, takes its name the same way (`write_new`).
 
 use std::ffi::OsStr;
 use std::io;
@@ -214,11 +215,35 @@ fn move_error(from: &Path, to: &Path, error: io::Error) -> StoreError {
     }
 }
 
-/// `folder/name`, or `folder/stem (n).ext` with the smallest `n >= 2` that
-/// does not exist yet.
-pub(crate) fn unique_destination(folder: &Path, name: &Path) -> PathBuf {
-    free_names(folder, name)
-        .next()
+/// Creates a file in `folder` as `name`, or as `stem (n).ext` with the
+/// smallest `n >= 2` still free, and returns its path. `write` fills a
+/// temporary file beside it, which then takes the name with a move that
+/// never replaces. Writing straight to a name picked as free would not do:
+/// a copy and a shell link's save both replace a file that appears at their
+/// target after the name was picked.
+pub(crate) fn write_new(
+    folder: &Path,
+    name: &Path,
+    write: impl FnOnce(&Path) -> anyhow::Result<()>,
+) -> anyhow::Result<PathBuf> {
+    let temp = temp_path(folder);
+    let placed =
+        write(&temp).and_then(|()| Ok(move_to_first_free(&temp, free_names(folder, name))?));
+    if placed.is_err() {
+        // Ours alone, and nothing else names it: a file that could not take
+        // its name is not left for the user to find.
+        let _ = std::fs::remove_file(&temp);
+    }
+    placed
+}
+
+/// A path in `folder` for a file still being written: a name no other
+/// program would pick, told apart by this process and a count.
+fn temp_path(folder: &Path) -> PathBuf {
+    let process = std::process::id();
+    (0u32..)
+        .map(|n| folder.join(format!("~deskspace-{process}-{n}.tmp")))
+        .find(|candidate| !candidate.exists())
         .expect("an unused name exists")
 }
 
@@ -449,10 +474,58 @@ mod tests {
         let scratch = Scratch::new("unique");
         let store = ItemStore::new(scratch.0.join("storage"));
         std::fs::create_dir_all(store.root()).unwrap();
-        let unique = |name: &str| unique_destination(store.root(), Path::new(name));
-        assert_eq!(unique("App.lnk"), store.root().join("App.lnk"));
+        let unique = |name: &str| free_names(store.root(), Path::new(name)).next();
+        assert_eq!(unique("App.lnk"), Some(store.root().join("App.lnk")));
         std::fs::write(store.root().join("App.lnk"), "x").unwrap();
-        assert_eq!(unique("App.lnk"), store.root().join("App (2).lnk"));
+        assert_eq!(unique("App.lnk"), Some(store.root().join("App (2).lnk")));
+    }
+
+    fn names_in(folder: &Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(folder)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn a_new_file_takes_its_name_and_leaves_no_temporary_file() {
+        let scratch = Scratch::new("write-new");
+        let write = |temp: &Path| Ok(std::fs::write(temp, "new")?);
+        let first = write_new(&scratch.0, Path::new("App.lnk"), write).unwrap();
+        let second = write_new(&scratch.0, Path::new("App.lnk"), write).unwrap();
+        assert_eq!(first, scratch.0.join("App.lnk"));
+        assert_eq!(second, scratch.0.join("App (2).lnk"));
+        assert_eq!(names_in(&scratch.0), ["App (2).lnk", "App.lnk"]);
+        assert_eq!(std::fs::read_to_string(&second).unwrap(), "new");
+    }
+
+    #[test]
+    fn a_file_that_appears_while_a_new_one_is_written_is_not_replaced() {
+        let scratch = Scratch::new("write-new-raced");
+        let taken = scratch.0.join("App.lnk");
+        let placed = write_new(&scratch.0, Path::new("App.lnk"), |temp| {
+            // Another program takes the name after it was seen free.
+            std::fs::write(&taken, "theirs")?;
+            Ok(std::fs::write(temp, "ours")?)
+        })
+        .unwrap();
+        assert_eq!(placed, scratch.0.join("App (2).lnk"));
+        assert_eq!(std::fs::read_to_string(&taken).unwrap(), "theirs");
+        assert_eq!(std::fs::read_to_string(&placed).unwrap(), "ours");
+        assert_eq!(names_in(&scratch.0), ["App (2).lnk", "App.lnk"]);
+    }
+
+    #[test]
+    fn a_new_file_that_cannot_be_written_leaves_nothing_behind() {
+        let scratch = Scratch::new("write-new-failed");
+        let failed = write_new(&scratch.0, Path::new("App.lnk"), |temp| {
+            std::fs::write(temp, "half")?;
+            anyhow::bail!("the disk filled up")
+        });
+        assert!(failed.is_err());
+        assert!(names_in(&scratch.0).is_empty());
     }
 
     #[test]

@@ -16,7 +16,7 @@ use super::undo::{
     FileChange, copy_items_label, delete_items_label, move_items_label, new_shortcuts_label,
 };
 use super::{App, Surface, delete_consequence, delete_needs_confirmation};
-use crate::storage::{ItemStore, path_key, same_path, unique_destination};
+use crate::storage::{ItemStore, path_key, same_path, write_new};
 
 /// The dropped `paths` worth handing to the shell for `folder`, in order. A
 /// path already directly in `folder`, `folder` itself, and any folder that
@@ -903,25 +903,29 @@ fn delete_item_question(label: &str, recycles: bool) -> String {
 
 /// Writes one shortcut into `folder` under a clash-free name and returns its
 /// path: a copy of a dropped shortcut file, a new `.lnk` to a shell item, or
-/// the `.lnk` or `.url` a custom shortcut describes.
+/// the `.lnk` or `.url` a custom shortcut describes. Each goes through
+/// `write_new`, so it never replaces a file already in the folder, which in
+/// a lens is the user's own.
 fn write_shortcut(folder: &Path, source: &ShortcutSource) -> anyhow::Result<PathBuf> {
     match source {
         ShortcutSource::Shell(item) => {
             if let Some(link) = item.path.as_deref().filter(|path| is_link_file(path)) {
-                let path = unique_destination(folder, Path::new(&link_copy_name(link, &item.name)));
-                std::fs::copy(link, &path)?;
-                return Ok(path);
+                let name = link_copy_name(link, &item.name);
+                return write_new(folder, Path::new(&name), |temp| {
+                    std::fs::copy(link, temp)?;
+                    Ok(())
+                });
             }
             let name = shortcut_file_name(&item.name, "lnk");
-            let path = unique_destination(folder, Path::new(&name));
-            create_shortcut(item, &path)?;
-            Ok(path)
+            write_new(folder, Path::new(&name), |temp| {
+                Ok(create_shortcut(item, temp)?)
+            })
         }
         ShortcutSource::Custom(shortcut) => {
             let name = shortcut_file_name(&shortcut.name, shortcut.target.extension());
-            let path = unique_destination(folder, Path::new(&name));
-            create_custom_shortcut(shortcut, &path)?;
-            Ok(path)
+            write_new(folder, Path::new(&name), |temp| {
+                Ok(create_custom_shortcut(shortcut, temp)?)
+            })
         }
     }
 }
@@ -1015,9 +1019,13 @@ mod tests {
         });
         let first = write_shortcut(&to, &source).unwrap();
         let second = write_shortcut(&to, &source).unwrap();
+        let written = std::fs::read_dir(&to).unwrap().count();
+        let copied = std::fs::read_to_string(&second);
         let _ = std::fs::remove_dir_all(&root);
         assert_eq!(first, to.join("App.lnk"));
         assert_eq!(second, to.join("App (2).lnk"));
+        assert_eq!(written, 2, "no temporary file is left beside them");
+        assert_eq!(copied.unwrap(), "x");
     }
 
     #[test]
