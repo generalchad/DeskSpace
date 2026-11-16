@@ -16,7 +16,9 @@ use windows::core::PCWSTR;
 /// No `MOVEFILE_REPLACE_EXISTING`, so an existing `to` fails the call with
 /// `io::ErrorKind::AlreadyExists` and both keep their contents. No
 /// `MOVEFILE_COPY_ALLOWED`, so a move to another volume fails with
-/// `io::ErrorKind::CrossesDevices` instead of copying.
+/// `io::ErrorKind::CrossesDevices` instead of copying. A folder does not
+/// move while a file inside it is open: that fails with
+/// `io::ErrorKind::PermissionDenied`, whatever is at `to`.
 /// https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw
 pub fn move_no_replace(from: &Path, to: &Path) -> io::Result<()> {
     let from = long_path(from)?;
@@ -117,6 +119,26 @@ mod tests {
         }
     }
 
+    /// `move_no_replace` for a folder a test has just filled, tried again
+    /// while it is denied. A virus scanner or the search indexer opens a new
+    /// file for a moment, and a folder does not move while a file inside it
+    /// is open, so the first try can be refused whatever is at the target.
+    fn move_once_free(from: &Path, to: &Path) -> io::Result<()> {
+        const TRIES: u32 = 100;
+        const PAUSE: std::time::Duration = std::time::Duration::from_millis(20);
+        let mut result = move_no_replace(from, to);
+        for _ in 1..TRIES {
+            match &result {
+                Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
+                    std::thread::sleep(PAUSE);
+                    result = move_no_replace(from, to);
+                }
+                _ => break,
+            }
+        }
+        result
+    }
+
     fn wide_text(units: &[u16]) -> String {
         String::from_utf16(units.strip_suffix(&[0]).unwrap()).unwrap()
     }
@@ -175,16 +197,37 @@ mod tests {
         let taken = dir.path().join("taken");
         std::fs::write(&taken, "file").unwrap();
 
-        let error = move_no_replace(&folder, &taken).unwrap_err();
+        let error = move_once_free(&folder, &taken).unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::AlreadyExists, "{error}");
         assert_eq!(std::fs::read_to_string(&taken).unwrap(), "file");
 
         let moved = dir.path().join("moved");
-        move_no_replace(&folder, &moved).unwrap();
+        move_once_free(&folder, &moved).unwrap();
         assert_eq!(
             std::fs::read_to_string(moved.join("inner.txt")).unwrap(),
             "x"
         );
+    }
+
+    #[test]
+    fn a_folder_with_an_open_file_inside_is_denied_whatever_the_target() {
+        let dir = Scratch::new("held");
+        let folder = dir.path().join("folder");
+        std::fs::create_dir(&folder).unwrap();
+        std::fs::write(folder.join("inner.txt"), "x").unwrap();
+        let taken = dir.path().join("taken");
+        std::fs::write(&taken, "file").unwrap();
+
+        let held = std::fs::File::open(folder.join("inner.txt")).unwrap();
+        for to in [taken.clone(), dir.path().join("free")] {
+            let error = move_no_replace(&folder, &to).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::PermissionDenied, "{error}");
+        }
+        drop(held);
+
+        let error = move_once_free(&folder, &taken).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists, "{error}");
+        assert!(folder.join("inner.txt").exists(), "nothing moved");
     }
 
     #[test]
