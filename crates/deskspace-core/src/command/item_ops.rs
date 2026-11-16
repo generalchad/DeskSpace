@@ -1,5 +1,6 @@
 //! Commands that add, remove, move, reorder, and rename items in spaces.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use super::{CommandOutcome, hold_kept_order};
@@ -172,11 +173,15 @@ impl Desktop {
             Some(target) if target.is_lens() => return CommandOutcome::Rejected,
             Some(_) => {}
         }
+        // Looked up per item, so a batch for a whole space costs one pass over
+        // its items rather than a scan for each. A batch can name an item that
+        // has since gone, which no item then asks for, and the last of two
+        // entries for one item wins, as when they were applied in order.
+        let facts: HashMap<ItemId, ItemFacts> = facts.iter().copied().collect();
         self.with_space(space, |space| {
             let mut changed = false;
-            for &(id, facts) in facts {
-                // A batch can name an item that has since gone; skip it.
-                let Some(item) = space.items.iter_mut().find(|item| item.id == id) else {
+            for item in &mut space.items {
+                let Some(facts) = facts.get(&item.id) else {
                     continue;
                 };
                 if item.size == facts.size

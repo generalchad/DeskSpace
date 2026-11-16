@@ -2156,6 +2156,35 @@ mod tests {
     }
 
     #[test]
+    fn refresh_item_facts_takes_the_last_entry_for_an_item() {
+        let (mut desktop, id) = space_with_items(vec![
+            item(1, "a", ItemKind::File, 1, 1),
+            item(2, "b", ItemKind::File, 1, 1),
+        ]);
+        let sized = |size| ItemFacts {
+            size: Some(size),
+            modified: Some(1),
+            ..ItemFacts::default()
+        };
+        assert_eq!(
+            desktop.apply(
+                Command::RefreshItemFacts {
+                    space: id,
+                    facts: vec![
+                        (ItemId(2), sized(5)),
+                        (ItemId(999), sized(6)),
+                        (ItemId(2), sized(7)),
+                    ],
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        assert_eq!(desktop.item(ItemId(1)).unwrap().size, Some(1));
+        assert_eq!(desktop.item(ItemId(2)).unwrap().size, Some(7));
+    }
+
+    #[test]
     fn refresh_item_facts_missing_space_is_not_found() {
         let mut desktop = Desktop::new();
         assert_eq!(
