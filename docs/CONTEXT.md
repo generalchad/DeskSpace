@@ -95,6 +95,7 @@ platform, data-driven UI) are `ENGINEERING.md` section 3.
   | `columns` | a Details header: a click sorts on release, a drag reorders, a divider drag resizes |
   | `rename` | `EditState`, inline rename of titles and items |
   | `files` | drops, delete, prune, `resync_desktop_layer` |
+  | `facts` | reading a normal space's item facts again at startup, and applying what the icon worker hands back |
   | `clipboard` | cut / copy / paste |
   | `menus` | space, item, and tray menus, `create_space` |
   | `space_icons` | `SpaceIcons`: the title icons' sets, loaded off the main thread, the automatic match memo, the glyph cache, and the download consent (D16) |
@@ -126,14 +127,18 @@ platform, data-driven UI) are `ENGINEERING.md` section 3.
 ### Item
 
 `Item` and `ItemKind` (`item.rs`; the fields are documented there) are a
-path, a label, a kind, a grid position, and facts read once from the file
+path, a label, a kind, a grid position, and facts read from the file
 system.
 
 `core` does no IO, so whoever creates an `Item` passes in the `ItemFacts` it
-read once with `deskspace_platform::item_facts` (to `Item::new` or
+read with `deskspace_platform::item_facts` (to `Item::new` or
 `Command::AddItem`): `kind`, `size`, `modified`, `compressed`, and
-`encrypted`. Nothing refreshes them afterwards; tests pass
-`ItemFacts::default()`. `ItemKind::classify(path, is_folder)` is pure: a
+`encrypted`; tests pass `ItemFacts::default()`. A lens's listing brings
+them again each time. A normal space's are read again at each startup
+(`app/facts.rs`): the icon worker reads them once no icon is waiting, a
+file at a time, and hands back one batch per space, without the files it
+could not read. The app applies each batch as a `RefreshItemFacts` outside
+every undo entry, waiting for an open one to finish first. `ItemKind::classify(path, is_folder)` is pure: a
 folder, else by extension; a path with no extension is `Other`, and only
 `with_kind` yields `Drive`. `label` defaults to the file stem. `position` is
 the top-left of the item's grid cell **relative to the space's content
@@ -1025,7 +1030,8 @@ in `ui.rs`. What spans them:
   module doc owns its rules, and the takeover as a whole is D8's.
 - `desktop_items.rs`, `icons.rs`, and `info_tip.rs` read the shell without
   blocking the UI thread; their module docs own the enumeration, the icon
-  cache and its worker (`icon_queue.rs`), and the tracking tooltip.
+  cache and its worker (`icon_queue.rs`, and `fact_jobs.rs` for the item
+  facts it reads behind the icons), and the tracking tooltip.
 - `shell_items.rs` is Explorer behavior for an item: open, the item menu,
   and drag out. Its module doc and `drag_out` own the foreground hand-off,
   the data object, and the image. Drag and drop is why the runtime uses
@@ -1066,7 +1072,8 @@ in `ui.rs`. What spans them:
    start-with-Windows Run value, reads Explorer's display options and the
    desktop items, applies takeover and start-hidden, creates one window per
    space with its style and scene, re-flows every space, prunes items whose
-   files are gone, creates a space when `--new-space` could not hand off, and
+   files are gone, asks the icon worker to read the normal spaces' item facts
+   again, creates a space when `--new-space` could not hand off, and
    optionally opens settings (`--settings`).
 4. Pointer events update selection and hover (re-pushing that space's scene),
    drag spaces through `SetSpaceRect` (moving the window), resize them through
@@ -1252,8 +1259,11 @@ section numbers stable.
   files to the desktop; files on another drive stay in place, since a move
   there would copy. Only the Desktop folder is watched (while the layer is drawn), so a stored
   file deleted, moved, or restored by an undo outside DeskSpace stays listed
-  until an item action or the next startup prunes it. An item's `size` and
-  `modified` (used by sorting) are read once at creation and can go stale.
+  until an item action or the next startup prunes it. A normal space's item
+  facts (its size, dates, and attributes, which sorting, grouping, and
+  Details use) are read when the item is added and again at each startup, so
+  a file that changes while DeskSpace runs shows its old ones until the next
+  start.
 - **Blur relies on an undocumented API** (`SetWindowCompositionAttribute`).
   If a Windows build removes it, spaces fall back to a translucent tint
   without blur. Rounded corners need Windows 11.

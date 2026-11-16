@@ -7113,3 +7113,5 @@ takes an id listed here or used anywhere above
 - **C22.** Better automatic icons, and "Suggest icons" (core, config, app).
 - **T42.** A contact sheet for Burn (platform; test tool).
 - **T26.** Burn scales with DPI (platform).
+- **P13d.** Read the facts on the worker, and apply them.
+- **P13.** Keep a normal space's item facts fresh (feature).

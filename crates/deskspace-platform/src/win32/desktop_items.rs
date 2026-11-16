@@ -150,9 +150,10 @@ pub fn read_item_facts(path: &Path) -> Option<ItemFacts> {
     })
 }
 
-/// What the file system says about `path`, read once when an item is listed;
-/// nothing watches it afterwards, so the values can go stale. An unreadable
-/// path yields `ItemFacts::default()`.
+/// What the file system says about `path`, read when an item is listed.
+/// Nothing watches the file afterwards, so the values can go stale until
+/// they are read again (`IconCache::read_item_facts`). An unreadable path
+/// yields `ItemFacts::default()`.
 pub fn item_facts(path: &Path) -> ItemFacts {
     read_item_facts(path).unwrap_or_default()
 }

@@ -5,8 +5,8 @@ use deskspace_config::{Config, ConfigStore, IconDownloads, IconSetSpec, default_
 use deskspace_core::geometry::Point;
 use deskspace_core::{Column, Command, Desktop, ItemId, SortKey, Space, SpaceId, ViewMode};
 use deskspace_platform::{
-    ClipboardAction, Event, EventHandler, IconCache, IconUser, Play, SelectionKey, TrayEvent, Ui,
-    WatchKey, Way, ZoomAction, cursor_pos, desktop_display_since, profile_directory,
+    ClipboardAction, Event, EventHandler, FactBatch, IconCache, IconUser, Play, SelectionKey,
+    TrayEvent, Ui, WatchKey, Way, ZoomAction, cursor_pos, desktop_display_since, profile_directory,
 };
 
 use crate::settings::{self, HotkeyAction};
@@ -19,6 +19,7 @@ mod columns;
 mod debug;
 mod drag;
 mod effect;
+mod facts;
 mod files;
 mod fonts;
 mod hit;
@@ -553,6 +554,9 @@ pub struct App {
     pub(crate) store: ConfigStore,
     pub(crate) storage: ItemStore,
     icons: IconCache,
+    /// Item facts the icon worker read again, waiting to be applied
+    /// (`app/facts.rs`). Session-only.
+    held_facts: Vec<FactBatch>,
     /// What Windows reports: dark mode, the accent, Explorer's display.
     system: SystemLook,
     /// The item selection: the current surface, its items, the Shift anchor,
@@ -619,6 +623,7 @@ impl App {
             storage: ItemStore::new(store.storage_dir()),
             store,
             icons: IconCache::new(),
+            held_facts: Vec::new(),
             system: SystemLook::read(),
             // Read for real in `Started`, once OLE is initialized.
             selection: Selection::default(),
@@ -890,6 +895,9 @@ impl App {
             dark = self.system.dark(),
             "spaces created"
         );
+        // The spaces' scenes have asked for their icons by now, and the
+        // worker reads the items' facts again once those are loaded.
+        self.request_item_facts();
         if std::mem::take(&mut self.new_space_on_start) {
             self.create_space(ui, cursor_pos());
         }
@@ -999,6 +1007,7 @@ impl EventHandler for App {
                     }
                 }
             }
+            Event::ItemFactsRead => self.collect_item_facts(),
             Event::Zoom(action) => self.zoom(ui, action),
             Event::RecentColors(colors) => {
                 self.config.recent_colors = colors;
@@ -1018,6 +1027,10 @@ impl EventHandler for App {
             }
             Event::CloseRequested => self.on_close_requested(ui),
         }
+        // Item facts the worker read are applied here, after whichever event
+        // brought them or closed the undo entry they waited for.
+        let effects = self.apply_item_facts();
+        self.run(ui, effects);
         // The keyboard hook is on only while it is needed: editing captures
         // keys, a selection or current space watches the item keys, and a
         // current lens shown below its own folder watches the keys that go

@@ -42,6 +42,11 @@ Notable changes to DeskSpace, newest first. The format follows
 
 ### Fixed
 
+- A space's items show and sort by their files' current size and dates
+  after a restart. DeskSpace kept what a file had when it was added, so a
+  file edited since sorted, grouped, and showed in Details by its old size
+  and date, and an item added before 0.3.0 had no Date created at all. A
+  lens was not affected.
 - In dark mode the rename box's border is Explorer's thin white line,
   instead of a grey one.
 - Keys on spaces (F2, Delete, the arrows, Ctrl+C, typing to select) keep

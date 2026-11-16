@@ -65,13 +65,17 @@ pub(crate) const NEW_SPACE: u32 = WM_APP + 17;
 /// (`--settings`).
 pub(crate) const OPEN_SETTINGS: u32 = WM_APP + 18;
 
+/// The icon worker read a batch of item facts for
+/// `IconCache::take_item_facts` to collect.
+pub(crate) const ITEM_FACTS_READ: u32 = WM_APP + 19;
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     /// Every message above. A new one must be added here too, so the checks
     /// below cover it.
-    const ALL: [u32; 18] = [
+    const ALL: [u32; 19] = [
         TRAY_CALLBACK,
         OUTSIDE_PROBE,
         EDIT_KEY,
@@ -90,6 +94,7 @@ mod tests {
         ICONS_LOADED,
         NEW_SPACE,
         OPEN_SETTINGS,
+        ITEM_FACTS_READ,
     ];
 
     #[test]

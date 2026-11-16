@@ -1,13 +1,15 @@
 //! The shell icon cache: base icons from the image factory, the classic
 //! fallback, and the overlays composited as Explorer draws them. A scene's
 //! icons load on a worker thread, so a slow folder never stalls the spaces.
+//! The same worker reads item facts when the app asks, behind the icons.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use deskspace_core::ItemKind;
+use deskspace_core::{ItemId, ItemKind, SpaceId};
 
+use crate::fact_jobs::FactBatch;
 use crate::render::Icon;
 use crate::win32::runtime;
 
@@ -228,6 +230,30 @@ impl IconCache {
         // the startup timeline sees it first go idle after the initial batch.
         worker.ready.notify_one();
         users.into_iter().collect()
+    }
+
+    /// Asks the load worker to read the facts of `space`'s `items` again,
+    /// each from the path given, behind every icon a scene asks for.
+    /// `Event::ItemFactsRead` says when `take_item_facts` has the batch.
+    /// Without a running UI there is no worker, and nothing is read.
+    pub fn read_item_facts(&mut self, space: SpaceId, items: Vec<(ItemId, PathBuf)>) {
+        if items.is_empty() {
+            return;
+        }
+        let Some(worker) = self.worker() else {
+            return;
+        };
+        worker.lock().facts.push(space, items);
+        worker.ready.notify_one();
+    }
+
+    /// Takes the batches of item facts the worker has finished reading, one
+    /// per space, without the files it could not read.
+    pub fn take_item_facts(&mut self) -> Vec<FactBatch> {
+        match &self.worker {
+            Some(worker) => worker.lock().facts.take_done(),
+            None => Vec::new(),
+        }
     }
 
     /// The icon for a lens's folder, drawn `size` pixels square in a title bar.
@@ -629,6 +655,29 @@ mod tests {
         assert_eq!(load_all(&cache, Some(new.clone())), 1);
         cache.take_loaded();
         assert_eq!(cache.touch(&key("a")).map(|icon| icon.id()), Some(new.id()));
+    }
+
+    #[test]
+    fn item_facts_asked_for_come_back_as_one_batch_per_space() {
+        use deskspace_core::ItemFacts;
+
+        let mut cache = cache_with_queue();
+        assert!(cache.take_item_facts().is_empty());
+        cache.read_item_facts(SpaceId(7), vec![(ItemId(1), PathBuf::from("a"))]);
+        let facts = ItemFacts {
+            size: Some(12),
+            ..ItemFacts::default()
+        };
+        // Play the worker: read the one file and record what it held.
+        let worker = cache.worker.clone().expect("a worker");
+        assert_eq!(worker.lock().facts.next(), Some(PathBuf::from("a")));
+        assert!(cache.take_item_facts().is_empty(), "still being read");
+        assert!(worker.lock().facts.record(Some(facts)));
+        assert_eq!(
+            cache.take_item_facts(),
+            [(SpaceId(7), vec![(ItemId(1), facts)])]
+        );
+        assert!(cache.take_item_facts().is_empty(), "each is taken once");
     }
 
     #[test]

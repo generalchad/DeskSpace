@@ -1,6 +1,7 @@
 mod debug_console;
 mod edit;
 mod error;
+mod fact_jobs;
 mod icon_queue;
 mod input;
 mod page_scroll;
@@ -15,6 +16,7 @@ pub use debug_console::format_line;
 pub use deskspace_core::Glyph;
 pub use edit::{EditKey, EditOutcome, MoveDir, TextEdit};
 pub use error::PlatformError;
+pub use fact_jobs::FactBatch;
 pub use input::{
     ClipboardAction, DebugEvent, DropAction, Event, FolderListing, MouseButton, NavDir, NavKey,
     SelectionKey, SettingsEvent, ShellItem, SpaceEvent, TrayEvent, WatchKey, ZoomAction,

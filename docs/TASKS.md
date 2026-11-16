@@ -105,6 +105,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | A grouped space's display order | `deskspace-core/src/grouping.rs` (`Grouping`), read by `ViewLayout`; `App::sync_grouping` in `app/view.rs` keeps it current |
 | Inline rename | `deskspace-app/src/app/rename.rs` |
 | Drops, delete, prune | `deskspace-app/src/app/files.rs` |
+| A normal space's item facts, read again at startup | `deskspace-app/src/app/facts.rs` (asking and applying), `deskspace-platform/src/fact_jobs.rs` (the worker's batches), `IconCache::read_item_facts` in `win32/icons/` |
 | Cut / copy / paste | `deskspace-app/src/app/clipboard.rs` |
 | Space, item, and tray menus | `deskspace-app/src/app/menus.rs` |
 | Settings window behavior (open, preview, Apply, Cancel) | `deskspace-app/src/app/settings_session.rs` |
@@ -2018,23 +2019,6 @@ These are in the order we would take them. Each lands alone.
   - **[needs human]** check: the three combinations show no cue, Alt+Tab and
     Alt+F4 still work, and a rename still cancels on Alt.
 
-- [ ] **P13. Keep a normal space's item facts fresh (feature).** A
-  normal space's item reads its dates and size once, when added. An item saved
-  before W29 has no Date created and sorts as the oldest; every item's `size` and
-  `modified` go stale (`CONTEXT.md` section 10). A lens re-reads them on each
-  listing. P13a-P13c are in the junior list, so this task is the part that remains:
-  - [ ] **P13d. Read the facts on the worker, and apply them.** After: P13a-P13c.
-    At startup, B33's worker calls `read_item_facts` for each normal space's items
-    and posts them in one batch per space, leaving out a missing file. A new
-    `Event` hands a batch to the app, which dispatches `RefreshItemFacts` through
-    `commit` with no undo entry open, or holds it until any open entry finishes.
-  - B33's queue drops paths scrolled out of view. These jobs must not be dropped,
-    and must yield to icon requests, so scrolling stays smooth.
-  - Tests: a refresh leaves undo available.
-  - `CONTEXT.md` section 10: update the sentence. **[needs human]** check: start
-    on a config with a few hundred items on a slow disk: no stall, and sorting by
-    Date created orders an old item correctly.
-
 - [ ] **P15. Scroll Details sideways.** Columns past the space's width are cut off
   (`scene.rs` `details_columns`), and W30 makes that easy to reach: every column on
   takes 560 px at 96 DPI. The design is ROADMAP D24. P15f is the part that remains:
@@ -2681,6 +2665,7 @@ that has it.
 | P46 (v0.3) (shell windows in front) | With a lens on a throwaway folder and Explorer maximized over the spaces, drop a clashing file onto the lens: "Replace or Skip Files" shows in front of Explorer within a moment, and Replace and Skip both work. The same for a long copy's progress window (a few GB, or onto a slow drive), a move's error window (a file another program holds open), and a rename to a name already taken. With `--on-top` and the spaces above everything, the window still shows in front of them. A quick delete, rename, or small copy shows no window at all, as before. A copy started from Explorer itself meanwhile keeps its own window where it was. Repeat the clashing drop on Windows 10: the window's class name was read on Windows 11 only. |
 | Item highlight (D28) | Beside Explorer's desktop and an Explorer window on the same folder, at 100 % and 150 %, under Match Explorer, Custom, and the fixed icon views (Medium, Large, Extra large): hovering or selecting an item in an icon view draws a highlight the size of Explorer's around its icon and the lines its own label takes, shorter around a one-line name than around one that wraps, with the icon centered in it and the focus rectangle following it. Rows sit close together with a 1 px gap between two-line highlights (or the Custom spacing under Custom), and no label is clipped at 1 or 2 lines or at 160 % label size. Clicking the strip under a one-line name in a two-line row still selects that item; the check box still sits on the icon's top-left corner and takes clicks; the drag image hugs the item the same way. With takeover on, loose desktop icons stay where Explorer put them and their highlights hug each item. Small icons, List, Details, Tiles, and Content highlights look as before. |
 | C19 (platform; render) | Beside Explorer's desktop and an Explorer window on the same folder, at 100 % and 150 %, light and dark, with takeover on as well: F2 on a short name ("Firefox"), a two-line name, and a name wider than its label, in Medium, Large, and Extra large icons under both Match Explorer and Custom. In each, the box spans the label's width with the name centered in it, a wrapped name grows it downward over the items below, and its left, right, top, and bottom edges and border match Explorer's; the commit that closes this row records Explorer's measured edges (against the icon and the text, the border, and the colors) and whether ours is 1 px taller. The caret, the selection, mouse selection in the box, and Esc and Enter behave as before, and the title bar's rename box hugs its text with an even margin on each side. Then compare Explorer's box in Small icons, List, Details, Tiles, and Content at both scales: ours still hugs the name in those views, so note any where Explorer's spans the label instead, as a fix task. |
+| P13d (item facts) | With `./scripts/dev.ps1 -Release -Verbosity 1` on a scratch config with a few hundred items in normal spaces, some on a slow disk or a network share: the spaces appear, take clicks, and scroll with no stall while the facts are read, and the log shows one "read a space's item facts again" line per space, after "startup: icon worker idle". Edit a file a space lists while DeskSpace is closed: after the start, Details shows its new size and date, and a space sorted by Size with Keep sorted on has moved it to its new place. An item saved before Date created was recorded sorts by its real date under Sort by ▸ Date created. Right after the start, move a space and press Ctrl+Z: the move is undone, with no "can't undo" message. A lens behaves as before. Checked without a screen on 2026-11-16: a start rewrote a scratch config's two wrong sizes and dates with the files' own, and the next start wrote nothing. |
 
 ## Found while working
 
@@ -2695,3 +2680,5 @@ refreshed.
 - Measuring Explorer (P14b, 2026-11-11): UI Automation reads each item's rect in an Explorer window, `ShellFolderView.CurrentViewMode` and `IconSize` set the view, and `SetWindowPos` steps the width, so a script can measure what P16d and section B's "Explorer is the reference" ask a person to read off a screenshot. Suggested task: an `OnScreen.psm1` function that does it, with section O's rules.
 - `a_folder_moves_with_its_contents_and_never_onto_a_file` (`win32/file_move.rs` tests) failed once with "Access is denied. (os error 5)" where it expects `AlreadyExists`, during a `cargo test --workspace` that a second worktree's build ran beside (2026-11-09); it passed alone and on rerun. Suggested task: find what holds the folder (an indexer or antivirus on the temp path) and make the test tolerate or avoid it.
 - After Burn's masks and marks were trimmed (2026-11-15), the flames' CPU shading is what is left: about 0.6 ms a frame for a 1200 x 900 space, one `fire()` call per pixel, which multiplies with every space burning at once. Suggested task: shade the flames on the GPU, or a frame ahead on a worker thread as B50 plans for icons.
+- `apply_refresh_item_facts` (`deskspace-core/src/command/item_ops.rs`) finds each item of a batch with a scan of the space, so a refresh grows with the square of a space's items: on the UI thread, in a release build, 0.12 ms for 300 items, 1.3 ms for 2,000, and 7.0 ms for 5,000 kept sorted by Size (2026-11-16), against the 8 ms budget. Suggested task: look the ids up in a map built once per batch, with the same tests.
+- `prune_missing` (`app/files.rs`) calls `Path::exists` for every item of every space on the UI thread, at startup and after item actions, so a space listing files on a sleeping disk or a dropped share stalls the start (P52's family). The icon worker now reads every normal space's files at startup and knows which are missing. Suggested task: have its batch name the missing files and prune from that, after deciding what a file on an unreachable drive is (missing, or kept).

@@ -147,6 +147,11 @@ impl UndoStack {
         }
     }
 
+    /// Whether an entry is open, so a change dispatched now would join it.
+    pub(in crate::app) fn is_recording(&self) -> bool {
+        self.open.is_some()
+    }
+
     /// Label of the next action [`App::undo`](super::App::undo) will undo, if any.
     pub(in crate::app) fn undo_label(&self) -> Option<&str> {
         self.undo.last().map(|entry| entry.label.as_str())
