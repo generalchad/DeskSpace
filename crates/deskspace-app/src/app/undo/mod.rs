@@ -1016,6 +1016,73 @@ mod tests {
     }
 
     #[test]
+    fn a_space_deleted_with_its_files_recycled_comes_back_with_them() {
+        let scratch = Scratch::new("delete-space-recycled");
+        let mut app = test_app_in(&scratch.0);
+        let space = create_space(&mut app.config.desktop, "Work", sample_rect(16));
+        std::fs::create_dir_all(app.storage.root()).unwrap();
+        let first = app.storage.root().join("first.lnk");
+        let second = app.storage.root().join("second.lnk");
+        let in_place = scratch.0.join("kept.txt");
+        for path in [&first, &second, &in_place] {
+            std::fs::write(path, "x").unwrap();
+            add_item(&mut app.config.desktop, space, &path.to_string_lossy());
+        }
+
+        let bin = app.storage.root().join(".test-recycle");
+        std::fs::create_dir_all(&bin).unwrap();
+        let deleted = app.delete_space_with(
+            space,
+            crate::app::files::StoredFiles::ToRecycleBin,
+            |paths| {
+                assert_eq!(
+                    paths,
+                    [first.clone(), second.clone()],
+                    "never the in-place file"
+                );
+                for path in paths {
+                    std::fs::rename(path, bin.join(path.file_name().unwrap())).unwrap();
+                }
+            },
+        );
+        assert!(deleted);
+        assert_eq!(app.undo.undo_label(), Some("Delete space"));
+        assert!(app.config.desktop.space(space).is_none());
+        assert!(!first.exists() && !second.exists());
+        assert!(in_place.exists());
+
+        // Undo restores the space and both recycled shortcuts.
+        assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
+        assert_eq!(app.config.desktop.space(space).unwrap().items().len(), 3);
+        assert!(first.exists() && second.exists() && in_place.exists());
+
+        // Redo recycles them again and deletes the space.
+        assert!(matches!(app.apply_redo(), StepOutcome::Applied { .. }));
+        assert!(app.config.desktop.space(space).is_none());
+        assert!(!first.exists() && !second.exists());
+        assert!(in_place.exists());
+    }
+
+    #[test]
+    fn a_space_whose_files_could_not_be_recycled_stays_with_no_entry() {
+        let scratch = Scratch::new("delete-space-kept");
+        let mut app = test_app_in(&scratch.0);
+        let space = create_space(&mut app.config.desktop, "Work", sample_rect(16));
+        std::fs::create_dir_all(app.storage.root()).unwrap();
+        let stored = app.storage.root().join("busy.lnk");
+        std::fs::write(&stored, "x").unwrap();
+        add_item(&mut app.config.desktop, space, &stored.to_string_lossy());
+
+        let deleted =
+            app.delete_space_with(space, crate::app::files::StoredFiles::ToRecycleBin, |_| {});
+        assert!(!deleted);
+        assert!(app.config.desktop.space(space).is_some());
+        assert!(stored.exists());
+        assert_eq!(app.undo.undo_label(), None);
+        assert!(!app.undo.is_recording());
+    }
+
+    #[test]
     fn emptying_recycle_bin_before_undo_is_stale_and_changes_nothing() {
         let scratch = Scratch::new("empty-recycle-bin");
         let mut app = test_app_in(&scratch.0);

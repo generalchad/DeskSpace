@@ -1152,7 +1152,8 @@ exact steps, ranges, edge cases, and the code behind them.
   Rules README leaves out: Undo and Redo are named for the top entry and
   greyed when empty; Fit to contents is offered only on an unlocked space
   that is resized or in an order-placed view; Delete space asks first unless
-  the space is empty; a lens's Change folder… refuses a folder
+  the space is empty, and when it holds stored files its prompt chooses
+  where they go (`STORED_FILES_CHOICES`, `app/files.rs`; ROADMAP D3); a lens's Change folder… refuses a folder
   `ItemStore::allows_lens` rejects with a message, and its Sort by… and Show
   hidden files rebuild the list on the worker. With `--debug`, the tray adds
   Debug… (D14).

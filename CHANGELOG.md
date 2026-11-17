@@ -14,6 +14,11 @@ Notable changes to DeskSpace, newest first. The format follows
   names now: "Email & Communication" gets a mail icon, "Artcraft" a paint
   brush, and "Web Browsing" a globe, while a title that already had an icon
   keeps it.
+- Deleting a space that holds shortcuts or files you dropped in asks where
+  they go: "Move to the desktop", as before and still the default, or
+  "Delete them", which sends them to the Recycle Bin. Files shown in place
+  stay where they are either way, and Ctrl+Z brings the space back with its
+  items.
 
 ### Changed
 

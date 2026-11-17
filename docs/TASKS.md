@@ -585,43 +585,6 @@ drop side is `win32/drop_target.rs` (`DragKind`, `drag_kind`, `DropPlan`,
     It grows with the remaining Explorer item settings (hidden/protected
     files once F-22 exists).
 
-- [ ] **C17. Delete a space with its shortcuts (app).** Asked by the
-  maintainer, 2026-11-15.
-  - Why: deleting a normal space always moves its stored items back to the
-    desktop (`App::delete_space`, `app/files.rs`), so a user who wants the
-    space and its shortcuts gone has to clean the desktop by hand.
-  - Decided (maintainer, 2026-11-15): when the space holds stored items,
-    the confirm prompt offers "Move to the desktop" (the default, so Enter
-    keeps today's behavior), "Delete them", and Cancel. "Delete them" sends
-    the stored items to the Recycle Bin. Items listed in place
-    (Shift-dropped, or on another drive) are only unlisted, never deleted
-    (ROADMAP D3). Either choice is one undo entry, "Undo Delete space"; after
-    "Delete them" it restores the space and its items from the Recycle Bin,
-    as an item delete's undo does (`app/undo/files.rs`, the U7 row). A lens,
-    an empty space, and a space with no stored items keep today's prompt.
-  - `App::delete_space`: when `stored > 0`, ask with `ui.choose` (the icon
-    consent prompt in `app.rs` is the pattern) in place of `ui.confirm`,
-    and map the answer to `StoredFiles`. `delete_consequence` (`app.rs`)
-    gets wording that names both choices; extend its tests.
-  - `delete_space_now` cancels the undo entry for
-    `StoredFiles::ToRecycleBin` today. The debug window's "Delete all
-    spaces" (`app/debug/spaces.rs`) uses that path and must stay without an
-    undo entry (the debug control recipe). If the two callers cannot share
-    the path without a special case, stop and ask.
-  - Tests: the answer-to-`StoredFiles` mapping, and an undo test copied from
-    the closest one in `app/undo/mod.rs` that restores a space deleted with
-    its items recycled.
-  - Docs: ROADMAP D3's "Deleting a space moves its stored files back to the
-    desktop" gains the choice; `CONTEXT.md` where it describes a space
-    delete; a `CHANGELOG.md` "Unreleased" line.
-  - **[needs human]**: delete a space holding two dropped shortcuts and one
-    Shift-dropped file, from the space menu and from the settings header.
-    The prompt names both choices, with Move to the desktop the default;
-    Enter moves them to the desktop as before; "Delete them" puts the two
-    shortcuts in the Recycle Bin and leaves the Shift-dropped file where it
-    is; Ctrl+Z brings the space back with both shortcuts; Cancel and Esc
-    change nothing; a lens and an empty space ask as before.
-
 - [ ] **C18. OneDrive's Status column in a lens (core, platform, app).**
   Asked by the maintainer, 2026-11-15.
   - Why: Explorer shows a Status column in a OneDrive folder (online-only,
@@ -2502,6 +2465,7 @@ that has it.
 | S12 (part script) (D16, D26) | On a space's page, at 100 % and 150 %, in light and dark: double-click the name: an edit opens over it with the name selected. Type, then Enter: the top line, the scopes pane, and the space on the desktop show the new name, and the window stays open. Esc in the edit keeps the old name and the window open, and neither key presses OK or Cancel. Click elsewhere in the window, or press OK, while editing: the typed name is kept. Clearing a lens's name puts its default title back. Double-click the icon, once with the edit closed and once with it open: the picker opens over the settings window each time, an open edit stays open behind it and has the focus again afterwards, and a choice shows at once on the top line, in the scopes pane, and on the desktop. While the picker is open, typing goes only to the picker, and after it closes other apps get their keys (nothing stays captured). A single click on the icon does nothing; the cursor over it is a hand and its tooltip says "Double-click to change the icon", dark in dark mode. A space with no icon: double-click the +, pick one, and it replaces the +. With an icon set still downloading, the picker opens once it arrives, while the page shows. Cancel afterwards keeps both changes, and Ctrl+Z undoes the rename. Global's top line does not edit and has no icon. |
 | S11 (D16, D26) | In light and dark, at 100 % and 150 %: a space with an icon shows it in the scopes pane in place of its kind's symbol (decided 2026-11-05: the icon replaces the symbol), and on its page's top line left of its name, aligned with the text. A space without an icon keeps its kind's symbol in the scopes pane, laid out as before, and shows an outlined + on the top line. A dimmed scope's icon is dimmed. The top-line icon takes no click yet (S12). Global's top line has no icon and its title has not moved. Change a space's icon from the desktop while Settings is open: both places follow; an icon set that finishes downloading while Settings is open fills in. Switch dark mode: the icons redraw in the new text color. |
 | C22 (D16) | With the icon set downloaded, at 100 % and 150 %, light and dark: spaces titled "Email & Communication", "Artcraft", "Web Browsing", and "Stuff", each with no icon. Settings > General's "Suggest icons" asks once, naming three spaces; the first three get a mail, paint brush, and globe icon, and "Stuff" stays bare. Ctrl+Z takes all three away in one step ("Undo Suggest icons"), and redo puts them back. A space with its own icon keeps it, and a lens without one keeps its folder's icon. A space titled "Playing Cards" keeps its playing-cards icon, not a play icon. With "Icon downloads" set to "Never" the button is greyed; with "Ask first" and no cached set, clicking it asks before downloading, then suggests. |
+| C17 (D3) | Delete a space holding two dropped shortcuts and one Shift-dropped file, from the space menu and from the settings header. The prompt names both choices, with "Move to the desktop" the default; Enter moves them to the desktop as before; "Delete them" puts the two shortcuts in the Recycle Bin and leaves the Shift-dropped file where it is; Ctrl+Z brings the space back with both shortcuts, and Ctrl+Y deletes it again; Cancel and Esc change nothing; a lens and an empty space ask as before. With a shortcut held open so it cannot be recycled, "Delete them" keeps the space. `--debug`'s "Delete all spaces" still asks once and leaves nothing to undo. |
 | Rail groups | At 100 % and 150 %, in light and dark: Global's pane shows Look, Fonts, New items, DeskSpace, and Animations, each title with a caret pointing down, and a space shows This space (View, Shortcuts) then Look, a lens This space (Lens, View, Shortcuts) then Look. Switching from Global's General to a space opens its first page. Click a title: its pages hide and the caret points right; click again: they return. The click never selects the title or changes the page. Collapse the group of the page shown: the page stays, and no row is selected until you pick one. Switch scopes: Look stays collapsed if it was. With the arrow keys, Up and Down step over titles in both directions (Up from Startup reaches About), and moving into a collapsed group opens it at its first entry going down and its last going up. Reopen Settings: every group is open again. |
 | Dark scroll bars | In dark mode, at 100 % and 150 %: every scroll bar is dark, with no white track. Settings: a page taller than the window (G10), the scopes pane with enough spaces to scroll, and the open list of a font family drop-down. Debug window: the section pane, the section list, a long readout (Model or Diagnostics), the console, and an open family list. The installed-apps picker's list and the icon picker's set drop-down. Switch to light mode with each window open: every bar turns light again. The debug readouts' borders still look right in both modes. |
 | G10 (part script) (D26) | At 100 % and 150 %, in light and dark, on Appearance, Colors, and New spaces (at 150 % on a 1080p screen they are taller than the window): a scrollbar shows while the page does not fit; dragging it, its arrows, the wheel, and PageUp/PageDown/Home/End (with a check box or button focused) reach every group; the cards and hairlines scroll with the controls, with no card or seam left behind; switching pages starts the next page at the top; a short page has no scrollbar; the OK/Cancel/Apply bar is always on screen. Scroll with the pointer passing over drop-downs and sliders: none of them changes, and an open drop-down's list still scrolls itself. With a drop-down, a text box, or a slider focused, PageUp/PageDown/Home/End still work that control as before. |
@@ -2682,3 +2646,4 @@ refreshed.
 - After Burn's masks and marks were trimmed (2026-11-15), the flames' CPU shading is what is left: about 0.6 ms a frame for a 1200 x 900 space, one `fire()` call per pixel, which multiplies with every space burning at once. Suggested task: shade the flames on the GPU, or a frame ahead on a worker thread as B50 plans for icons.
 - `prune_missing` (`app/files.rs`) still reads every item of a space on the UI thread after an item action (a shell menu command, a drag out, a cut that was pasted elsewhere, a drop onto a lens), and `drag_item_out` calls `Path::exists` on the dragged items. A space that lists files on a share that has stopped answering stalls for seconds per such item then (P52's family); startup no longer does. Suggested task: send these through the icon worker as startup's check goes (`App::request_item_facts`), once it is decided that an item may stay listed for a moment after its file went.
 - An item whose drive or share cannot be reached draws like any other, with a generic icon (2026-11-16, ROADMAP D3). Suggested task: decide whether it should look offline (dimmed, or a badge), and say so in its info tip.
+- `Ui::choose` (`win32/runtime/ui_chrome.rs`) numbers its buttons from 0, but a task dialog reports Esc as `IDCANCEL`, which is 2, so Esc returns `Some(2)` rather than `None` (found 2026-11-17, while building C17, from the API's documented behavior; not seen on screen). The "Update available" prompt's third button is "Skip this version", so Esc there would skip the version. C17's prompt keeps Cancel third for now. Suggested task: give the buttons ids from 100 and map `IDCANCEL` to `None`, with a pure test of the mapping.

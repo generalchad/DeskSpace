@@ -1058,7 +1058,8 @@ fn delete_needs_confirmation(space: &Space) -> bool {
 }
 
 /// What deleting `space`, with `stored` of its items in the space storage,
-/// does to the files.
+/// does to the files. With stored files, the prompt's buttons choose where
+/// they go (`STORED_FILES_CHOICES` in `app/files.rs`), so this names both.
 fn delete_consequence(space: &Space, stored: usize) -> String {
     if let Some(view) = space.folder_view() {
         return format!(
@@ -1074,12 +1075,19 @@ fn delete_consequence(space: &Space, stored: usize) -> String {
             "Its {count} {} will be removed from DeskSpace. The files themselves are not deleted.",
             plural(count)
         ),
-        _ => format!(
-            "Its {count} {} will be removed from DeskSpace, and the {stored} {} moved into \
-             the space will be moved back to the desktop. No files are deleted.",
-            plural(count),
-            if stored == 1 { "file" } else { "files" }
-        ),
+        _ => {
+            let in_place = if count > stored {
+                " Items shown in place keep their files where they are."
+            } else {
+                ""
+            };
+            format!(
+                "Its {count} {} will be removed from DeskSpace. The {stored} {} stored in the \
+                 space can move back to the desktop, or be deleted to the Recycle Bin.{in_place}",
+                plural(count),
+                if stored == 1 { "file" } else { "files" }
+            )
+        }
     }
 }
 
@@ -1255,7 +1263,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_message_mentions_files_moved_back() {
+    fn delete_message_names_both_choices_for_stored_files() {
         let space_with = |count: u64| {
             let mut space = Space::new(SpaceId(1), "S", Rect::new(0, 0, 200, 200));
             for n in 0..count {
@@ -1271,7 +1279,12 @@ mod tests {
         assert!(delete_consequence(&space_with(1), 0).contains("1 item will be removed"));
         let mixed = delete_consequence(&space_with(3), 2);
         assert!(mixed.contains("3 items"));
-        assert!(mixed.contains("2 files moved into the space will be moved back"));
+        assert!(mixed.contains("2 files stored in the space can move back to the desktop"));
+        assert!(mixed.contains("Recycle Bin"));
+        assert!(mixed.contains("shown in place keep their files"));
+        let all_stored = delete_consequence(&space_with(1), 1);
+        assert!(all_stored.contains("1 file stored"));
+        assert!(!all_stored.contains("shown in place"));
     }
 
     #[test]

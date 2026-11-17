@@ -39,11 +39,30 @@ fn paths_to_transfer(paths: &[PathBuf], folder: &Path) -> Vec<PathBuf> {
 /// unlisted either way.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum StoredFiles {
-    /// Back to the desktop, as Delete space does (ROADMAP D3).
+    /// Back to the desktop, Delete space's default (ROADMAP D3).
     ToDesktop,
-    /// To the Recycle Bin, as the debug window's Delete all spaces does
-    /// (ROADMAP D14), so test files never pile up on the desktop.
+    /// To the Recycle Bin: Delete space's "Delete them", and the debug
+    /// window's Delete all spaces (ROADMAP D14), so test files never pile up
+    /// on the desktop.
     ToRecycleBin,
+}
+
+/// The answers to deleting a space that holds stored files, in button order,
+/// with where each sends them; `None` is Cancel. The first is the default, so
+/// Enter moves them to the desktop as Delete space always has. Cancel stays
+/// last: `Ui::choose` reports Esc as `IDCANCEL`, which is 2.
+const STORED_FILES_CHOICES: [(&str, Option<StoredFiles>); 3] = [
+    ("Move to the desktop", Some(StoredFiles::ToDesktop)),
+    ("Delete them", Some(StoredFiles::ToRecycleBin)),
+    ("Cancel", None),
+];
+
+/// Where the button at `answer` of `STORED_FILES_CHOICES` sends the stored
+/// files, or `None` to keep the space (Cancel, Esc, or a closed dialog).
+fn stored_files_for(answer: Option<usize>) -> Option<StoredFiles> {
+    answer
+        .and_then(|index| STORED_FILES_CHOICES.get(index))
+        .and_then(|(_, stored)| *stored)
 }
 
 impl App {
@@ -541,7 +560,7 @@ impl App {
     /// the shell could not delete (for example one in use) stays listed. An item
     /// whose file is already missing is dropped without a shell operation. This
     /// is distinct from deleting a space, which returns its stored files to
-    /// the desktop.
+    /// the desktop unless the user chooses to delete them.
     pub(super) fn delete_selected_items(&mut self, ui: &mut Ui, permanent: bool) {
         let Some(surface) = self.selection.surface else {
             return;
@@ -785,57 +804,96 @@ impl App {
             .iter()
             .filter(|item| self.storage.contains(&item.path))
             .count();
-        if delete_needs_confirmation(space) {
+        let stored_files = if !delete_needs_confirmation(space) {
+            StoredFiles::ToDesktop
+        } else {
             let question = format!(
                 "Delete the space \"{}\"?\n\n{}",
                 space.title(),
                 delete_consequence(space, stored)
             );
-            if !ui.confirm("Delete space", &question) {
+            if stored > 0 && !space.is_lens() {
+                let buttons = STORED_FILES_CHOICES.map(|(label, _)| label);
+                match stored_files_for(ui.choose("Delete space", &question, &buttons, 0)) {
+                    Some(stored_files) => stored_files,
+                    None => return,
+                }
+            } else if ui.confirm("Delete space", &question) {
+                StoredFiles::ToDesktop
+            } else {
                 return;
             }
-        }
-        self.delete_space_now(ui, id, StoredFiles::ToDesktop);
+        };
+        self.delete_space_now(ui, id, stored_files);
     }
 
     /// Deletes space `id` without asking, sending its stored files where
-    /// `stored` says. If any cannot be moved, the space stays, so its files
-    /// stay reachable.
+    /// `stored` says. If any cannot be moved or recycled, the space stays, so
+    /// its files stay reachable.
     pub(super) fn delete_space_now(&mut self, ui: &mut Ui, id: SpaceId, stored: StoredFiles) {
-        let Some(space) = self.config.desktop.space(id) else {
+        if self.config.desktop.space(id).is_none() {
             return;
+        }
+        let deleted = self.delete_space_with(id, stored, |paths| {
+            ui.delete_files(paths, false);
+        });
+        if !deleted {
+            self.refresh_space(ui, id);
+            self.save(ui);
+            return;
+        }
+        self.sync_watches(ui);
+        self.sync_windows(ui);
+        self.save(ui);
+    }
+
+    /// Deletes space `id` as one "Delete space" undo entry, and returns
+    /// whether it went. With `StoredFiles::ToRecycleBin`, `recycle` first
+    /// sends the stored files to the Recycle Bin, and the entry notes each
+    /// one, so undo restores them with the space; a file left behind keeps
+    /// the space and records nothing. The debug window suppresses undo, so
+    /// its deletes record nothing either way.
+    pub(super) fn delete_space_with(
+        &mut self,
+        id: SpaceId,
+        stored: StoredFiles,
+        recycle: impl FnOnce(&[PathBuf]),
+    ) -> bool {
+        let Some(space) = self.config.desktop.space(id) else {
+            return false;
         };
-        if stored == StoredFiles::ToRecycleBin {
-            let paths = stored_paths(space, &self.storage);
-            let recycled = paths.is_empty()
-                || (ui.delete_files(&paths, false) && !paths.iter().any(|path| path.exists()));
-            if !recycled {
+        let paths = match stored {
+            StoredFiles::ToDesktop => Vec::new(),
+            StoredFiles::ToRecycleBin => stored_paths(space, &self.storage),
+        };
+        let title = space.title().to_string();
+        self.undo.begin("Delete space");
+        if !paths.is_empty() {
+            let at = SystemTime::now();
+            recycle(&paths);
+            let kept = paths.iter().filter(|path| path.exists()).count();
+            if kept > 0 {
                 tracing::error!(
-                    space = space.title(),
+                    space = title,
+                    kept,
                     "space kept because its files could not be recycled"
                 );
-                self.refresh_space(ui, id);
-                self.save(ui);
-                return;
+                self.undo.cancel();
+                return false;
             }
-        }
-        self.undo.begin("Delete space");
-        if stored == StoredFiles::ToRecycleBin {
-            self.undo.cancel();
+            for original in paths {
+                self.undo.note_file(FileChange::Recycled { original, at });
+            }
         }
         // Any stored files still here go back to the desktop before the
         // space goes; recycled ones are gone, so `release_item` only unlists
         // them.
         if !self.release_and_delete_space(id) {
             self.undo.cancel();
-            self.refresh_space(ui, id);
-            self.save(ui);
-            return;
+            return false;
         }
         self.undo.finish(&self.config.desktop);
-        self.sync_watches(ui);
-        self.sync_windows(ui);
-        self.save(ui);
+        true
     }
 
     pub(super) fn release_and_delete_space(&mut self, id: SpaceId) -> bool {
@@ -1098,6 +1156,24 @@ mod tests {
         assert_eq!(shortcut_file_name("Report...", "lnk"), "Report.lnk");
         assert_eq!(shortcut_file_name("   ", "lnk"), "Shortcut.lnk");
         assert_eq!(shortcut_file_name("", "lnk"), "Shortcut.lnk");
+    }
+
+    #[test]
+    fn each_delete_space_answer_sends_the_stored_files_where_it_says() {
+        assert_eq!(
+            STORED_FILES_CHOICES[0].1,
+            Some(StoredFiles::ToDesktop),
+            "the default, so Enter keeps them on the desktop"
+        );
+        assert_eq!(stored_files_for(Some(0)), Some(StoredFiles::ToDesktop));
+        assert_eq!(stored_files_for(Some(1)), Some(StoredFiles::ToRecycleBin));
+        assert_eq!(
+            stored_files_for(Some(2)),
+            None,
+            "Cancel, and Esc's IDCANCEL"
+        );
+        assert_eq!(stored_files_for(Some(3)), None);
+        assert_eq!(stored_files_for(None), None, "a closed dialog");
     }
 
     #[test]

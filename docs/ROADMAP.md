@@ -93,7 +93,12 @@ A native, lightweight, offline Windows desktop organizer that:
       out or a share that was down when DeskSpace started cost the space its
       items for good.
     - Name clashes get " (2)" as in Explorer, and nothing is overwritten.
-    - Deleting a space moves its stored files back to the desktop.
+    - Deleting a space moves its stored files back to the desktop. Amended
+      2026-11-15 (maintainer, C17): when it holds stored files, its prompt
+      offers "Move to the desktop" (the default) or "Delete them", which
+      sends them to the Recycle Bin; items listed in place are only unlisted
+      either way. Both are one undo entry, and undo brings recycled files
+      back with the space.
     - Removing a single item is a delete (amended 2026-10-13): a stored file
       goes to the Recycle Bin, as the Delete key and Explorer's Delete do, and
       an item listed in place (Shift-dropped, or on another drive) is only
@@ -541,8 +546,9 @@ A native, lightweight, offline Windows desktop organizer that:
   - *Destructive actions* (Delete all spaces, Delete stress spaces, Crash
     now, read-only config) always ask first. The question names the config file and, when no
     `--config` was given, warns that this is the real configuration.
-  - *Delete all spaces* sends every stored file to the Recycle Bin, unlike
-    Delete space, which returns them to the desktop (D3): test files would
+  - *Delete all spaces* sends every stored file to the Recycle Bin without
+    asking where, unlike Delete space, which returns them to the desktop by
+    default (D3): test files would
     otherwise pile up on the real desktop on every cycle, even with a
     scratch `--config`. Items listed in place are only unlisted, as for a
     single delete. A space whose files cannot be recycled stays, as Delete
