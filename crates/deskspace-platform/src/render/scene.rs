@@ -218,6 +218,25 @@ pub struct DetailsView {
     /// Where a dragged header would land: the insertion mark's x, relative to
     /// the content area.
     pub drop_mark: Option<i32>,
+    /// How far the columns are scrolled sideways, clamped to what they need
+    /// (ROADMAP D24). A row's check box, icon, and name move with Name's
+    /// column (`row_contents`); its highlight stays across the visible row.
+    pub scroll_x: i32,
+    /// The left and right edges between which the columns show, relative to
+    /// the content area: the content inside its padding. The header and the
+    /// rows are clipped to them, so a column scrolled sideways stops at the
+    /// padding instead of running under the space's border.
+    pub visible: (i32, i32),
+}
+
+impl DetailsView {
+    /// Where a Details row at `row` lays out its check box, icon, and name:
+    /// moved left with Name's column as the columns scroll sideways. The
+    /// painter and the check-box hit test both place them from it. Any
+    /// coordinate system, since it only moves the rect.
+    pub fn row_contents(&self, row: Rect) -> Rect {
+        row.offset(-self.scroll_x, 0)
+    }
 }
 
 /// One group's header row: its name and count, a chevron, and a rule.

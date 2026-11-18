@@ -886,7 +886,7 @@ A native, lightweight, offline Windows desktop organizer that:
   - List keeps its one `ScrollAxis`. Only Details gets a second offset.
   - Input is Shift+wheel and the tilt wheel, with a second indicator, as Explorer
     has them.
-  - Work items: `TASKS.md` P15.
+  - Work items: P15a-P15f, done; their checks are in `TASKS.md` section V.
 
 - **D25. Measuring labels in a space (2026-11-02, maintainer).** For "Size all
   columns to fit" and List columns sized to the longest label.

@@ -440,7 +440,19 @@ impl Painter {
                     &rect_f(0.0, items_top, width, content_bottom),
                     D2D1_ANTIALIAS_MODE_ALIASED,
                 );
+                // Details rows stop where their columns do, so a row scrolled
+                // sideways never runs into the padding.
+                let columns_clip = scene.details.as_ref().map(|details| {
+                    let (left, right) = details.visible;
+                    rect_f(left as f32, items_top, right as f32, content_bottom)
+                });
+                if let Some(clip) = &columns_clip {
+                    target.PushAxisAlignedClip(clip, D2D1_ANTIALIAS_MODE_ALIASED);
+                }
                 self.draw_items(ctx, prepared);
+                if columns_clip.is_some() {
+                    target.PopAxisAlignedClip();
+                }
                 self.draw_group_headers(ctx, prepared, width);
                 if let Some(text) = &prepared.placeholder {
                     draw_text(

@@ -156,7 +156,7 @@ fn logical(pixels: i32, scale: f32) -> u16 {
 
 impl App {
     /// The Details header drawn in space `id`, when it shows one.
-    fn details_header(&self, id: SpaceId) -> Option<DetailsView> {
+    pub(super) fn details_header(&self, id: SpaceId) -> Option<DetailsView> {
         let space = self.config.desktop.space(id)?;
         let layout = self.view_layout(id)?;
         crate::scene::details_view(

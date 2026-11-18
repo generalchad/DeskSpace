@@ -166,6 +166,7 @@ impl App {
         // The pointer may rest on the item with its tip already shown; the edit
         // takes its place.
         self.dismiss_info_tip(ui);
+        self.bring_name_into_view(surface);
         self.edit.begin(EditSession {
             surface,
             target: EditTarget::Item {
@@ -177,6 +178,16 @@ impl App {
         Self::set_timer(ui, Timer::Caret, CARET_BLINK_MS);
         ui.capture_text_input(true);
         self.refresh_surface(ui, surface);
+    }
+
+    /// Scrolls a Details space's columns back to their start, so a rename
+    /// opens with Name in view, as Explorer's does. Name is the first column,
+    /// so only an unscrolled header shows all of it. Other views never read
+    /// the offset.
+    fn bring_name_into_view(&mut self, surface: Surface) {
+        if let Surface::Space(id) = surface {
+            self.view_cache.set_scroll_x(id, 0);
+        }
     }
 
     pub(super) fn apply_edit_key(&mut self, ui: &mut Ui, key: EditKey) {
@@ -502,6 +513,17 @@ mod tests {
     use crate::fixtures;
 
     const PROFILE: &str = r"C:\Users\me";
+
+    #[test]
+    fn a_rename_scrolls_details_back_to_name() {
+        let store = deskspace_config::ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(deskspace_config::Config::new(), store, false, false);
+        let rect = Rect::new(0, 0, 240, 200);
+        let id = fixtures::create_space(&mut app.config.desktop, "S", rect);
+        app.view_cache.set_scroll_x(id, 120);
+        app.bring_name_into_view(Surface::Space(id));
+        assert_eq!(app.view_cache.scroll_x_of(id), 0);
+    }
 
     /// A desktop with a lens on `Documents\Work` titled "Nickname" by hand.
     fn custom_lens() -> (Desktop, SpaceId) {

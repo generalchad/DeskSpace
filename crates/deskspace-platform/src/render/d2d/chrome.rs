@@ -1,6 +1,8 @@
 //! Details column headers, group headers, and the status bar.
 
-use windows::Win32::Graphics::Direct2D::D2D1_DRAW_TEXT_OPTIONS_NONE;
+use windows::Win32::Graphics::Direct2D::{
+    D2D1_ANTIALIAS_MODE_ALIASED, D2D1_DRAW_TEXT_OPTIONS_NONE,
+};
 use windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL;
 use windows_numerics::Vector2;
 
@@ -50,6 +52,12 @@ impl Painter {
                 1.0,
                 None,
             );
+            // The labels stop where the columns do, as the rows below them.
+            let (left, right) = details.visible;
+            target.PushAxisAlignedClip(
+                &rect_f(left as f32, top, right as f32, bottom),
+                D2D1_ANTIALIAS_MODE_ALIASED,
+            );
             for (index, (column, label)) in details.columns.iter().zip(&prepared.header).enumerate()
             {
                 let mut right = column.rect.right() as f32 - pad;
@@ -78,6 +86,7 @@ impl Painter {
                     scene.text_shadow,
                 );
             }
+            target.PopAxisAlignedClip();
             if let Some(mark) = details.drop_mark {
                 let mark = mark as f32;
                 brush.SetColor(&color_f(scene.item_text));

@@ -274,6 +274,12 @@ impl App {
         let item = self.surface_item_at(surface, point)?;
         let entry = self.surface_item(surface, item)?;
         let cell = self.surface_cell(surface, entry);
+        // A Details row's box moves with Name's column as it scrolls sideways.
+        let details = match surface {
+            Surface::Space(id) => self.details_header(id),
+            Surface::Desktop => None,
+        };
+        let cell = details.map_or(cell, |details| details.row_contents(cell));
         item_check_box_hit(
             cell,
             self.surface_metrics(surface),
@@ -483,6 +489,50 @@ mod tests {
             ),
             Some(item)
         );
+    }
+
+    #[test]
+    fn a_details_check_box_moves_with_name_as_the_columns_scroll() {
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(Config::new(), store, false, false);
+        let id =
+            fixtures::create_space(&mut app.config.desktop, "S", Rect::new(100, 100, 240, 200));
+        let item = fixtures::add_item(&mut app.config.desktop, id, "C:/missing/a.txt");
+        fixtures::apply(
+            &mut app.config.desktop,
+            Command::SetSpaceView {
+                id,
+                view: deskspace_core::SpaceView::default()
+                    .with_mode(deskspace_core::ViewMode::Details),
+            },
+        );
+        app.system.set_shell(ShellDisplay {
+            check_boxes: CheckBoxMode::Selection,
+            ..ShellDisplay::default()
+        });
+        let surface = Surface::Space(id);
+        let row = app.surface_cell(surface, app.config.desktop.item(item).unwrap());
+        let still = item_check_box_hit(row, app.metrics_for(id), ItemLayout::Details);
+        let y = still.center().y;
+        assert_eq!(
+            app.checkbox_at(surface, Point::new(still.right() - 2, y)),
+            Some(item)
+        );
+
+        let shift = 4;
+        assert!(
+            app.details_scroll_limit(id) >= shift,
+            "the columns pass the edge"
+        );
+        app.view_cache.set_scroll_x(id, shift);
+        assert_eq!(
+            app.checkbox_at(surface, Point::new(still.right() - 2, y)),
+            None,
+            "the box has moved left with Name"
+        );
+        let moved = still.center().x - shift;
+        assert!(moved >= row.x, "still on the row");
+        assert_eq!(app.checkbox_at(surface, Point::new(moved, y)), Some(item));
     }
 
     #[test]

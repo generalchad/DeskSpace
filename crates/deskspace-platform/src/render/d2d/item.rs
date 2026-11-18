@@ -394,18 +394,23 @@ struct CellLayout {
 }
 
 impl CellLayout {
-    /// The layout of `cell` at `metrics` in `mode`, with its label at
-    /// `label_size` percent (`LABEL_SIZE_RANGE`) taking `label_lines` lines
-    /// (one or two; only a grid's label wraps). `details` gives Details
-    /// view's name column.
+    /// The layout of `row`, an item's cell, at `metrics` in `mode`, with its
+    /// label at `label_size` percent (`LABEL_SIZE_RANGE`) taking
+    /// `label_lines` lines (one or two; only a grid's label wraps). `details`
+    /// gives Details view's name column and how far it is scrolled sideways.
     fn new(
-        cell: D2D_RECT_F,
+        row: D2D_RECT_F,
         metrics: ItemMetrics,
         label_size: u8,
         label_lines: u8,
         mode: ItemLayout,
         details: Option<&DetailsView>,
     ) -> Self {
+        // A Details row's check box, icon, and name move with Name's column
+        // as the columns scroll sideways, as `DetailsView::row_contents`
+        // moves them for the hit tests; its highlight stays on the row.
+        let shift = details.map_or(0.0, |details| details.scroll_x as f32);
+        let cell = rect_f(row.left - shift, row.top, row.right - shift, row.bottom);
         let icon_size = metrics.icon_size as f32;
         // A grid centers the icon over its label; every other view puts the
         // check box, then the icon, then the name on one line, vertically
@@ -480,14 +485,14 @@ impl CellLayout {
         // and stops short of the next cell; a row's or a tile's sits evenly
         // inside its cell.
         let frame = if beside_icon {
-            super::geometry::inset(cell, CELL_INSET)
+            super::geometry::inset(row, CELL_INSET)
         } else {
             let height = metrics.grid_frame_height(label_lines, label_size) as f32;
             rect_f(
-                cell.left,
-                cell.top,
-                cell.right - FRAME_GAP,
-                (cell.top + height).min(cell.bottom - FRAME_GAP),
+                row.left,
+                row.top,
+                row.right - FRAME_GAP,
+                (row.top + height).min(row.bottom - FRAME_GAP),
             )
         };
         let check_box = if beside_icon {
@@ -705,6 +710,46 @@ mod tests {
                 "{mode:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_scrolled_details_row_moves_its_name_and_keeps_its_highlight() {
+        use crate::render::{ColumnAlign, DetailsColumnVisual};
+        let row = rect_f(10.0, 20.0, 410.0, 42.0);
+        let details = |scroll_x: i32| DetailsView {
+            header_height: 24,
+            cell_pad: 4,
+            columns: vec![DetailsColumnVisual {
+                rect: deskspace_core::geometry::Rect::new(10 - scroll_x, 0, 300, 24),
+                label: "Name".into(),
+                align: ColumnAlign::Left,
+            }],
+            sorted: None,
+            drop_mark: None,
+            scroll_x,
+            visible: (10, 410),
+        };
+        let at = |scroll_x| {
+            CellLayout::new(
+                row,
+                ItemMetrics::for_scale(1.0),
+                100,
+                1,
+                ItemLayout::Details,
+                Some(&details(scroll_x)),
+            )
+        };
+        let (still, moved) = (at(0), at(120));
+        assert_eq!(moved.frame, still.frame, "the highlight stays on the row");
+        assert_eq!(moved.icon.left, still.icon.left - 120.0);
+        assert_eq!(moved.check_box.left, still.check_box.left - 120.0);
+        let (name, moved_name) = (still.label.unwrap(), moved.label.unwrap());
+        assert_eq!(
+            (moved_name.left, moved_name.right),
+            (name.left - 120.0, name.right - 120.0),
+            "the name moves with its column and keeps its width"
+        );
+        assert_eq!(moved.edit.rect.left, still.edit.rect.left - 120.0);
     }
 
     #[test]

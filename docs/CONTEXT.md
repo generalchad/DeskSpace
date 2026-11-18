@@ -1125,7 +1125,10 @@ exact steps, ranges, edge cases, and the code behind them.
 - Shift+wheel, or tilting the wheel, on a Details space scrolls its columns
   sideways, within `details_max_scroll`; every other view keeps the plain wheel
   for its own axis, and a tilt outside Details does nothing. Only Details has a
-  second offset (D24).
+  second offset (D24). A row stays as wide as the space; its check box, icon,
+  and name move with Name's column (`DetailsView::row_contents`, which the
+  painter and the check-box hit test share), and rows and header are clipped
+  at the padding. Starting a rename scrolls back to the first column.
 - Ctrl+wheel: under the default "Match Explorer's display" preset it sets
   the desktop's own icon size, 8 px a notch between 16 and 256, and matching
   spaces follow (ROADMAP D9); under Custom it changes the global size 10 % a

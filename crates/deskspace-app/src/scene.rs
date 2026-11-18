@@ -703,19 +703,22 @@ pub(crate) fn details_view(
     if space.view().mode != ViewMode::Details {
         return None;
     }
+    let (columns, scroll_x) = scrolled_details_columns(
+        space.view(),
+        content_width,
+        padding,
+        scroll_x,
+        layout.header_height(),
+        scale,
+    );
     Some(DetailsView {
         header_height: layout.header_height(),
         cell_pad: (DETAILS_CELL_PAD as f32 * scale).round().max(1.0) as i32,
-        columns: details_columns(
-            space.view(),
-            content_width,
-            padding,
-            scroll_x,
-            layout.header_height(),
-            scale,
-        ),
+        columns,
         sorted: details_sorted(space.view()),
         drop_mark: None,
+        scroll_x,
+        visible: (padding, (content_width - padding).max(padding)),
     })
 }
 
@@ -741,6 +744,18 @@ pub(crate) fn details_columns(
     header_height: i32,
     scale: f32,
 ) -> Vec<DetailsColumnVisual> {
+    scrolled_details_columns(view, content_width, padding, offset, header_height, scale).0
+}
+
+/// `details_columns`, and the offset they were shifted by once clamped.
+fn scrolled_details_columns(
+    view: &SpaceView,
+    content_width: i32,
+    padding: i32,
+    offset: i32,
+    header_height: i32,
+    scale: f32,
+) -> (Vec<DetailsColumnVisual>, i32) {
     let scale = scale.max(0.1);
     let scaled = |value: i32| ((value as f32 * scale).round() as i32).max(1);
     let fixed: i32 = shown_details_columns(view)
@@ -775,7 +790,7 @@ pub(crate) fn details_columns(
     for column in &mut columns {
         column.rect.x -= offset;
     }
-    columns
+    (columns, offset)
 }
 
 /// How far the Details columns can scroll sideways in `content_width`, leaving
@@ -2749,6 +2764,51 @@ mod tests {
         };
         crate::fixtures::apply(&mut desktop, Command::SetSpaceView { id, view });
         desktop.space(id).unwrap().clone()
+    }
+
+    #[test]
+    fn a_details_header_reports_its_clamped_scroll_and_where_its_columns_show() {
+        let theme = Theme::default();
+        let padding = GridSpec::default().padding;
+        let scene_at = |scroll_x| {
+            space_scene(
+                &details_space_of(360, Some(300)),
+                surface_look(&theme, &theme.palette(true)),
+                ViewState {
+                    scroll_x,
+                    ..ViewState::default()
+                },
+                &mut IconCache::new(),
+            )
+        };
+        let still = scene_at(0);
+        let details = still.details.as_ref().unwrap();
+        assert_eq!(details.scroll_x, 0);
+        assert_eq!(details.visible, (padding, 360 - padding));
+        assert_eq!(
+            details.columns[0].rect.x, still.items[0].rect.x,
+            "unscrolled, a row's contents start where they always did"
+        );
+        let row = still.items[0].rect;
+        assert_eq!(details.row_contents(row), row);
+
+        let scrolled = scene_at(150);
+        let details = scrolled.details.as_ref().unwrap();
+        assert_eq!(details.scroll_x, 150);
+        assert_eq!(
+            scrolled.items[0].rect, row,
+            "the row stays across the space"
+        );
+        assert_eq!(
+            details.row_contents(row).x,
+            details.columns[0].rect.x,
+            "its contents move with Name"
+        );
+
+        let clamped = scene_at(i32::MAX);
+        let details = clamped.details.as_ref().unwrap();
+        assert_eq!(details.columns.last().unwrap().rect.right(), 360 - padding);
+        assert_eq!(details.row_contents(row).x, details.columns[0].rect.x);
     }
 
     #[test]

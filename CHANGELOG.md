@@ -116,8 +116,9 @@ seven entries under "Fixed" are new since that pre-release.
 - An icon picker: while a space's title is renamed, its icon becomes a button
   that opens a searchable grid of the icon set.
 - Details scrolls sideways when its columns are wider than the space:
-  Shift+wheel or a tilt wheel scroll it, the header follows, and a bar shows
-  where you are.
+  Shift+wheel or a tilt wheel scroll it, the header and every row's name and
+  cells follow, and a bar shows where you are. Renaming an item scrolls back
+  to its name.
 - A redesigned color picker: a color square with hue and opacity sliders,
   hex, RGB, or HSL text, copy and paste, an eyedropper that samples any pixel
   on screen, and recent colors that survive a restart and a settings Cancel.

@@ -7127,3 +7127,5 @@ takes an id listed here or used anywhere above
 - **T46.** A glow around the flames, on the CPU (platform).
 - **T47.** Sparks that cool (platform).
 - **T48.** The char edge lifts (platform).
+- **P15f.** Everything that holds an x follows Details' sideways scroll.
+- **P15.** Scroll Details sideways.
