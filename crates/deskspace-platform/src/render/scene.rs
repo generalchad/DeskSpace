@@ -133,9 +133,10 @@ pub struct SpaceScene {
     /// color at about 60 % opacity; a lens whose folder is unavailable says
     /// so here. `None` draws nothing.
     pub placeholder: Option<String>,
-    /// A short message on a bar along the bottom of the item area, over the
-    /// items, in the title bar's colors; a lens that followed its moved
-    /// folder says where it went. The app clears it after a few seconds.
+    /// A short message drawn along the bottom of the item area, over the
+    /// items, in the placeholder's faded label color and shadow; a lens that
+    /// followed its moved folder says where it went. The app clears it after a
+    /// few seconds.
     pub notice: Option<String>,
     /// The item with keyboard focus, drawn with a dotted focus rectangle. Only
     /// the current space's scene sets it.

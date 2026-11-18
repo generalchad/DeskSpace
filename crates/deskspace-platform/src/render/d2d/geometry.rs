@@ -161,10 +161,10 @@ pub(super) fn inset(rect: D2D_RECT_F, amount: f32) -> D2D_RECT_F {
     )
 }
 
-/// The notice bar's gap from the item area's edges.
+/// The notice's gap from the item area's edges.
 const NOTICE_MARGIN: f32 = 8.0;
 
-/// Where a space's notice bar sits in its item `area`: along the bottom, a
+/// Where a space's notice sits in its item `area`: along the bottom, a
 /// margin in from each edge, two title bars high so a path can wrap to a
 /// second line, and never above the area's top.
 pub(super) fn notice_rect(area: D2D_RECT_F, title_height: f32) -> D2D_RECT_F {

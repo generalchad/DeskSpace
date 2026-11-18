@@ -710,25 +710,6 @@ drop side is `win32/drop_target.rs` (`DragKind`, `drag_kind`, `DropPlan`,
     against v0.3.0's behavior until those tasks land (maintainer,
     2026-11-15).
 
-- [ ] **C23. The "Folder moved" notice as plain text (platform; render).**
-  **(junior)** Asked by the maintainer, 2026-11-15, after W45 passed.
-  - Why: the notice a lens shows after following its folder
-    (`FOLDER_MOVED_NOTICE`, `app/lens.rs`) sits on an opaque rounded bar
-    (`fill_rounded` with `NOTICE_MIN_ALPHA`, in `Painter`'s paint path in
-    `render/d2d/mod.rs`), unlike the lens's other messages.
-  - Decided (maintainer, 2026-11-15): draw it as plain text the way the
-    placeholder ("Folder not available") is drawn, with the same faded item
-    text color and text shadow and no fill, but along the bottom of the
-    content area instead of centered. Keep `notice_rect` as the one place
-    its geometry lives; drop the constants nothing uses afterwards.
-  - Tests: none new beyond the existing notice tests, unless `notice_rect`
-    changes; then a test for its rect.
-  - **[needs human]** check: rename a lens's folder on Acrylic, Blur, Solid,
-    and Clear at 100 % and 150 %, light and dark: "Folder moved:" and the
-    path show as plain text along the bottom for about 3 s and then go,
-    with no box. On a lens full enough that items sit under it, judge
-    whether the text over the labels still reads.
-
 ### Draw a space on the desktop (ROADMAP F-69, D27)
 
 A right-drag lasso on the desktop, then "New space here" or "New lens here…"
@@ -2565,6 +2546,7 @@ that has it.
 | W43 (v0.3) (part script) (F-64) | In a lens browsed two levels down, at 100 % and 150 %: the Back button sits left of the folder icon and goes up one level per click (a double-click goes up two, and never folds the space); Backspace, Alt+Left, Alt+Up, and the mouse's back button over the lens do the same. A click on the button makes that lens current, so Backspace then continues up it; a press on its top-left corner resizes instead. At the lens's own folder the button is gone, Backspace reaches the desktop as before, and Alt+Left does not move the selection. Backspace in a rename edits the text and does not go back. Compare the button's size and place with Explorer's (provisional 24 px, 4 px inset); it has no hover highlight yet. |
 | W35 (v0.3) (part script) (F-22) | On a Downloads lens's Lens page, type `*.pdf` in Show only: only PDFs and the folders remain, as you type. Add `*.tmp` to Hide: they go. Type `; ` and extra spaces mid-list: the text stays as typed, the caret does not jump. A filter that matches nothing shows "No items match the filter". Cancel puts the lens back; Apply keeps it over a restart. Typing on a 50,000-file lens never stalls the spaces; the list follows about a quarter of a second behind (B37), and half a second with many patterns: note whether that lag reads as slow. |
 | W45 (v0.3) (part script) (F-67) | At 150 % (the rest passed at 100 % on 2026-11-15): make a lens on a scratch folder and rename the folder in Explorer: the "Folder moved:" notice and the path read clearly on Acrylic, Blur, Solid, and Clear, and the title follows. |
+| C23 (F-67) | Rename a lens's folder on Acrylic, Blur, Solid, and Clear at 100 % and 150 %, light and dark: "Folder moved:" and the path show as plain text along the bottom for about 3 s and then go, with no box. On a lens full enough that items sit under it, judge whether the text over the labels still reads. |
 | W47 (v0.3) (script) (D17) | Sort a space by Date, descending, with View ▸ Status bar on, then press Ctrl+Shift+6 and Ctrl+Shift+2, pick View ▸ List, and click the status bar's Details button: Sort by ▸ still shows Date and Descending, Keep sorted is as it was, and the status bar stays. |
 | W27 (v0.3) (F-07) | Hover a lens's title bar: after the usual delay a tip shows the folder the lens displays (a browsed subfolder's path, matching the title's `Root › Sub`), and it leaves with the pointer. An unavailable lens's tip reads "Folder not available" and the path. A normal space's title shows no tip. Hover the title until the tip shows, then F2: the tip goes and the edit is uncovered; moving within the title during the rename shows none. |
 | W39 (v0.3) (script) (F-09) | On a space in Large icons, Ctrl+wheel down walks Medium icons, Small icons, List, Details, Tiles, Content and stops; wheel up walks back and stops at Extra large icons; no zoom pop-up shows for a step. Ctrl+Plus and Ctrl+Minus step the same way, Ctrl+0 returns to "Settings icon size", and each step is one Undo entry ("Undo Change view"). A space on "Settings icon size" zooms as before (the F13 row still passes). |

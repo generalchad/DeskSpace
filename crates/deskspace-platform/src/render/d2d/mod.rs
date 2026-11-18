@@ -107,12 +107,6 @@ const SCROLL_THUMB_ALPHA: u8 = 110;
 const PLACEHOLDER_ALPHA: u8 = 153;
 /// Space kept between the placeholder text and the item area's edges.
 const PLACEHOLDER_INSET: f32 = 12.0;
-/// The notice bar's text padding and corner radius.
-const NOTICE_PADDING: f32 = 6.0;
-const NOTICE_RADIUS: f32 = 6.0;
-/// The notice bar's least fill opacity, so its text reads over the items
-/// even on a clear look.
-const NOTICE_MIN_ALPHA: u8 = 0xE0;
 /// Opacity of an item's slot while the item itself is dragged.
 const DRAGGED_ALPHA: u8 = 90;
 /// Opacity of a cut item, shown ghosted until it is pasted, as Explorer does.
@@ -466,23 +460,16 @@ impl Painter {
                 }
                 if let Some(text) = &prepared.notice {
                     let area = rect_f(0.0, items_top, width, content_bottom);
-                    let bar = notice_rect(area, scene.title_height as f32);
-                    let fill = scene.title_fill;
-                    fill_rounded(
-                        target,
-                        brush,
-                        bar,
-                        NOTICE_RADIUS,
-                        fill.with_alpha(fill.a.max(NOTICE_MIN_ALPHA)),
-                    );
                     draw_text(
                         target,
                         brush,
                         text,
                         &ctx.graphics.placeholder_format,
-                        inset(bar, NOTICE_PADDING),
-                        scene.title_text,
-                        None,
+                        notice_rect(area, scene.title_height as f32),
+                        scene.item_text.fade(PLACEHOLDER_ALPHA),
+                        scene
+                            .text_shadow
+                            .map(|shadow| shadow.fade(PLACEHOLDER_ALPHA)),
                     );
                 }
                 if let Some(marquee) = scene.marquee {

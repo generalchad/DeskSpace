@@ -273,8 +273,9 @@ An unavailable lens (`App::unavailable_lenses`) draws "Folder not available"
 and its path in place of items (`SpaceScene::placeholder`).
 A lens whose folder was renamed or moved where it may follow (D19) is
 re-pointed with `SetLensFolder`, one "Change folder" undo entry, and shows
-"Folder moved:" and the new path on its notice bar (`SpaceScene::notice`,
-from `App::notices`) until `Timer::Notice` clears it about 3 s later.
+"Folder moved:" and the new path along the bottom of its content area
+(`SpaceScene::notice`, from `App::notices`) until `Timer::Notice` clears it
+about 3 s later.
 A browsed lens's watch holds its handle on the lens's own folder and lists the
 subfolder it shows, so renaming that folder is not blocked by an open handle
 below it; the lens follows the move and drops the browse. A subfolder that

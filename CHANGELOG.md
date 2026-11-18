@@ -44,6 +44,8 @@ Notable changes to DeskSpace, newest first. The format follows
   around one that wraps, and no longer fills the whole cell. Rows sit
   closer together to match. On upgrade, a space that sizes itself gets
   shorter, and a space you sized keeps its size and fits more rows.
+- A lens's "Folder moved:" notice is drawn as plain text along the bottom of
+  the lens, like its other messages, instead of on an opaque bar.
 
 ### Fixed
 

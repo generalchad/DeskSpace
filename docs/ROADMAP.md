@@ -814,10 +814,11 @@ A native, lightweight, offline Windows desktop organizer that:
     every other case it says "Folder not available", as today.
   - Following is one undo entry, as Change folder… is. Ctrl+Z points the
     lens back at the old path.
-  - The lens says where it went. A bar over its content reads
-    "Folder moved:" and the new path for about 3 s, and a log line records the
-    move. The bar is a general space notice, drawn and timed like the zoom
-    pop-up, so later messages reuse it.
+  - The lens says where it went. Plain text along the bottom of its content
+    area reads "Folder moved:" and the new path for about 3 s (drawn like the
+    placeholder, amended 2026-11-15, maintainer), and a log line records the
+    move. `SpaceScene::notice` is a general space notice, drawn and timed so
+    later messages reuse it.
   - A lens browsed into a subfolder (D18) whose subfolder moves returns
     to its own folder.
   - Amended 2026-11-02 (maintainer): a browsed lens holds its watch on its
