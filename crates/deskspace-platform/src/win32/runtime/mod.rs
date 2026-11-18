@@ -525,11 +525,13 @@ fn message_loop() -> Result<(), PlatformError> {
             // SAFETY: `dialog` is our live window and `message` is filled in.
             unsafe { IsDialogMessageW(dialog, &message) }.as_bool()
         };
-        if [settings_hwnd(), debug_hwnd()]
-            .into_iter()
-            .flatten()
-            .any(is_dialog_message)
-        {
+        if settings_hwnd().is_some_and(is_dialog_message) {
+            if let Some(settings) = settings_hwnd() {
+                settings_window::reveal_focus(settings);
+            }
+            continue;
+        }
+        if debug_hwnd().is_some_and(is_dialog_message) {
             continue;
         }
         // SAFETY: `message` was just filled in by GetMessageW.

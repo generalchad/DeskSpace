@@ -68,6 +68,8 @@ Notable changes to DeskSpace, newest first. The format follows
   working after DeskSpace stalls for a second or more. They used to stop
   until every space was left; this was a known issue of 0.3.0. The pointer
   and the keyboard also no longer wait for DeskSpace while it is busy.
+- In Settings, Tab and Shift+Tab on a page taller than the window scroll the
+  focused control into view.
 
 ## [0.3.0] - 2026-11-13
 

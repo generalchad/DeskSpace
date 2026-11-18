@@ -22,7 +22,7 @@ mod title;
 mod update;
 
 pub(crate) use commands::colorref;
-pub(crate) use scroll::on_page_key;
+pub(crate) use scroll::{on_page_key, reveal_focus};
 pub(crate) use update::update;
 
 use deskspace_core::theme::Color;
@@ -205,6 +205,9 @@ pub(super) struct SettingsState {
     /// Set while the window itself is changing control values, so the
     /// resulting notifications are not reported as user edits.
     updating: bool,
+    /// The last focused window `scroll::reveal_focus` saw, so an unchanged
+    /// focus costs nothing in the message loop.
+    last_focus: HWND,
     /// The header's name edit is open (`header::on_title_command`).
     renaming: bool,
     colors: UiColors,
@@ -345,6 +348,7 @@ pub(crate) fn create(form: &SettingsForm, dark: bool) -> Result<HWND, PlatformEr
             dpi: 0,
             command_bar_top: 0,
             updating: true,
+            last_focus: HWND::default(),
             renaming: false,
             colors: UiColors::for_system(dark),
             body_brush: HBRUSH::default(),

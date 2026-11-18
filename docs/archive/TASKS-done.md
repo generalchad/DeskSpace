@@ -7116,3 +7116,4 @@ takes an id listed here or used anywhere above
 - **P13d.** Read the facts on the worker, and apply them.
 - **P13.** Keep a normal space's item facts fresh (feature).
 - **C17.** Delete a space with its shortcuts (app).
+- **G13.** Tab scrolls a long page to the focused control (platform).

@@ -895,9 +895,10 @@ in `ui.rs`. What spans them:
   widened by it. A page scrolls with `ScrollWindowEx(SW_SCROLLCHILDREN)`, so
   its controls keep their layout coordinates, and `cards::erase_page` draws
   the cards at the page's offset (`settings_window/scroll.rs`). A page newly
-  shown starts at its top. PageUp, PageDown, Home, and End scroll it from
-  the message loop, except while a drop-down, text box, or slider has the
-  focus. Drop-downs and sliders in the settings and debug windows hand the
+  shown starts at its top. Tab and Shift+Tab bring the newly focused control
+  into view (`PageScroll::reveal`), and PageUp, PageDown, Home, and End scroll
+  it from the message loop, except while a drop-down, text box, or slider has
+  the focus. Drop-downs and sliders in the settings and debug windows hand the
   mouse wheel to their page (`win32/wheel_to_page.rs`), so a scroll past
   one never changes it.
 - **Modal windows.** The color picker, the installed-apps picker, and the

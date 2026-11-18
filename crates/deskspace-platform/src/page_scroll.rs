@@ -88,6 +88,24 @@ impl PageScroll {
         self.offset = to;
         moved
     }
+
+    /// The offset that brings a control's layout rows `top..bottom` into view
+    /// with `margin` to spare, or `None` when it is in view already. A control
+    /// taller than the view shows its top.
+    pub(crate) fn reveal(&self, top: i32, bottom: i32, margin: i32) -> Option<i32> {
+        let margin = margin.max(0);
+        let high = top - margin;
+        let low = bottom + margin - self.view;
+        let to = if low > high || self.offset > high {
+            high
+        } else if self.offset < low {
+            low
+        } else {
+            self.offset
+        };
+        let to = to.clamp(0, self.max_offset());
+        (to != self.offset).then_some(to)
+    }
 }
 
 /// The height of the area that shows a page: the tallest page's, unless that
@@ -161,5 +179,48 @@ mod tests {
             150,
             "never taller than the page"
         );
+    }
+
+    #[test]
+    fn reveal_brings_controls_above_and_below_into_view() {
+        let mut scroll = PageScroll::new(1000, 400);
+        scroll.apply(ScrollInput::To(300), LINE);
+        assert_eq!(scroll.reveal(100, 130, 8), Some(92));
+
+        scroll.apply(ScrollInput::To(100), LINE);
+        assert_eq!(scroll.reveal(500, 530, 8), Some(138));
+    }
+
+    #[test]
+    fn reveal_leaves_controls_already_in_view_alone() {
+        let mut scroll = PageScroll::new(1000, 400);
+        scroll.apply(ScrollInput::To(100), LINE);
+        assert_eq!(scroll.reveal(200, 230, 8), None);
+        assert_eq!(scroll.reveal(108, 492, 8), None);
+    }
+
+    #[test]
+    fn reveal_shows_the_top_of_a_control_taller_than_the_view() {
+        let mut scroll = PageScroll::new(1000, 400);
+        assert_eq!(scroll.reveal(200, 700, 8), Some(192));
+        scroll.apply(ScrollInput::To(192), LINE);
+        assert_eq!(scroll.reveal(200, 700, 8), None);
+    }
+
+    #[test]
+    fn reveal_clamps_to_both_ends_of_the_range() {
+        let mut scroll = PageScroll::new(1000, 400);
+        scroll.apply(ScrollInput::To(100), LINE);
+        assert_eq!(scroll.reveal(4, 30, 8), Some(0));
+        assert_eq!(scroll.reveal(970, 996, 8), Some(600));
+
+        scroll.apply(ScrollInput::To(0), LINE);
+        assert_eq!(scroll.reveal(4, 30, 8), None);
+
+        scroll.apply(ScrollInput::To(600), LINE);
+        assert_eq!(scroll.reveal(970, 996, 8), None);
+
+        let fitting = PageScroll::new(300, 400);
+        assert_eq!(fitting.reveal(10, 40, 8), None);
     }
 }

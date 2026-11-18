@@ -251,8 +251,8 @@ pub(super) unsafe fn show_page(settings: HWND, pages: &[HWND], index: usize) {
     }
 }
 
-/// `child`'s rect in `settings`' client coordinates.
-unsafe fn client_rect_of(settings: HWND, child: HWND) -> RECT {
+/// `child`'s rect in `parent`'s client coordinates.
+pub(super) unsafe fn client_rect_of(parent: HWND, child: HWND) -> RECT {
     let mut rect = RECT::default();
     // SAFETY: both are live windows; the points are a local array.
     unsafe {
@@ -267,7 +267,7 @@ unsafe fn client_rect_of(settings: HWND, child: HWND) -> RECT {
                 y: rect.bottom,
             },
         ];
-        MapWindowPoints(None, Some(settings), &mut corners);
+        MapWindowPoints(None, Some(parent), &mut corners);
         RECT {
             left: corners[0].x,
             top: corners[0].y,

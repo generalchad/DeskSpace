@@ -1,5 +1,5 @@
 //! Scrolling a settings page that is taller than the window: its scroll bar,
-//! the wheel, and PageUp, PageDown, Home, and End.
+//! the wheel, PageUp, PageDown, Home, End, and Tab focus.
 //!
 //! The page's controls keep their layout coordinates and are moved with the
 //! content (`SW_SCROLLCHILDREN`), so nothing else in the window has to know a
@@ -9,7 +9,7 @@
 use windows::Win32::Foundation::{HWND, WPARAM};
 use windows::Win32::Graphics::Gdi::UpdateWindow;
 use windows::Win32::UI::Controls::SetScrollInfo;
-use windows::Win32::UI::Input::KeyboardAndMouse::{VK_END, VK_HOME, VK_NEXT, VK_PRIOR};
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetFocus, VK_END, VK_HOME, VK_NEXT, VK_PRIOR};
 use windows::Win32::UI::WindowsAndMessaging::{
     GetClassNameW, GetScrollInfo, IsChild, MSG, SB_BOTTOM, SB_LINEDOWN, SB_LINEUP, SB_PAGEDOWN,
     SB_PAGEUP, SB_THUMBPOSITION, SB_THUMBTRACK, SB_TOP, SB_VERT, SCROLLBAR_COMMAND, SCROLLINFO,
@@ -25,6 +25,9 @@ use super::with_state;
 
 /// One scroll-bar arrow's step, at 96 DPI: about one row of fields.
 const SCROLL_LINE: i32 = 40;
+/// Space kept clear above or below a control that Tab brings into view, at
+/// 96 DPI.
+const REVEAL_MARGIN: i32 = 8;
 
 /// Shows `scroll` on `page`'s scroll bar, which Windows hides while the page
 /// fits.
@@ -163,5 +166,37 @@ pub(crate) fn on_page_key(settings: HWND, message: &MSG) -> bool {
         }
         scroll_page(settings, page, input);
         true
+    }
+}
+
+/// Scrolls the shown page to the focused control after `IsDialogMessage`
+/// moves the focus onto one of its controls.
+pub(crate) fn reveal_focus(settings: HWND) {
+    // SAFETY: `GetFocus` reads the thread's focus; `settings` is the live
+    // settings window, and its state borrow ends before any window query or
+    // scroll.
+    unsafe {
+        let focus = GetFocus();
+        let Some(Some((page, scroll, margin))) = with_state(settings, |state| {
+            if focus == state.last_focus {
+                return None;
+            }
+            state.last_focus = focus;
+            let index = state.form.nav.page_of(state.form.nav.selected)?;
+            let page = *state.pages.get(index)?;
+            let scroll = *state.scrolls.get(index)?;
+            Some((page, scroll, scaled(REVEAL_MARGIN, state.dpi)))
+        }) else {
+            return;
+        };
+        if focus.is_invalid() || !scroll.overflows() || !IsChild(page, focus).as_bool() {
+            return;
+        }
+        let rect = super::commands::client_rect_of(page, focus);
+        let top = rect.top + scroll.offset();
+        let bottom = rect.bottom + scroll.offset();
+        if let Some(to) = scroll.reveal(top, bottom, margin) {
+            scroll_page(settings, page, ScrollInput::To(to));
+        }
     }
 }
