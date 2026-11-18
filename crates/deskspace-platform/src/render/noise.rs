@@ -152,8 +152,7 @@ pub(crate) fn fractal_row(y: f32, x_step: f32, lattice: f32, seed: u32, out: &mu
 
 /// Smooth noise: random values on an integer lattice, blended with
 /// smoothstep weights; 0 to 1.
-#[cfg(test)]
-fn value_noise(x: f32, y: f32, octave: u32, seed: u32) -> f32 {
+pub(crate) fn value_noise(x: f32, y: f32, octave: u32, seed: u32) -> f32 {
     let (x0, y0) = (x.floor(), y.floor());
     let (tx, ty) = (smoothstep(x - x0), smoothstep(y - y0));
     let (ix, iy) = (x0 as i32, y0 as i32);

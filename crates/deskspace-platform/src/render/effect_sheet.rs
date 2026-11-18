@@ -64,15 +64,7 @@ fn frame(field: &BurnField, space: (u32, u32), dpi: u32, front: f32, time: f32) 
     let mut bases = Vec::new();
     let mut tongues = Vec::new();
     field.flame_bases(front, SPACING, &mut bases);
-    flames::tongues(
-        &bases,
-        space.1 as f32,
-        (side, top),
-        cell,
-        time,
-        scale,
-        &mut tongues,
-    );
+    flames::tongues(&bases, space.1 as f32, dpi, time, SEED, &mut tongues);
     let mut drawn = Rows::ALL;
     flames::paint(&mut flame_pixels, width, height, &tongues, time, &mut drawn);
 

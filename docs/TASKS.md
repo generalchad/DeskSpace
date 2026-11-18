@@ -22,7 +22,7 @@ are collected in section V instead of blocking:
 - section B's icon picker tasks: B49 next;
 - section K (K10-K13, K15), each a pure move with rules that
   leave nothing to design;
-- section T: T29-T31 in order, then T44 and T46-T48;
+- section T: T30-T31 in order, then T44 and T46-T48;
 - O5 and the O6-O9 harness abilities;
 - anything else not marked **[needs decision]**, "still to design", or in
   section D.
@@ -1289,7 +1289,7 @@ T24-T33 make Burn read as fire rather than an orange wipe: it takes its
 time and kindles, spreads unevenly, smoulders, throws turbulent flames and
 ash, and looks the same at every DPI. One commit each, in order.
 
-- **When to start.** T41, T27, and T28 have landed, so T29 can start now. T25-T33 build on
+- **When to start.** T41 and T27-T29 have landed, so T30 can start now. T25-T33 build on
   the groundwork ported from `feat/color-picker-redesign` (as of `c1ad0f3`). Where a
   task below names the branch's types, read `main`'s:
   `EffectOverlay` and `Art::Burn` are `FlameOverlay` (the burn's state, in
@@ -1311,37 +1311,6 @@ ash, and looks the same at every DPI. One commit each, in order.
   to that row's first column, instead of adding a new row.
 - **Burn's smoke.** If Burn's smoke (`render/burn_smoke.rs`) has landed,
   keep the overlay's drawing order: smoke, then flames, then ash.
-
-- [ ] **T29. Turbulent flames (platform).** **(junior)** **[needs human]**
-  - Why: today's flames are identical teardrops every `SPACING` cells,
-    swaying on one sine, and overlapping fire keeps the brighter channel
-    (`brightest`) instead of adding up.
-  - `render/flames.rs`:
-    - **Sizes.** `tongues` takes the seed. Each tongue's height is
-      multiplied by `0.6 + 0.7 * noise::random(seed, col)`.
-    - **Turbulence.** In `paint_tongue`, multiply the heat by
-      `0.45 + 1.1 * n` and clamp it to 0 to 1. `n` is one octave of the
-      noise in `render/noise.rs` (make `value_noise` `pub(crate)`),
-      sampled at `px / (tongue.width * 0.6)` across and `(py + time *
-      RISE_PX_PER_S * scale) / (tongue.height * 0.3)` down, so the
-      pattern scrolls upward. `RISE_PX_PER_S` is 120. Keep the 0.02 cut.
-    - **Additive light.** Replace `brightest` with `add`: each byte of
-      the two premultiplied pixels added and capped at 255. This keeps
-      the pixels premultiplied (each channel ≤ alpha stays true).
-    - **Sparks** take their phase from the seed instead of the index
-      alone.
-  - In a release build, a frame of flames for a 1200 × 900 space shades
-    in under 4 ms. Measure it, log it at `trace`, and put the timing in
-    the commit body.
-  - Tests: keep today's, except `reference_paint` and the two tests that
-    compare a frame with it: they pin the pixels this task changes on
-    purpose, so delete them; the same seed and time give identical pixels,
-    and two times differ; `add` of two half-alpha pixels is brighter
-    than either and stays premultiplied; two seeds give different tongue
-    heights for the same bases.
-  - **[needs human]** check: the flames lick and break up at the tips;
-    neighbours differ in size; where flames cross they glow brighter; no
-    regular comb of tongues; still no box around them.
 
 - [ ] **T30. A glow that lives (platform).** **(junior)** **[needs human]**
   - Why: the glowing edge is a fixed colour ramp, the char is flat, and
@@ -2450,7 +2419,7 @@ that has it.
 | Flat material (part script) | Fade, Pixelate, Gradient, Dissolve, and Burn on hide, show, and delete (and in the debug preview) on Acrylic, Blur, and Solid spaces with a border, with Windows' "Transparency effects" off and on: no outline stays around the fading space, and it comes back once a show ends; with the switch off, no dark box either, the dark fill coming back only once a show ends; with it on, see the T13 row; Roll, Fly, and CRT look as before. |
 | T12 (part script) (D12) | Windows 11 with "Transparency effects" on: the log says "spaces use composition"; the R3 list passes unchanged with each backdrop (Acrylic and Blur blurred, Clear and Solid not), at 100 % and 150 %, corners and border as before, and the T8 row still passes, the blur stepping on and off as today. With the switch off at startup, the log names it and spaces look as before T12. Windows 10, `--placement desktop-*`, and `--click-through` change nothing. Idle CPU and GPU no higher than before. |
 | T13 (D12) | Windows 11 confirmed 2026-10-18 (maintainer). Still to check: on Windows 10 the blur still steps; idle GPU no higher than before. |
-| T17, T18, T24, T25, T26, T28, B54 (part script) (D12) | Burn on Startup (hide, show, a new space, startup, exit) and on Delete, on each backdrop at 100 % and 150 %: the space burns from the bottom up along a ragged edge that glows, chars, and scorches ahead of itself, like paper; flames lick up from the edge and past the top and sides of the frame with no box or blur around them, and never show over another application (cover the space with a window and they stay behind it), while with `--on-top` they follow the space above other windows; Detail changes how ragged the edge is; reversing mid-burn (the hotkey twice) un-burns it; no flame window is left behind after it ends, after a delete, or after quitting mid-burn; a desktop-hosted space burns without flames; Burn at 250 ms plays for about half a second, catching slowly and then racing to the end; un-burning starts fast and settles; every other effect looks and times as before; no flame pixel is left behind where a tongue was; at exit, two spaces of the same size burn along different edges; one space burns differently each time it is hidden; reversing mid-burn still un-burns along the same edge. After Burn's paint was trimmed to the cells each frame reaches (2026-11-15): a burn still looks as it did, with its char, scorch, and flame band whole and no seam across the space. After Burn's cells, margins, and flames learned to scale with the display (2026-11-16): on a 150 % and a 200 % monitor, a burn looks as it does at 100 %, only bigger, with the edge as ragged relative to the space and the flames as tall relative to the title bar. After Burn switched to the coarse Dijkstra fire-spread field (2026-11-18): the bottom catches unevenly; the fire runs up in fingers; on a large space, a hole or two opens in the middle and joins the main front; the glowing edge is a similarly thin line on small and large spaces; Detail still coarsens it; startup and exit with many spaces do not stutter. |
+| T17, T18, T24, T25, T26, T28, T29, B54 (part script) (D12) | Burn on Startup (hide, show, a new space, startup, exit) and on Delete, on each backdrop at 100 % and 150 %: the space burns from the bottom up along a ragged edge that glows, chars, and scorches ahead of itself, like paper; flames lick up from the edge and past the top and sides of the frame with no box or blur around them, and never show over another application (cover the space with a window and they stay behind it), while with `--on-top` they follow the space above other windows; Detail changes how ragged the edge is; reversing mid-burn (the hotkey twice) un-burns it; no flame window is left behind after it ends, after a delete, or after quitting mid-burn; a desktop-hosted space burns without flames; Burn at 250 ms plays for about half a second, catching slowly and then racing to the end; un-burning starts fast and settles; every other effect looks and times as before; no flame pixel is left behind where a tongue was; at exit, two spaces of the same size burn along different edges; one space burns differently each time it is hidden; reversing mid-burn still un-burns along the same edge. After Burn's paint was trimmed to the cells each frame reaches (2026-11-15): a burn still looks as it did, with its char, scorch, and flame band whole and no seam across the space. After Burn's cells, margins, and flames learned to scale with the display (2026-11-16): on a 150 % and a 200 % monitor, a burn looks as it does at 100 %, only bigger, with the edge as ragged relative to the space and the flames as tall relative to the title bar. After Burn switched to the coarse Dijkstra fire-spread field (2026-11-18): the bottom catches unevenly; the fire runs up in fingers; on a large space, a hole or two opens in the middle and joins the main front; the glowing edge is a similarly thin line on small and large spaces; Detail still coarsens it; startup and exit with many spaces do not stutter. After flames gained seeded sizes, upward turbulence, and additive light (2026-11-18): the flames lick and break up at the tips; neighbours differ in size; where flames cross they glow brighter; no regular comb of tongues; still no box around them. |
 | U3 (v0.3) (part script) (D11) | Space menu and tray menu list Undo and Redo at the top, greyed when empty and named for the top action ("Undo Move space", "Redo Move space"); moving, resizing, reordering, sorting, fitting, locking, folding, renaming, creating, and deleting an empty space each undo and redo from both menus. |
 | U4 (v0.3) (script) (D11) | Ctrl+Z after a space move puts it back, Ctrl+Y moves it again; with no space current, Ctrl+Z on the desktop still undoes an Explorer rename. |
 | U5 (v0.3) (part script) (D11) | Drop a file into a space and undo (it is back where it was); delete a space with stored files, undo, then redo; rename an item and undo. |

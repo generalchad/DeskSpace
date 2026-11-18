@@ -3,8 +3,11 @@
 //! past the space's frame, shaded on the CPU into premultiplied pixels for a
 //! layered overlay window. Pure, so the layout and the shading are tested.
 
-use super::burn::FlameBase;
+use std::time::Instant;
+
+use super::burn::{self, FlameBase};
 use super::math;
+use super::noise;
 
 /// How much room the overlay keeps beside and above the space for flames to
 /// rise into, in pixels at 96 DPI; `margins` scales them for a display.
@@ -62,6 +65,10 @@ const TIP_FALLOFF: f32 = 0.8;
 const HEAT_BRIGHTNESS: f32 = 0.4;
 /// Below this heat a pixel stays clear.
 const HEAT_CUTOFF: f32 = 0.02;
+/// How fast turbulence scrolls upward through a tongue, in 96-DPI pixels/s.
+const RISE_PX_PER_S: f32 = 120.0;
+/// Maximum factor turbulence (`0.45 + 1.1 * n`) can multiply heat by.
+const MAX_TURBULENCE: f32 = 1.55;
 
 /// Every this many flames throws an ember.
 const EMBER_EVERY: usize = 3;
@@ -108,30 +115,34 @@ pub struct Tongue {
     /// The display it was made for, `dpi / 96`: the ember it throws is this
     /// much bigger.
     pub scale: f32,
+    /// Seeds turbulence and spark phases so two plays differ.
+    pub seed: u32,
 }
 
 /// The tongues standing on `bases` at `time` (seconds) for a space
-/// `space_height` tall, into `tongues`. The space's top-left is at (`side`,
-/// `top`) in the overlay and its burn cells are `cell` pixels square; `scale`
-/// is the display's (`dpi / 96`), which sizes the flames.
+/// `space_height` tall on a display of `dpi`, into `tongues`. `seed` varies
+/// tongue sizes and phases across plays.
 pub fn tongues(
     bases: &[FlameBase],
     space_height: f32,
-    (side, top): (u32, u32),
-    cell: u32,
+    dpi: u32,
     time: f32,
-    scale: f32,
+    seed: u32,
     tongues: &mut Vec<Tongue>,
 ) {
+    let (side, top) = margins(dpi);
+    let cell = burn::cell_px(dpi);
+    let scale = dpi.max(1) as f32 / 96.0;
     tongues.clear();
     let tallest =
         (space_height * HEIGHT_SHARE).clamp(HEIGHT_RANGE.0 * scale, HEIGHT_RANGE.1 * scale);
     tongues.extend(bases.iter().map(|base| {
-        let phase = phase_of(base.col);
+        let phase = phase_of(seed, base.col);
         let waves = (time * FLICKER_RATES.0 + phase).sin()
             * (time * FLICKER_RATES.1 + phase * FLICKER_PHASE_SPREAD).cos();
         let flicker = FLICKER_BASE + FLICKER_DEPTH * waves;
-        let height = tallest * (1.0 - HEAT_HEIGHT + HEAT_HEIGHT * base.heat) * flicker;
+        let size_vary = 0.6 + 0.7 * noise::random(seed, base.col);
+        let height = tallest * (1.0 - HEAT_HEIGHT + HEAT_HEIGHT * base.heat) * flicker * size_vary;
         Tongue {
             x: side as f32 + (base.col * cell) as f32 + cell as f32 / 2.0,
             y: top as f32 + (base.row * cell) as f32 + cell as f32,
@@ -140,6 +151,7 @@ pub fn tongues(
             heat: base.heat,
             phase,
             scale,
+            seed,
         }
     }));
 }
@@ -200,8 +212,8 @@ impl Rows {
 }
 
 /// Shades `tongues` at `time` (seconds) into `pixels`, `width` by `height`
-/// premultiplied BGRA (`0xAARRGGBB`). Overlapping fire keeps the brightest
-/// of each channel.
+/// premultiplied BGRA (`0xAARRGGBB`). Overlapping fire adds channel by channel,
+/// capped at 255.
 ///
 /// `drawn` belongs to `pixels`: it comes in as the rows the frame before
 /// drew there (`Rows::ALL` for a new buffer), which are cleared first, and
@@ -214,6 +226,7 @@ pub fn paint(
     time: f32,
     drawn: &mut Rows,
 ) {
+    let started = Instant::now();
     drawn.clear(pixels, width, height);
     let mut now = Rows::NONE;
     for tongue in tongues {
@@ -223,6 +236,11 @@ pub fn paint(
         now = now.union(paint_ember(pixels, width, height, tongue, time, index));
     }
     *drawn = now;
+    tracing::trace!(
+        elapsed_us = started.elapsed().as_micros() as u64,
+        tongues = tongues.len(),
+        "shaded flames"
+    );
 }
 
 /// Shades one tongue, and returns the rows it reaches.
@@ -232,6 +250,9 @@ fn paint_tongue(pixels: &mut [u32], width: u32, height: u32, tongue: &Tongue, ti
     let top = (tongue.y - tongue.height).floor().max(0.0) as u32;
     let bottom = (tongue.y.ceil() as u32).min(height);
     let brightness = 1.0 - HEAT_BRIGHTNESS + HEAT_BRIGHTNESS * tongue.heat;
+    let inv_turb_w = 1.0 / (tongue.width * 0.6).max(0.5);
+    let inv_turb_h = 1.0 / (tongue.height * 0.3).max(0.5);
+    let scroll = time * RISE_PX_PER_S * tongue.scale;
     for py in top..bottom {
         // 0 at the foot, 1 at the tip.
         let up = (tongue.y - py as f32) / tongue.height;
@@ -244,29 +265,27 @@ fn paint_tongue(pixels: &mut [u32], width: u32, height: u32, tongue: &Tongue, ti
         let wave = (up * SWAY_WAVES - time * SWAY_RATE + tongue.phase).sin();
         let center = tongue.x + wave * tongue.width * SWAY_SHARE * up;
         let falloff = below.powf(TIP_FALLOFF);
-        // When even the row's brightest pixel is below the cutoff, nothing in
-        // it is lit. Otherwise `heat` falls away as the square of the distance
-        // from the centre, so only the pixels within `reach` of it can pass; a
-        // pixel each side is kept, so rounding never drops a lit pixel.
         let level = falloff * brightness;
-        if level <= HEAT_CUTOFF {
+        // Include peak turbulence so bright tips are never clipped early.
+        let peak = level * MAX_TURBULENCE;
+        if peak <= HEAT_CUTOFF {
             continue;
         }
-        let reach = half * (1.0 - HEAT_CUTOFF / level).max(0.0).sqrt();
+        let reach = half * (1.0 - HEAT_CUTOFF / peak).max(0.0).sqrt();
         let first = ((center - reach - 0.5).floor() - 1.0).max(left as f32) as u32;
         let last = (((center + reach - 0.5).ceil() + 1.0)
             .min(right as f32)
             .max(0.0)) as u32;
+        let ny = (py as f32 + scroll) * inv_turb_h;
         for px in first..last {
             let across = ((px as f32 + 0.5 - center).abs() / half).min(1.0);
-            // Kept as two factors: one product of the row's falloff and the
-            // tongue's brightness would round differently in its last bit.
-            let heat = (1.0 - across * across) * falloff * brightness;
+            let n = noise::value_noise(px as f32 * inv_turb_w, ny, 0, tongue.seed);
+            let heat = ((1.0 - across * across) * level * (0.45 + 1.1 * n)).clamp(0.0, 1.0);
             if heat <= HEAT_CUTOFF {
                 continue;
             }
             let pixel = &mut pixels[(py * width + px) as usize];
-            *pixel = brightest(*pixel, fire(heat));
+            *pixel = add(*pixel, fire(heat));
         }
     }
     Rows { top, bottom }
@@ -282,7 +301,8 @@ fn paint_ember(
     time: f32,
     index: usize,
 ) -> Rows {
-    let offset = tongue.phase * EMBER_PHASE_SHARE + index as f32 * EMBER_ORDER_SHARE;
+    let offset = tongue.phase * EMBER_PHASE_SHARE
+        + noise::random(tongue.seed, index as u32) * EMBER_ORDER_SHARE;
     let along = (time * EMBER_RATE + offset).fract().abs();
     let drift = (time * EMBER_DRIFT_RATE + tongue.phase).sin();
     let x = tongue.x + drift * tongue.width * EMBER_DRIFT_SHARE;
@@ -301,7 +321,7 @@ fn paint_ember(
             let (px, py) = (x + dx, y + dy);
             if px < width && py < height {
                 let pixel = &mut pixels[(py * width + px) as usize];
-                *pixel = brightest(*pixel, fire(EMBER_HEAT * fade));
+                *pixel = add(*pixel, fire(EMBER_HEAT * fade));
             }
         }
     }
@@ -342,18 +362,22 @@ fn fire_color(heat: f32) -> (f32, f32, f32) {
     )
 }
 
-/// The brighter of two premultiplied pixels, channel by channel, so it stays
-/// premultiplied.
-fn brightest(a: u32, b: u32) -> u32 {
-    (0..4)
-        .map(|byte| byte * 8)
-        .map(|shift| ((a >> shift) & 0xFF).max((b >> shift) & 0xFF) << shift)
-        .sum()
+/// Adds two premultiplied pixels channel by channel, capping each byte at 255.
+/// Because each source channel is at most its alpha, the sum stays premultiplied.
+pub(crate) fn add(a: u32, b: u32) -> u32 {
+    let [a0, a1, a2, a3] = a.to_ne_bytes();
+    let [b0, b1, b2, b3] = b.to_ne_bytes();
+    u32::from_ne_bytes([
+        a0.saturating_add(b0),
+        a1.saturating_add(b1),
+        a2.saturating_add(b2),
+        a3.saturating_add(b3),
+    ])
 }
 
-/// A column's fixed flicker phase, 0 to 2π.
-fn phase_of(col: u32) -> f32 {
-    math::unit(math::hash(col, 0, 0)) * std::f32::consts::TAU
+/// A column's fixed flicker phase for `seed`, 0 to 2π.
+fn phase_of(seed: u32, col: u32) -> f32 {
+    math::unit(math::hash(col, seed, 0)) * std::f32::consts::TAU
 }
 
 #[cfg(test)]
@@ -385,15 +409,7 @@ mod tests {
         let (side, top) = margins(96);
         let cell = burn::cell_px(96);
         let mut out = Vec::new();
-        tongues(
-            &[base(0, 10), base(20, 4)],
-            200.0,
-            (side, top),
-            cell,
-            0.5,
-            1.0,
-            &mut out,
-        );
+        tongues(&[base(0, 10), base(20, 4)], 200.0, 96, 0.5, 1, &mut out);
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].y, (top + 11 * cell) as f32);
         assert!(out[0].x > side as f32);
@@ -410,24 +426,8 @@ mod tests {
         // size at twice the distance from the overlay's corner.
         let mut at_100 = Vec::new();
         let mut at_200 = Vec::new();
-        tongues(
-            &[base(4, 10)],
-            200.0,
-            margins(96),
-            burn::cell_px(96),
-            0.3,
-            1.0,
-            &mut at_100,
-        );
-        tongues(
-            &[base(4, 10)],
-            400.0,
-            margins(192),
-            burn::cell_px(192),
-            0.3,
-            2.0,
-            &mut at_200,
-        );
+        tongues(&[base(4, 10)], 200.0, 96, 0.3, 1, &mut at_100);
+        tongues(&[base(4, 10)], 400.0, 192, 0.3, 1, &mut at_200);
         let (small, large) = (at_100[0], at_200[0]);
         assert!((large.height - 2.0 * small.height).abs() < 1e-3);
         assert!((large.width - 2.0 * small.width).abs() < 1e-3);
@@ -450,11 +450,13 @@ mod tests {
             heat: 1.0,
             phase: 0.0,
             scale: 1.0,
+            seed: 1,
         };
         let mut drawn = Rows::ALL;
         paint(&mut pixels, width, height, &[tongue], 0.0, &mut drawn);
         let at = |x: u32, y: u32| pixels[(y * width + x) as usize];
-        assert!(at(60, 97) >> 24 > 200, "the foot burns");
+        let foot_alpha = (95..100).map(|y| at(60, y) >> 24).max().unwrap_or(0);
+        assert!(foot_alpha > 200, "the foot burns");
         assert_eq!(at(5, 5), 0, "far away stays clear");
         assert_eq!(at(60, 110), 0, "nothing below the foot");
         for pixel in pixels {
@@ -476,6 +478,7 @@ mod tests {
             heat: 0.8,
             phase: 1.0,
             scale: 1.0,
+            seed: 3,
         };
         let mut first = vec![0; (width * height) as usize];
         let mut second = vec![1; (width * height) as usize];
@@ -490,6 +493,11 @@ mod tests {
             &mut drawn_second,
         );
         assert_eq!(first, second);
+
+        let mut later = vec![0; (width * height) as usize];
+        let mut drawn_later = Rows::ALL;
+        paint(&mut later, width, height, &[tongue], 1.1, &mut drawn_later);
+        assert_ne!(first, later, "turbulence scrolls over time");
     }
 
     #[test]
@@ -516,6 +524,7 @@ mod tests {
                 heat: 1.0,
                 phase: index as f32,
                 scale: 1.0,
+                seed: 2,
             })
             .collect();
         let mut drawn = Rows::ALL;
@@ -548,77 +557,35 @@ mod tests {
         let core = fire(1.0);
         assert!(edge >> 24 < core >> 24);
         assert!((core & 0xFF) > (edge & 0xFF), "the core is whiter");
-        assert_eq!(brightest(0x10_20_30_40, 0x40_10_50_00), 0x40_20_50_40);
     }
 
-    /// `paint` as it was while it cleared the whole buffer and worked out
-    /// the row's and the tongue's values for every pixel: the pixels every
-    /// frame still has to give.
-    fn reference_paint(pixels: &mut [u32], width: u32, height: u32, tongues: &[Tongue], time: f32) {
-        pixels.fill(0);
-        for tongue in tongues {
-            reference_tongue(pixels, width, height, tongue, time);
-        }
-        for (index, tongue) in tongues.iter().enumerate().step_by(EMBER_EVERY) {
-            reference_ember(pixels, width, height, tongue, time, index);
-        }
-    }
-
-    fn reference_tongue(pixels: &mut [u32], width: u32, height: u32, tongue: &Tongue, time: f32) {
-        let left = (tongue.x - tongue.width).floor().max(0.0) as u32;
-        let right = ((tongue.x + tongue.width).ceil() as u32).min(width);
-        let top = (tongue.y - tongue.height).floor().max(0.0) as u32;
-        let bottom = (tongue.y.ceil() as u32).min(height);
-        for py in top..bottom {
-            let up = (tongue.y - py as f32) / tongue.height;
-            if !(0.0..1.0).contains(&up) {
-                continue;
-            }
-            let below = 1.0 - up;
-            let half = tongue.width * 0.5 * below.powf(TAPER) * (1.0 - NECK + NECK * below);
-            let wave = (up * SWAY_WAVES - time * SWAY_RATE + tongue.phase).sin();
-            let center = tongue.x + wave * tongue.width * SWAY_SHARE * up;
-            let brightness = 1.0 - HEAT_BRIGHTNESS + HEAT_BRIGHTNESS * tongue.heat;
-            for px in left..right {
-                let across = ((px as f32 + 0.5 - center).abs() / half.max(0.5)).min(1.0);
-                let heat = (1.0 - across * across) * below.powf(TIP_FALLOFF) * brightness;
-                if heat <= HEAT_CUTOFF {
-                    continue;
-                }
-                let pixel = &mut pixels[(py * width + px) as usize];
-                *pixel = brightest(*pixel, fire(heat));
-            }
+    #[test]
+    fn add_sums_channels_and_stays_premultiplied() {
+        let half_a = 0x80_80_40_10;
+        let half_b = 0x80_60_50_20;
+        let sum = add(half_a, half_b);
+        assert_eq!(sum, 0xFF_E0_90_30);
+        let alpha = sum >> 24;
+        for shift in [0, 8, 16] {
+            let ch = (sum >> shift) & 0xFF;
+            assert!(ch >= ((half_a >> shift) & 0xFF));
+            assert!(ch >= ((half_b >> shift) & 0xFF));
+            assert!(ch <= alpha);
         }
     }
 
-    fn reference_ember(
-        pixels: &mut [u32],
-        width: u32,
-        height: u32,
-        tongue: &Tongue,
-        time: f32,
-        index: usize,
-    ) {
-        let offset = tongue.phase * EMBER_PHASE_SHARE + index as f32 * EMBER_ORDER_SHARE;
-        let along = (time * EMBER_RATE + offset).fract().abs();
-        let drift = (time * EMBER_DRIFT_RATE + tongue.phase).sin();
-        let x = tongue.x + drift * tongue.width * EMBER_DRIFT_SHARE;
-        let y = tongue.y - tongue.height * (EMBER_START + EMBER_RISE * along);
-        let fade = 1.0 - along;
-        if x < 0.0 || y < 0.0 {
-            return;
-        }
-        let (x, y) = (x as u32, y as u32);
-        let size = ember_px(tongue.scale);
-        for dy in 0..size {
-            for dx in 0..size {
-                let (px, py) = (x + dx, y + dy);
-                if px < width && py < height {
-                    let pixel = &mut pixels[(py * width + px) as usize];
-                    *pixel = brightest(*pixel, fire(EMBER_HEAT * fade));
-                }
-            }
-        }
+    #[test]
+    fn two_seeds_vary_tongue_heights_for_the_same_bases() {
+        let bases = [base(2, 10), base(7, 10), base(12, 10)];
+        let (mut first, mut second) = (Vec::new(), Vec::new());
+        tongues(&bases, 240.0, 96, 0.4, 1, &mut first);
+        tongues(&bases, 240.0, 96, 0.4, 2, &mut second);
+        assert!(
+            first
+                .iter()
+                .zip(&second)
+                .any(|(a, b)| (a.height - b.height).abs() > 1e-3)
+        );
     }
 
     const SHEET: (u32, u32) = (400, 200);
@@ -637,6 +604,7 @@ mod tests {
                 heat: 0.3 + 0.06 * index as f32,
                 phase: 0.7 * index as f32,
                 scale: 1.0,
+                seed: 1,
             }
         });
         let clump = (0..5).map(|index| Tongue {
@@ -647,6 +615,7 @@ mod tests {
             heat: 1.0 - 0.15 * index as f32,
             phase: 1.3 * index as f32,
             scale: 1.0,
+            seed: 1,
         });
         let feet = [
             (0.0, 0.0),
@@ -663,54 +632,9 @@ mod tests {
             heat: 1.0,
             phase: index as f32,
             scale: 1.0,
+            seed: 1,
         });
         vec![row.collect(), clump.collect(), edges.collect(), Vec::new()]
-    }
-
-    #[test]
-    fn a_frame_gives_the_reference_pixels_whatever_was_drawn_before() {
-        let (width, height) = SHEET;
-        let sets = tongue_sets();
-        let mut expected = vec![0; (width * height) as usize];
-        for (index, set) in sets.iter().enumerate() {
-            for (before, earlier) in sets.iter().enumerate() {
-                for time in [0.0, 0.37, 1.9, 12.5] {
-                    let mut pixels = vec![7; (width * height) as usize];
-                    let mut drawn = Rows::ALL;
-                    paint(&mut pixels, width, height, earlier, time + 0.4, &mut drawn);
-                    paint(&mut pixels, width, height, set, time, &mut drawn);
-                    reference_paint(&mut expected, width, height, set, time);
-                    assert!(
-                        pixels == expected,
-                        "set {index} at {time} s, after set {before}"
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn a_burn_through_one_buffer_gives_the_reference_frames() {
-        let space = (300.0, 200.0);
-        let (side, top) = margins(96);
-        let cell = burn::cell_px(96);
-        let (width, height) = (300 + 2 * side, 200 + top);
-        let field = burn::BurnField::for_space(space, 5, 0, 96);
-        let (mut bases, mut flames) = (Vec::new(), Vec::new());
-        let mut pixels = vec![7; (width * height) as usize];
-        let mut expected = vec![0; (width * height) as usize];
-        let mut drawn = Rows::ALL;
-        let mut burning = 0;
-        for frame in 0..60 {
-            let time = frame as f32 / 60.0;
-            field.flame_bases(field.front(frame as f32 / 59.0), SPACING, &mut bases);
-            tongues(&bases, space.1, (side, top), cell, time, 1.0, &mut flames);
-            burning += usize::from(!flames.is_empty());
-            paint(&mut pixels, width, height, &flames, time, &mut drawn);
-            reference_paint(&mut expected, width, height, &flames, time);
-            assert!(pixels == expected, "frame {frame}");
-        }
-        assert!(burning > 30, "most frames have flames to compare");
     }
 
     #[test]
@@ -745,6 +669,7 @@ mod tests {
             heat: 1.0,
             phase: 0.0,
             scale: 1.0,
+            seed: 1,
         };
         paint(&mut pixels, width, height, &[tongue], 0.0, &mut drawn);
         assert!(drawn.bottom < height, "the flames stop above the last row");

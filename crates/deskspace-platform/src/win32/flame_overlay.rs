@@ -6,7 +6,7 @@
 use deskspace_core::geometry::Rect;
 use windows::Win32::Foundation::HWND;
 
-use crate::render::burn::{self, BurnField, FlameBase};
+use crate::render::burn::BurnField;
 use crate::render::flames::{self, Rows, SPACING, Tongue};
 use crate::win32::layered_overlay::LayeredOverlay;
 
@@ -15,7 +15,7 @@ pub(crate) struct FlameOverlay {
     /// The same field the painter burns the space with, so the flames stand
     /// on its edge.
     field: BurnField,
-    bases: Vec<FlameBase>,
+    bases: Vec<crate::render::burn::FlameBase>,
     tongues: Vec<Tongue>,
     /// The rows of the pixel buffer the last frame drew, which the next one clears.
     drawn: Rows,
@@ -23,6 +23,7 @@ pub(crate) struct FlameOverlay {
     /// The display the space is on: its cells, margins, and flames scale
     /// with it.
     dpi: u32,
+    seed: u32,
 }
 
 impl FlameOverlay {
@@ -40,6 +41,7 @@ impl FlameOverlay {
             drawn: Rows::ALL,
             space_height: rect.height as f32,
             dpi,
+            seed,
         })
     }
 
@@ -58,10 +60,9 @@ impl FlameOverlay {
         flames::tongues(
             &self.bases,
             self.space_height,
-            flames::margins(self.dpi),
-            burn::cell_px(self.dpi),
+            self.dpi,
             time,
-            self.dpi as f32 / 96.0,
+            self.seed,
             &mut self.tongues,
         );
         let (width, height) = self.overlay.pixel_size();
