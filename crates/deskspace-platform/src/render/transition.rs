@@ -159,13 +159,15 @@ pub enum Mask {
     },
     /// Paper burning up from the bottom (`render::burn`): `gone` is how far
     /// along the burn is (0 to 1), `detail` how ragged its edge is, `seed`
-    /// which burn shape it takes, and `dpi` the display whose cells it burns
-    /// at.
+    /// which burn shape it takes, `dpi` the display whose cells it burns at,
+    /// and `time` the animation clock in seconds for flickering glow and
+    /// embers.
     Burn {
         gone: f32,
         detail: u8,
         seed: u32,
         dpi: u32,
+        time: f32,
     },
 }
 
@@ -372,7 +374,7 @@ impl Transition {
     pub fn frame(&self, now: Duration) -> TransitionFrame {
         let u = self.u(now);
         let shown = self.play.effect.spec().pace.curve.apply(u);
-        frame(&self.play, &self.geometry, shown)
+        frame(&self.play, &self.geometry, shown, now.as_secs_f32())
     }
 }
 
@@ -390,7 +392,7 @@ const CRT_LINE_THICKNESS: i32 = 2;
 /// fade, so the raster finishes filling in its middle.
 const CRT_FLASH: f32 = 0.25;
 
-fn frame(play: &Play, geometry: &Geometry, shown: f32) -> TransitionFrame {
+fn frame(play: &Play, geometry: &Geometry, shown: f32, time: f32) -> TransitionFrame {
     let whole = TransitionFrame {
         shown,
         rect: geometry.rect,
@@ -448,6 +450,7 @@ fn frame(play: &Play, geometry: &Geometry, shown: f32) -> TransitionFrame {
                 detail: play.detail,
                 seed: play.seed,
                 dpi: geometry.dpi,
+                time,
             },
             ..whole
         },

@@ -22,7 +22,7 @@ are collected in section V instead of blocking:
 - section B's icon picker tasks: B49 next;
 - section K (K10-K13, K15), each a pure move with rules that
   leave nothing to design;
-- section T: T30-T31 in order, then T44 and T46-T48;
+- section T: T31, T44, and T46-T48;
 - O5 and the O6-O9 harness abilities;
 - anything else not marked **[needs decision]**, "still to design", or in
   section D.
@@ -1289,7 +1289,7 @@ T24-T33 make Burn read as fire rather than an orange wipe: it takes its
 time and kindles, spreads unevenly, smoulders, throws turbulent flames and
 ash, and looks the same at every DPI. One commit each, in order.
 
-- **When to start.** T41 and T27-T29 have landed, so T30 can start now. T25-T33 build on
+- **When to start.** T41 and T27-T30 have landed, so T31 can start now. T25-T33 build on
   the groundwork ported from `feat/color-picker-redesign` (as of `c1ad0f3`). Where a
   task below names the branch's types, read `main`'s:
   `EffectOverlay` and `Art::Burn` are `FlameOverlay` (the burn's state, in
@@ -1311,41 +1311,6 @@ ash, and looks the same at every DPI. One commit each, in order.
   to that row's first column, instead of adding a new row.
 - **Burn's smoke.** If Burn's smoke (`render/burn_smoke.rs`) has landed,
   keep the overlay's drawing order: smoke, then flames, then ash.
-
-- [ ] **T30. A glow that lives (platform).** **(junior)** **[needs human]**
-  - Why: the glowing edge is a fixed colour ramp, the char is flat, and
-    the paper ahead gets no light from the fire.
-  - Clock: `frame` (`render/transition.rs`) takes `time: f32`, the
-    animation clock in seconds that the flames already use
-    (`now().as_secs_f32()` in `space_animation.rs`). `Mask::Burn` carries
-    it. Only Burn reads it. Flames and glow then flicker together.
-  - `render/burn.rs`:
-    - `cell_pixels(stage)` becomes `cell_pixels(stage, shimmer)`.
-      `shimmer` is `0.5 + 0.5 * sin(time * rate + phase)`, where `phase`
-      comes from `noise::random(seed, cell index)` × 2π. Work it out only
-      for cells in a band; Whole and Gone cells skip it.
-    - Burning: brightness × `(0.82 + 0.18 * shimmer)`, rate 13.
-    - `Stage::Charred` gains `along` (0 at the glow, 1 at the scorch).
-      Ember cells, those with `noise::random(seed ^ EMBER_SALT, index)`
-      below 0.1, lay ember colour (255, 110, 30) over the char at alpha
-      `(1 - along)^1.5 * (0.4 + 0.6 * shimmer)`, rate 5. `EMBER_SALT` is
-      a named constant.
-    - A new `Stage::Lit(near)` follows `Scorched`, `LIGHT_PX` (24) deep.
-      `near` is 1 next to the scorch and 0 at untouched paper. It lays
-      premultiplied (255, 150, 60) at alpha `near² * 48 * (0.75 + 0.25 *
-      shimmer)`. The light band counts toward the field's bands, so at
-      gone 0 nothing is lit.
-  - `fill_burn` (`render/d2d/effects.rs`) passes the clock; the marks
-    bitmap is already rewritten every frame, so nothing else changes in
-    the painter.
-  - Tests: Whole and Gone pixels are as before; at one time, ember cells
-    near the glow are brighter than other char cells; Lit's alpha is at
-    most 48 and 0 at its far edge; Burning pixels differ between two
-    times but stay opaque; every pixel stays premultiplied.
-  - **[needs human]** check: the edge shimmers; embers wink in the char
-    and die out toward the scorch; warm light on the paper just ahead of
-    the edge flickers with the flames; at rest after a show, no tint is
-    left on the space.
 
 - [ ] **T31. Ash (platform).** **(junior)** **[needs human]**
   - Why: burned-away paper just disappears. Black flakes lifting off
@@ -2419,7 +2384,7 @@ that has it.
 | Flat material (part script) | Fade, Pixelate, Gradient, Dissolve, and Burn on hide, show, and delete (and in the debug preview) on Acrylic, Blur, and Solid spaces with a border, with Windows' "Transparency effects" off and on: no outline stays around the fading space, and it comes back once a show ends; with the switch off, no dark box either, the dark fill coming back only once a show ends; with it on, see the T13 row; Roll, Fly, and CRT look as before. |
 | T12 (part script) (D12) | Windows 11 with "Transparency effects" on: the log says "spaces use composition"; the R3 list passes unchanged with each backdrop (Acrylic and Blur blurred, Clear and Solid not), at 100 % and 150 %, corners and border as before, and the T8 row still passes, the blur stepping on and off as today. With the switch off at startup, the log names it and spaces look as before T12. Windows 10, `--placement desktop-*`, and `--click-through` change nothing. Idle CPU and GPU no higher than before. |
 | T13 (D12) | Windows 11 confirmed 2026-10-18 (maintainer). Still to check: on Windows 10 the blur still steps; idle GPU no higher than before. |
-| T17, T18, T24, T25, T26, T28, T29, B54 (part script) (D12) | Burn on Startup (hide, show, a new space, startup, exit) and on Delete, on each backdrop at 100 % and 150 %: the space burns from the bottom up along a ragged edge that glows, chars, and scorches ahead of itself, like paper; flames lick up from the edge and past the top and sides of the frame with no box or blur around them, and never show over another application (cover the space with a window and they stay behind it), while with `--on-top` they follow the space above other windows; Detail changes how ragged the edge is; reversing mid-burn (the hotkey twice) un-burns it; no flame window is left behind after it ends, after a delete, or after quitting mid-burn; a desktop-hosted space burns without flames; Burn at 250 ms plays for about half a second, catching slowly and then racing to the end; un-burning starts fast and settles; every other effect looks and times as before; no flame pixel is left behind where a tongue was; at exit, two spaces of the same size burn along different edges; one space burns differently each time it is hidden; reversing mid-burn still un-burns along the same edge. After Burn's paint was trimmed to the cells each frame reaches (2026-11-15): a burn still looks as it did, with its char, scorch, and flame band whole and no seam across the space. After Burn's cells, margins, and flames learned to scale with the display (2026-11-16): on a 150 % and a 200 % monitor, a burn looks as it does at 100 %, only bigger, with the edge as ragged relative to the space and the flames as tall relative to the title bar. After Burn switched to the coarse Dijkstra fire-spread field (2026-11-18): the bottom catches unevenly; the fire runs up in fingers; on a large space, a hole or two opens in the middle and joins the main front; the glowing edge is a similarly thin line on small and large spaces; Detail still coarsens it; startup and exit with many spaces do not stutter. After flames gained seeded sizes, upward turbulence, and additive light (2026-11-18): the flames lick and break up at the tips; neighbours differ in size; where flames cross they glow brighter; no regular comb of tongues; still no box around them. |
+| T17, T18, T24, T25, T26, T28, T29, T30, B54 (part script) (D12) | Burn on Startup (hide, show, a new space, startup, exit) and on Delete, on each backdrop at 100 % and 150 %: the space burns from the bottom up along a ragged edge that glows, chars, and scorches ahead of itself, like paper; flames lick up from the edge and past the top and sides of the frame with no box or blur around them, and never show over another application (cover the space with a window and they stay behind it), while with `--on-top` they follow the space above other windows; Detail changes how ragged the edge is; reversing mid-burn (the hotkey twice) un-burns it; no flame window is left behind after it ends, after a delete, or after quitting mid-burn; a desktop-hosted space burns without flames; Burn at 250 ms plays for about half a second, catching slowly and then racing to the end; un-burning starts fast and settles; every other effect looks and times as before; no flame pixel is left behind where a tongue was; at exit, two spaces of the same size burn along different edges; one space burns differently each time it is hidden; reversing mid-burn still un-burns along the same edge. After Burn's paint was trimmed to the cells each frame reaches (2026-11-15): a burn still looks as it did, with its char, scorch, and flame band whole and no seam across the space. After Burn's cells, margins, and flames learned to scale with the display (2026-11-16): on a 150 % and a 200 % monitor, a burn looks as it does at 100 %, only bigger, with the edge as ragged relative to the space and the flames as tall relative to the title bar. After Burn switched to the coarse Dijkstra fire-spread field (2026-11-18): the bottom catches unevenly; the fire runs up in fingers; on a large space, a hole or two opens in the middle and joins the main front; the glowing edge is a similarly thin line on small and large spaces; Detail still coarsens it; startup and exit with many spaces do not stutter. After flames gained seeded sizes, upward turbulence, and additive light (2026-11-18): the flames lick and break up at the tips; neighbours differ in size; where flames cross they glow brighter; no regular comb of tongues; still no box around them. After the glowing edge, embers in the char, and paper firelight started flickering with the clock (2026-11-18): the edge shimmers; embers wink in the char and die out toward the scorch; warm light on the paper just ahead of the edge flickers with the flames; at rest after a show, no tint is left on the space. |
 | U3 (v0.3) (part script) (D11) | Space menu and tray menu list Undo and Redo at the top, greyed when empty and named for the top action ("Undo Move space", "Redo Move space"); moving, resizing, reordering, sorting, fitting, locking, folding, renaming, creating, and deleting an empty space each undo and redo from both menus. |
 | U4 (v0.3) (script) (D11) | Ctrl+Z after a space move puts it back, Ctrl+Y moves it again; with no space current, Ctrl+Z on the desktop still undoes an Explorer rename. |
 | U5 (v0.3) (part script) (D11) | Drop a file into a space and undo (it is back where it was); delete a space with stored files, undo, then redo; rename an item and undo. |

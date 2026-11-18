@@ -225,16 +225,22 @@ impl Effects {
                 detail,
                 seed,
                 dpi,
+                time,
             } => {
                 let burn = self.burn(target, detail, size, seed, dpi)?;
                 let front = burn.field.front(gone);
                 let rows = match burn.front {
+                    Some(previous) if previous == front => {
+                        let marked = burn.field.rows_marked(front);
+                        (!marked.is_empty()).then_some(marked)
+                    }
                     Some(previous) => burn.field.rows_changed(previous, front),
                     None => Some(0..burn.field.grid().rows),
                 };
                 if let Some(rows) = rows {
                     burn.field.fill_rows(
                         front,
+                        time,
                         rows.clone(),
                         &mut burn.paper.pixels,
                         &mut burn.marks.pixels,

@@ -54,7 +54,7 @@ struct Picture {
 fn frame(field: &BurnField, space: (u32, u32), dpi: u32, front: f32, time: f32) -> Picture {
     let grid = field.grid();
     let (mut paper, mut marks) = (vec![0; grid.cell_count()], vec![0; grid.cell_count()]);
-    field.fill_rows(front, 0..grid.rows, &mut paper, &mut marks);
+    field.fill_rows(front, time, 0..grid.rows, &mut paper, &mut marks);
 
     let (side, top) = flames::margins(dpi);
     let cell = burn::cell_px(dpi);

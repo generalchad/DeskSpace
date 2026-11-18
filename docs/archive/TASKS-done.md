@@ -7121,3 +7121,4 @@ takes an id listed here or used anywhere above
 - **T27.** The field owns its bands (platform; refactor).
 - **T28.** Burn spreads like fire (platform).
 - **T29.** Turbulent flames (platform).
+- **T30.** A glow that lives (platform).

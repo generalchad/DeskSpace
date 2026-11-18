@@ -35,6 +35,7 @@ struct Bands {
     glow: f32,
     char: f32,
     scorch: f32,
+    light: f32,
 }
 
 impl Bands {
@@ -44,6 +45,7 @@ impl Bands {
         glow: 0.035,
         char: 0.045,
         scorch: 0.07,
+        light: 0.08,
     };
 
     fn from_pixels(cell_px: u32, dpi: u32, units_per_cell: f32) -> Self {
@@ -53,23 +55,29 @@ impl Bands {
             glow: to_units(GLOW_PX),
             char: to_units(CHAR_PX),
             scorch: to_units(SCORCH_PX),
+            light: to_units(LIGHT_PX),
         }
     }
 
     /// Everything the burn touches beyond what is already gone.
     fn total(self) -> f32 {
-        self.glow + self.char + self.scorch
+        self.glow + self.char + self.scorch + self.light
     }
 
-    fn stage(self, above: f32) -> Stage {
+    fn stage(self, above: f32, ember: impl FnOnce() -> bool) -> Stage {
         if above < 0.0 {
             Stage::Gone
         } else if above < self.glow {
             Stage::Burning(above / self.glow)
         } else if above < self.glow + self.char {
-            Stage::Charred
-        } else if above < self.total() {
+            Stage::Charred {
+                along: (above - self.glow) / self.char,
+                ember: ember(),
+            }
+        } else if above < self.glow + self.char + self.scorch {
             Stage::Scorched(1.0 - (above - self.glow - self.char) / self.scorch)
+        } else if above < self.total() {
+            Stage::Lit(1.0 - (above - self.glow - self.char - self.scorch) / self.light)
         } else {
             Stage::Whole
         }
@@ -98,6 +106,13 @@ const EDGE_RAG: f32 = 0.015;
 const GLOW_PX: f32 = 3.0;
 const CHAR_PX: f32 = 5.0;
 const SCORCH_PX: f32 = 12.0;
+const LIGHT_PX: f32 = 24.0;
+/// Seed salt and share for ember cells within the char band.
+const EMBER_SALT: u32 = 0xE3BE_25A1;
+const EMBER_SHARE: f32 = 0.1;
+/// Flicker rates in rad/s for the live glow/paper light and char embers.
+const BURNING_RATE: f32 = 13.0;
+const EMBER_RATE: f32 = 5.0;
 
 /// The noise's coarsest lattice, in cells, at the finest and per step of
 /// detail.
@@ -145,8 +160,8 @@ fn solve_coarse(node_cols: u32, node_rows: u32, lattice: f32, seed: u32) -> (Ris
     let total = node_cols as usize * node_rows as usize;
     let mut speeds = vec![0.0; total];
     for nrow in 0..node_rows {
-        let row_slice =
-            &mut speeds[nrow as usize * node_cols as usize..(nrow as usize + 1) * node_cols as usize];
+        let row_slice = &mut speeds
+            [nrow as usize * node_cols as usize..(nrow as usize + 1) * node_cols as usize];
         noise::fractal_row(
             (nrow * COARSE_STEP) as f32,
             COARSE_STEP as f32,
@@ -243,6 +258,8 @@ pub struct BurnField {
     bands: Bands,
     /// One cell in normalized field units, from `1 / (max_arrival * COARSE_STEP)`.
     units_per_cell: f32,
+    /// Seed for deterministic per-cell shimmer phase and ember selection.
+    seed: u32,
     /// Each row's lowest and highest cell value, which say what a moving
     /// front can have changed without reading every cell.
     extremes: Vec<(f32, f32)>,
@@ -327,6 +344,7 @@ impl BurnField {
             field,
             bands,
             units_per_cell,
+            seed,
             extremes,
         }
     }
@@ -355,13 +373,23 @@ impl BurnField {
 
     /// What cell (`col`, `row`) is at `front`.
     pub fn stage(&self, col: u32, row: u32, front: f32) -> Stage {
-        self.bands.stage(self.value(col, row) - front)
+        let index = row * self.field.cols() + col;
+        self.bands
+            .stage(self.value(col, row) - front, || is_ember(self.seed, index))
     }
 
-    /// Writes the pixels of `rows` for a burn at `front`: into `paper`,
-    /// whether the paper still shows, and into `marks`, the glow, char, or
-    /// scorch over it (`cell_pixels`). Every other row keeps what it had.
-    pub fn fill_rows(&self, front: f32, rows: Range<u32>, paper: &mut [u32], marks: &mut [u32]) {
+    /// Writes the pixels of `rows` for a burn at `front` and animation clock
+    /// `time`: into `paper`, whether the paper still shows, and into `marks`,
+    /// the glow, char, scorch, or firelight over it (`cell_pixels`). Every
+    /// other row keeps what it had.
+    pub fn fill_rows(
+        &self,
+        front: f32,
+        time: f32,
+        rows: Range<u32>,
+        paper: &mut [u32],
+        marks: &mut [u32],
+    ) {
         let cols = self.field.cols().max(1) as usize;
         let values = self.field.values();
         let start = (rows.start as usize * cols).min(values.len());
@@ -374,8 +402,13 @@ impl BurnField {
         }
         fill_pixels(
             &values[start..end],
-            front,
-            self.bands,
+            start as u32,
+            RowFill {
+                front,
+                time,
+                seed: self.seed,
+                bands: self.bands,
+            },
             &mut paper[start..end],
             &mut marks[start..end],
         );
@@ -400,8 +433,8 @@ impl BurnField {
     }
 
     /// The rows a burn at `front` marks at all: where a cell is burning,
-    /// charred, or scorched. Empty when it marks none, at the start and the
-    /// end of the burn.
+    /// charred, scorched, or lit by the fire. Empty when it marks none, at the
+    /// start and the end of the burn.
     pub fn rows_marked(&self, front: f32) -> Range<u32> {
         let bands = self.bands.total();
         self.rows_where(|min, max| max >= front && min < front + bands)
@@ -464,37 +497,121 @@ pub enum Stage {
     Gone,
     /// The glowing edge; 0 at the front, 1 where it meets the char.
     Burning(f32),
-    Charred,
-    /// Browning ahead of the char; 1 next to it, 0 at untouched paper.
+    /// Carbonized band ahead of the glow; `along` is 0 at the glow and 1 at
+    /// the scorch, and `ember` marks glowing coal specks.
+    Charred {
+        along: f32,
+        ember: bool,
+    },
+    /// Browning ahead of the char; 1 next to it, 0 at the light band.
     Scorched(f32),
+    /// Warm light cast on untouched paper ahead of the scorch; 1 near scorch,
+    /// 0 at untouched paper.
+    Lit(f32),
     Whole,
 }
 
 /// A cell's two pixels: whether the paper (the space's contents) still shows
 /// there, as an opacity mask's premultiplied pixel, and the color laid over
-/// it, premultiplied BGRA (`0xAARRGGBB`).
-pub fn cell_pixels(stage: Stage) -> (u32, u32) {
+/// it, premultiplied BGRA (`0xAARRGGBB`). `shimmer` is in `0..=1`.
+pub fn cell_pixels(stage: Stage, shimmer: f32) -> (u32, u32) {
     const SHOWN: u32 = u32::MAX;
     match stage {
         Stage::Gone => (0, 0),
-        // White-hot at the front, through orange to a deep red glow.
+        // White-hot at the front, through orange to a deep red glow, shimmering.
         Stage::Burning(along) => {
-            let color = mix((255, 244, 190), (214, 64, 12), along);
-            (SHOWN, premultiplied(color, 255))
+            let (r, g, b) = mix((255, 244, 190), (214, 64, 12), along);
+            let factor = 0.82 + 0.18 * shimmer;
+            let scale = |c: u8| (f32::from(c) * factor).round().clamp(0.0, 255.0) as u8;
+            (SHOWN, premultiplied((scale(r), scale(g), scale(b)), 255))
         }
-        Stage::Charred => (SHOWN, premultiplied((28, 17, 11), 238)),
+        Stage::Charred { along, ember } => {
+            let char_px = premultiplied((28, 17, 11), 238);
+            let marks = if ember {
+                let fade = (1.0 - along).clamp(0.0, 1.0).powf(1.5);
+                let alpha = (fade * (0.4 + 0.6 * shimmer) * 255.0)
+                    .round()
+                    .clamp(0.0, 255.0) as u8;
+                over(premultiplied((255, 110, 30), alpha), char_px)
+            } else {
+                char_px
+            };
+            (SHOWN, marks)
+        }
         Stage::Scorched(near) => {
             let alpha = (near * 170.0).round() as u8;
             (SHOWN, premultiplied((112, 62, 22), alpha))
+        }
+        Stage::Lit(near) => {
+            let near = near.clamp(0.0, 1.0);
+            let alpha = (near * near * 48.0 * (0.75 + 0.25 * shimmer))
+                .round()
+                .clamp(0.0, 48.0) as u8;
+            (SHOWN, premultiplied((255, 150, 60), alpha))
         }
         Stage::Whole => (SHOWN, 0),
     }
 }
 
-fn fill_pixels(values: &[f32], front: f32, bands: Bands, paper: &mut [u32], marks: &mut [u32]) {
-    for ((value, paper), marks) in values.iter().zip(paper.iter_mut()).zip(marks.iter_mut()) {
-        (*paper, *marks) = cell_pixels(bands.stage(value - front));
+#[derive(Clone, Copy)]
+struct RowFill {
+    front: f32,
+    time: f32,
+    seed: u32,
+    bands: Bands,
+}
+
+fn is_ember(seed: u32, index: u32) -> bool {
+    noise::random(seed ^ EMBER_SALT, index) < EMBER_SHARE
+}
+
+fn cell_shimmer(seed: u32, index: u32, time: f32, rate: f32) -> f32 {
+    let phase = noise::random(seed, index) * std::f32::consts::TAU;
+    0.5 + 0.5 * (time * rate + phase).sin()
+}
+
+fn fill_pixels(
+    values: &[f32],
+    start_index: u32,
+    fill: RowFill,
+    paper: &mut [u32],
+    marks: &mut [u32],
+) {
+    for (offset, ((&value, paper), marks)) in values
+        .iter()
+        .zip(paper.iter_mut())
+        .zip(marks.iter_mut())
+        .enumerate()
+    {
+        let index = start_index + offset as u32;
+        let stage = fill
+            .bands
+            .stage(value - fill.front, || is_ember(fill.seed, index));
+        let shimmer = match stage {
+            Stage::Burning(_) | Stage::Lit(_) => {
+                cell_shimmer(fill.seed, index, fill.time, BURNING_RATE)
+            }
+            Stage::Charred { ember: true, .. } => {
+                cell_shimmer(fill.seed, index, fill.time, EMBER_RATE)
+            }
+            Stage::Gone
+            | Stage::Charred { ember: false, .. }
+            | Stage::Scorched(_)
+            | Stage::Whole => 0.0,
+        };
+        (*paper, *marks) = cell_pixels(stage, shimmer);
     }
+}
+
+/// Premultiplied `src` over `dst` (`src + dst * (1 - src.alpha)`), BGRA.
+fn over(src: u32, dst: u32) -> u32 {
+    let inv_a = 255 - (src >> 24);
+    let channel = |shift: u32| {
+        let s = (src >> shift) & 0xff;
+        let d = (dst >> shift) & 0xff;
+        s + (d * inv_a + 127) / 255
+    };
+    (channel(24) << 24) | (channel(16) << 16) | (channel(8) << 8) | channel(0)
 }
 
 fn mix(from: (u8, u8, u8), to: (u8, u8, u8), t: f32) -> (u8, u8, u8) {
@@ -576,21 +693,28 @@ mod tests {
     }
 
     #[test]
-    fn the_bands_run_glow_char_scorch() {
+    fn the_bands_run_glow_char_scorch_lit() {
         let bands = Bands::DEFAULT;
-        assert_eq!(bands.stage(-0.01), Stage::Gone);
-        assert_eq!(bands.stage(0.0), Stage::Burning(0.0));
-        assert_eq!(bands.stage(bands.glow + 0.001), Stage::Charred);
+        assert_eq!(bands.stage(-0.01, || false), Stage::Gone);
+        assert_eq!(bands.stage(0.0, || false), Stage::Burning(0.0));
         assert!(matches!(
-            bands.stage(bands.glow + bands.char + 0.001),
+            bands.stage(bands.glow + 0.001, || false),
+            Stage::Charred { along, ember: false } if along < 0.1
+        ));
+        assert!(matches!(
+            bands.stage(bands.glow + bands.char + 0.001, || false),
             Stage::Scorched(near) if near > 0.9
         ));
-        assert_eq!(bands.stage(bands.total()), Stage::Whole);
-        let (mask, color) = cell_pixels(Stage::Gone);
-        assert_eq!((mask, color), (0, 0));
-        let (mask, color) = cell_pixels(Stage::Whole);
-        assert_eq!((mask, color), (u32::MAX, 0));
-        let (_, glow) = cell_pixels(Stage::Burning(0.0));
+        assert!(matches!(
+            bands.stage(bands.glow + bands.char + bands.scorch + 0.001, || false),
+            Stage::Lit(near) if near > 0.9
+        ));
+        assert_eq!(bands.stage(bands.total(), || false), Stage::Whole);
+        for shimmer in [0.0, 1.0] {
+            assert_eq!(cell_pixels(Stage::Gone, shimmer), (0, 0));
+            assert_eq!(cell_pixels(Stage::Whole, shimmer), (u32::MAX, 0));
+        }
+        let (_, glow) = cell_pixels(Stage::Burning(0.0), 1.0);
         assert_eq!(glow >> 24, 255, "the edge is opaque fire");
     }
 
@@ -598,7 +722,13 @@ mod tests {
     fn a_burn_writes_both_pixels_of_every_cell() {
         let values = [0.0, 0.5, 1.0];
         let (mut paper, mut marks) = ([7; 3], [7; 3]);
-        fill_pixels(&values, 0.5, Bands::DEFAULT, &mut paper, &mut marks);
+        let fill = RowFill {
+            front: 0.5,
+            time: 0.2,
+            seed: 1,
+            bands: Bands::DEFAULT,
+        };
+        fill_pixels(&values, 0, fill, &mut paper, &mut marks);
         assert_eq!(paper[0], 0, "below the front is gone");
         assert_eq!(paper[1], u32::MAX, "the front itself still burns");
         assert_eq!(marks[1] >> 24, 255, "and glows");
@@ -674,11 +804,11 @@ mod tests {
         let (cols, rows) = (10, 4);
         let field = BurnField::new(Grid { cols, rows }, 5, 0, 96);
         let (mut paper, mut marks) = ([7u32; 40], [7u32; 40]);
-        field.fill_rows(0.5, 1..3, &mut paper, &mut marks);
+        field.fill_rows(0.5, 0.4, 1..3, &mut paper, &mut marks);
 
         let (mut all_paper, mut all_marks) = ([7u32; 40], [7u32; 40]);
         for row in 0..rows {
-            field.fill_rows(0.5, row..row + 1, &mut all_paper, &mut all_marks);
+            field.fill_rows(0.5, 0.4, row..row + 1, &mut all_paper, &mut all_marks);
         }
         let written = cols as usize..3 * cols as usize;
         assert_eq!(paper[written.clone()], all_paper[written.clone()]);
@@ -749,13 +879,14 @@ mod tests {
 
     #[test]
     fn a_spot_fire_opens_a_hole_ahead_of_the_main_front() {
-        let (coarse, max_arrival) = solve_coarse(300, 300, LATTICE_BASE + LATTICE_PER_DETAIL * 5.0, 1);
-        let has_hole = (0..300).any(|col| {
-            (0..299).any(|row| {
-                coarse.value(col, row) < coarse.value(col, row + 1)
-            })
-        });
-        assert!(has_hole && max_arrival > 0.0, "a higher cell burns before a lower one");
+        let (coarse, max_arrival) =
+            solve_coarse(300, 300, LATTICE_BASE + LATTICE_PER_DETAIL * 5.0, 1);
+        let has_hole = (0..300)
+            .any(|col| (0..299).any(|row| coarse.value(col, row) < coarse.value(col, row + 1)));
+        assert!(
+            has_hole && max_arrival > 0.0,
+            "a higher cell burns before a lower one"
+        );
     }
 
     #[test]
@@ -779,6 +910,155 @@ mod tests {
         let short = median_glow_px(100.0);
         let tall = median_glow_px(400.0);
         let ratio = (short / tall).max(tall / short);
-        assert!(ratio < 2.0, "short={short} px, tall={tall} px, ratio={ratio}");
+        assert!(
+            ratio < 2.0,
+            "short={short} px, tall={tall} px, ratio={ratio}"
+        );
+    }
+
+    #[test]
+    fn ember_cells_near_glow_are_brighter_than_plain_char() {
+        let red = |px: u32| (px >> 16) & 0xff;
+        let (_, plain) = cell_pixels(
+            Stage::Charred {
+                along: 0.1,
+                ember: false,
+            },
+            0.5,
+        );
+        let (_, ember_dim) = cell_pixels(
+            Stage::Charred {
+                along: 0.1,
+                ember: true,
+            },
+            0.0,
+        );
+        let (_, ember_bright) = cell_pixels(
+            Stage::Charred {
+                along: 0.1,
+                ember: true,
+            },
+            1.0,
+        );
+        assert!(red(ember_dim) > red(plain));
+        assert!(red(ember_bright) > red(ember_dim));
+
+        let field = BurnField::for_space((320.0, 240.0), 5, 1, 96);
+        let front = field.front(0.5);
+        let Grid { cols, rows } = field.grid();
+        let mut paper = vec![0; field.grid().cell_count()];
+        let mut marks = vec![0; field.grid().cell_count()];
+        field.fill_rows(front, 0.3, 0..rows, &mut paper, &mut marks);
+        let (mut saw_ember, mut saw_plain) = (None, None);
+        for row in 0..rows {
+            for col in 0..cols {
+                if let Stage::Charred { along, ember } = field.stage(col, row, front)
+                    && along < 0.2
+                {
+                    let px = marks[(row * cols + col) as usize];
+                    if ember {
+                        saw_ember = Some(px);
+                    } else {
+                        saw_plain = Some(px);
+                    }
+                }
+            }
+        }
+        assert!(
+            red(saw_ember.expect("field has ember char near glow"))
+                > red(saw_plain.expect("field has plain char near glow"))
+        );
+    }
+
+    #[test]
+    fn lit_alpha_caps_at_48_and_drops_to_zero_at_far_edge() {
+        let (_, near) = cell_pixels(Stage::Lit(1.0), 1.0);
+        let (_, far) = cell_pixels(Stage::Lit(0.0), 1.0);
+        assert_eq!(near >> 24, 48);
+        assert_eq!(far >> 24, 0);
+
+        let bands = Bands::DEFAULT;
+        let Stage::Lit(edge) = bands.stage(bands.total() - 1e-6, || false) else {
+            panic!("just inside light band must be Stage::Lit");
+        };
+        let (_, edge_px) = cell_pixels(Stage::Lit(edge), 1.0);
+        assert_eq!(edge_px >> 24, 0);
+    }
+
+    #[test]
+    fn burning_pixels_shimmer_over_time_and_stay_opaque() {
+        let (_, at_zero) = cell_pixels(Stage::Burning(0.3), 0.0);
+        let (_, at_one) = cell_pixels(Stage::Burning(0.3), 1.0);
+        assert_ne!(at_zero, at_one);
+        assert_eq!(at_zero >> 24, 255);
+        assert_eq!(at_one >> 24, 255);
+
+        let field = BurnField::for_space((200.0, 160.0), 5, 1, 96);
+        let front = field.front(0.5);
+        let Grid { cols, rows } = field.grid();
+        let (mut p0, mut m0) = (
+            vec![0; field.grid().cell_count()],
+            vec![0; field.grid().cell_count()],
+        );
+        let (mut p1, mut m1) = (p0.clone(), m0.clone());
+        field.fill_rows(front, 0.0, 0..rows, &mut p0, &mut m0);
+        field.fill_rows(front, 0.25, 0..rows, &mut p1, &mut m1);
+        let mut checked = 0;
+        for row in 0..rows {
+            for col in 0..cols {
+                if matches!(field.stage(col, row, front), Stage::Burning(_)) {
+                    let i = (row * cols + col) as usize;
+                    assert_eq!(m0[i] >> 24, 255);
+                    assert_eq!(m1[i] >> 24, 255);
+                    if m0[i] != m1[i] {
+                        checked += 1;
+                    }
+                }
+            }
+        }
+        assert!(checked > 0, "burning edge must shimmer over time");
+    }
+
+    #[test]
+    fn every_burn_pixel_is_premultiplied() {
+        let check = |px: u32| {
+            let a = px >> 24;
+            let r = (px >> 16) & 0xff;
+            let g = (px >> 8) & 0xff;
+            let b = px & 0xff;
+            assert!(r <= a && g <= a && b <= a, "invalid premul {px:#010x}");
+        };
+        for shimmer in [0.0, 0.5, 1.0] {
+            for stage in [
+                Stage::Gone,
+                Stage::Burning(0.0),
+                Stage::Burning(0.7),
+                Stage::Charred {
+                    along: 0.0,
+                    ember: true,
+                },
+                Stage::Charred {
+                    along: 0.8,
+                    ember: false,
+                },
+                Stage::Scorched(0.5),
+                Stage::Lit(0.8),
+                Stage::Whole,
+            ] {
+                let (paper, marks) = cell_pixels(stage, shimmer);
+                check(paper);
+                check(marks);
+            }
+        }
+        let field = BurnField::for_space((240.0, 180.0), 5, 3, 96);
+        let rows = field.grid().rows;
+        let (mut paper, mut marks) = (
+            vec![0; field.grid().cell_count()],
+            vec![0; field.grid().cell_count()],
+        );
+        field.fill_rows(field.front(0.5), 0.7, 0..rows, &mut paper, &mut marks);
+        for px in paper.into_iter().chain(marks) {
+            check(px);
+        }
     }
 }
