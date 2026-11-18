@@ -25,15 +25,46 @@ pub fn cell_px(dpi: u32) -> u32 {
     ((CELL * dpi.max(1) + 48) / 96).max(1)
 }
 
-/// How far above the front, in field units, each band reaches.
-pub const GLOW: f32 = 0.035;
-pub const CHAR: f32 = 0.045;
-pub const SCORCH: f32 = 0.07;
-/// Everything the burn touches beyond what is already gone.
-pub const BANDS: f32 = GLOW + CHAR + SCORCH;
-/// The distances above the front where a cell's `Stage` changes: a front
-/// that does not pass one of these changes nothing.
-const EDGES: [f32; 4] = [0.0, GLOW, GLOW + CHAR, BANDS];
+/// How far above the front, in field units, each band of a field reaches.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Bands {
+    glow: f32,
+    char: f32,
+    scorch: f32,
+}
+
+impl Bands {
+    const DEFAULT: Self = Self {
+        glow: 0.035,
+        char: 0.045,
+        scorch: 0.07,
+    };
+
+    /// Everything the burn touches beyond what is already gone.
+    fn total(self) -> f32 {
+        self.glow + self.char + self.scorch
+    }
+
+    /// The distances above the front where a cell's `Stage` changes: a front
+    /// that does not pass one of these changes nothing.
+    fn edges(self) -> [f32; 4] {
+        [0.0, self.glow, self.glow + self.char, self.total()]
+    }
+
+    fn stage(self, above: f32) -> Stage {
+        if above < 0.0 {
+            Stage::Gone
+        } else if above < self.glow {
+            Stage::Burning(above / self.glow)
+        } else if above < self.glow + self.char {
+            Stage::Charred
+        } else if above < self.total() {
+            Stage::Scorched(1.0 - (above - self.glow - self.char) / self.scorch)
+        } else {
+            Stage::Whole
+        }
+    }
+}
 
 /// How much of a cell's value is noise; the rest burns the bottom first.
 const NOISE_SHARE: f32 = 0.55;
@@ -41,12 +72,6 @@ const NOISE_SHARE: f32 = 0.55;
 /// detail.
 const LATTICE_BASE: f32 = 6.0;
 const LATTICE_PER_DETAIL: f32 = 3.0;
-
-/// The burn's progress as a front in field units: at `gone` 0 nothing is
-/// touched, at 1 everything, the bands included, has burned away.
-pub fn front(gone: f32) -> f32 {
-    gone * (1.0 + BANDS) - BANDS
-}
 
 /// The cells that cover a space of `size` pixels at `dpi`.
 fn grid_for(size: (f32, f32), dpi: u32) -> Grid {
@@ -57,6 +82,7 @@ fn grid_for(size: (f32, f32), dpi: u32) -> Grid {
 #[derive(Debug, Clone, PartialEq)]
 pub struct BurnField {
     field: RisingField,
+    bands: Bands,
     /// Each row's lowest and highest cell value, which say what a moving
     /// front can have changed without reading every cell.
     extremes: Vec<(f32, f32)>,
@@ -85,7 +111,11 @@ impl BurnField {
                     })
             })
             .collect();
-        Self { field, extremes }
+        Self {
+            field,
+            bands: Bands::DEFAULT,
+            extremes,
+        }
     }
 
     pub fn grid(&self) -> Grid {
@@ -97,6 +127,19 @@ impl BurnField {
 
     pub fn value(&self, col: u32, row: u32) -> f32 {
         self.field.value(col, row)
+    }
+
+    /// The burn's progress as a front in this field's units: at `gone` 0
+    /// nothing is touched, at 1 everything, the bands included, has burned
+    /// away.
+    pub fn front(&self, gone: f32) -> f32 {
+        let bands = self.bands.total();
+        gone * (1.0 + bands) - bands
+    }
+
+    /// What cell (`col`, `row`) is at `front`.
+    pub fn stage(&self, col: u32, row: u32, front: f32) -> Stage {
+        self.bands.stage(self.value(col, row) - front)
     }
 
     /// Writes the pixels of `rows` for a burn at `front`: into `paper`,
@@ -116,6 +159,7 @@ impl BurnField {
         fill_pixels(
             &values[start..end],
             front,
+            self.bands,
             &mut paper[start..end],
             &mut marks[start..end],
         );
@@ -123,16 +167,17 @@ impl BurnField {
 
     /// The rows a front moving from `previous` to `front` can have changed,
     /// so a painter writes and uploads only those. A cell's `Stage` changes
-    /// only when its value passes one of `EDGES` as the front moves, so a row
-    /// with no value within the move of an edge stays as it was. `None` when
-    /// the front did not move.
+    /// only when its value passes one of the band edges as the front moves,
+    /// so a row with no value within the move of an edge stays as it was.
+    /// `None` when the front did not move.
     pub fn rows_changed(&self, previous: f32, front: f32) -> Option<Range<u32>> {
         if previous == front {
             return None;
         }
         let (low, high) = (previous.min(front), previous.max(front));
+        let edges = self.bands.edges();
         self.rows_where(|min, max| {
-            EDGES
+            edges
                 .iter()
                 .any(|edge| max >= low + edge && min < high + edge)
         })
@@ -146,7 +191,8 @@ impl BurnField {
     /// charred, or scorched. Empty when it marks none, at the start and the
     /// end of the burn.
     pub fn rows_marked(&self, front: f32) -> Range<u32> {
-        self.rows_where(|min, max| max >= front && min < front + BANDS)
+        let bands = self.bands.total();
+        self.rows_where(|min, max| max >= front && min < front + bands)
             .unwrap_or(0..0)
     }
 
@@ -178,7 +224,7 @@ impl BurnField {
             .step_by(every.max(1) as usize)
             .chain((!last.is_multiple_of(every.max(1))).then_some(last));
         for col in columns {
-            let base = (0..rows).find_map(|row| match stage(self.value(col, row) - front) {
+            let base = (0..rows).find_map(|row| match self.stage(col, row, front) {
                 Stage::Burning(along) => Some(FlameBase {
                     col,
                     row,
@@ -200,7 +246,7 @@ pub struct FlameBase {
     pub heat: f32,
 }
 
-/// What a cell is at a distance `above` the front.
+/// What a cell is at a distance above the front.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Stage {
     Gone,
@@ -210,20 +256,6 @@ pub enum Stage {
     /// Browning ahead of the char; 1 next to it, 0 at untouched paper.
     Scorched(f32),
     Whole,
-}
-
-pub fn stage(above: f32) -> Stage {
-    if above < 0.0 {
-        Stage::Gone
-    } else if above < GLOW {
-        Stage::Burning(above / GLOW)
-    } else if above < GLOW + CHAR {
-        Stage::Charred
-    } else if above < BANDS {
-        Stage::Scorched(1.0 - (above - GLOW - CHAR) / SCORCH)
-    } else {
-        Stage::Whole
-    }
 }
 
 /// A cell's two pixels: whether the paper (the space's contents) still shows
@@ -247,9 +279,9 @@ pub fn cell_pixels(stage: Stage) -> (u32, u32) {
     }
 }
 
-fn fill_pixels(values: &[f32], front: f32, paper: &mut [u32], marks: &mut [u32]) {
+fn fill_pixels(values: &[f32], front: f32, bands: Bands, paper: &mut [u32], marks: &mut [u32]) {
     for ((value, paper), marks) in values.iter().zip(paper.iter_mut()).zip(marks.iter_mut()) {
-        (*paper, *marks) = cell_pixels(stage(value - front));
+        (*paper, *marks) = cell_pixels(bands.stage(value - front));
     }
 }
 
@@ -279,7 +311,7 @@ mod tests {
         assert!(!bases.is_empty());
         for base in &bases {
             let above = field.value(base.col, base.row) - 0.4;
-            assert!((0.0..GLOW).contains(&above));
+            assert!((0.0..field.bands.glow).contains(&above));
             assert!((0.0..=1.0).contains(&base.heat));
         }
         field.flame_bases(-1.0, 4, &mut bases);
@@ -323,24 +355,25 @@ mod tests {
     #[test]
     fn the_front_runs_from_untouched_to_all_gone() {
         let field = BurnField::new(Grid { cols: 40, rows: 30 }, 5, 0);
-        let at = |gone| {
-            field
-                .field
-                .values()
-                .iter()
-                .map(move |value| stage(value - front(gone)))
+        let all = |gone, expected| {
+            let front = field.front(gone);
+            (0..30).all(|row| (0..40).all(|col| field.stage(col, row, front) == expected))
         };
-        assert!(at(0.0).all(|stage| stage == Stage::Whole));
-        assert!(at(1.0).all(|stage| stage == Stage::Gone));
+        assert!(all(0.0, Stage::Whole));
+        assert!(all(1.0, Stage::Gone));
     }
 
     #[test]
     fn the_bands_run_glow_char_scorch() {
-        assert_eq!(stage(-0.01), Stage::Gone);
-        assert_eq!(stage(0.0), Stage::Burning(0.0));
-        assert_eq!(stage(GLOW + 0.001), Stage::Charred);
-        assert!(matches!(stage(GLOW + CHAR + 0.001), Stage::Scorched(near) if near > 0.9));
-        assert_eq!(stage(BANDS), Stage::Whole);
+        let bands = Bands::DEFAULT;
+        assert_eq!(bands.stage(-0.01), Stage::Gone);
+        assert_eq!(bands.stage(0.0), Stage::Burning(0.0));
+        assert_eq!(bands.stage(bands.glow + 0.001), Stage::Charred);
+        assert!(matches!(
+            bands.stage(bands.glow + bands.char + 0.001),
+            Stage::Scorched(near) if near > 0.9
+        ));
+        assert_eq!(bands.stage(bands.total()), Stage::Whole);
         let (mask, color) = cell_pixels(Stage::Gone);
         assert_eq!((mask, color), (0, 0));
         let (mask, color) = cell_pixels(Stage::Whole);
@@ -353,7 +386,7 @@ mod tests {
     fn a_burn_writes_both_pixels_of_every_cell() {
         let values = [0.0, 0.5, 1.0];
         let (mut paper, mut marks) = ([7; 3], [7; 3]);
-        fill_pixels(&values, 0.5, &mut paper, &mut marks);
+        fill_pixels(&values, 0.5, Bands::DEFAULT, &mut paper, &mut marks);
         assert_eq!(paper[0], 0, "below the front is gone");
         assert_eq!(paper[1], u32::MAX, "the front itself still burns");
         assert_eq!(marks[1] >> 24, 255, "and glows");
@@ -368,17 +401,15 @@ mod tests {
     fn a_moving_front_touches_every_row_whose_cells_it_changes() {
         let (cols, rows) = (80, 60);
         let field = BurnField::new(Grid { cols, rows }, 5, 0);
-        let mut previous = front(0.0);
+        let mut previous = field.front(0.0);
         let mut moved = 0;
         for step in 1..=40 {
-            let current = front(step as f32 / 40.0);
+            let current = field.front(step as f32 / 40.0);
             let changed_rows = field.rows_changed(previous, current);
             moved += usize::from(changed_rows.is_some());
             for row in 0..rows {
-                let changed = (0..cols).any(|col| {
-                    let value = field.value(col, row);
-                    stage(value - previous) != stage(value - current)
-                });
+                let changed = (0..cols)
+                    .any(|col| field.stage(col, row, previous) != field.stage(col, row, current));
                 assert!(
                     !changed
                         || changed_rows
@@ -405,15 +436,11 @@ mod tests {
         let (cols, rows) = (60, 40);
         let field = BurnField::new(Grid { cols, rows }, 5, 0);
         for step in 0..=40 {
-            let front = front(step as f32 / 40.0);
+            let front = field.front(step as f32 / 40.0);
             let marked_rows = field.rows_marked(front);
             for row in 0..rows {
-                let marked = (0..cols).any(|col| {
-                    !matches!(
-                        stage(field.value(col, row) - front),
-                        Stage::Whole | Stage::Gone
-                    )
-                });
+                let marked = (0..cols)
+                    .any(|col| !matches!(field.stage(col, row, front), Stage::Whole | Stage::Gone));
                 assert!(
                     !marked || marked_rows.contains(&row),
                     "step {step}: row {row} is marked outside {marked_rows:?}"
@@ -421,11 +448,11 @@ mod tests {
             }
         }
         assert!(
-            field.rows_marked(front(0.0)).is_empty(),
+            field.rows_marked(field.front(0.0)).is_empty(),
             "nothing is marked before the burn"
         );
         assert!(
-            field.rows_marked(front(1.0)).is_empty(),
+            field.rows_marked(field.front(1.0)).is_empty(),
             "nothing is marked once it has burned through"
         );
     }

@@ -14,7 +14,6 @@ use std::time::Duration;
 use deskspace_core::animation::{AutoEdge, DETAIL_RANGE, Edge, Effect};
 use deskspace_core::geometry::{Point, Rect, Size};
 
-use super::burn;
 use super::math::lerp;
 
 /// Which way a play runs.
@@ -158,11 +157,12 @@ pub enum Mask {
         threshold: f32,
         grain: u8,
     },
-    /// Paper burning up from the bottom (`render::burn`): `front` is how far
-    /// the burn has got, `detail` how ragged its edge is, `seed` which burn
-    /// shape it takes, and `dpi` the display whose cells it burns at.
+    /// Paper burning up from the bottom (`render::burn`): `gone` is how far
+    /// along the burn is (0 to 1), `detail` how ragged its edge is, `seed`
+    /// which burn shape it takes, and `dpi` the display whose cells it burns
+    /// at.
     Burn {
-        front: f32,
+        gone: f32,
         detail: u8,
         seed: u32,
         dpi: u32,
@@ -178,7 +178,7 @@ impl Mask {
                 position, feather, ..
             } => position - feather <= 0.0,
             Mask::Noise { threshold, .. } => threshold <= 0.0,
-            Mask::Burn { front, .. } => front <= -burn::BANDS,
+            Mask::Burn { gone, .. } => gone <= 0.0,
         }
     }
 }
@@ -444,7 +444,7 @@ fn frame(play: &Play, geometry: &Geometry, shown: f32) -> TransitionFrame {
         },
         Effect::Burn => TransitionFrame {
             mask: Mask::Burn {
-                front: burn::front(gone),
+                gone,
                 detail: play.detail,
                 seed: play.seed,
                 dpi: geometry.dpi,
@@ -646,7 +646,7 @@ mod tests {
                 Mask::None => false,
                 Mask::Gradient { position, .. } => position >= 1.0,
                 Mask::Noise { threshold, .. } => threshold >= 1.0,
-                Mask::Burn { front, .. } => front >= 1.0,
+                Mask::Burn { gone, .. } => gone >= 1.0,
             }
     }
 

@@ -221,12 +221,13 @@ impl Effects {
                 Ok(Some(noise.shown.brush.clone().into()))
             }
             Mask::Burn {
-                front,
+                gone,
                 detail,
                 seed,
                 dpi,
             } => {
                 let burn = self.burn(target, detail, size, seed, dpi)?;
+                let front = burn.field.front(gone);
                 let rows = match burn.front {
                     Some(previous) => burn.field.rows_changed(previous, front),
                     None => Some(0..burn.field.grid().rows),

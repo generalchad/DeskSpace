@@ -22,7 +22,7 @@ are collected in section V instead of blocking:
 - section B's icon picker tasks: B49 next;
 - section K (K10-K13, K15), each a pure move with rules that
   leave nothing to design;
-- section T: T27-T31 in order, then T44 and T46-T48;
+- section T: T28-T31 in order, then T44 and T46-T48;
 - O5 and the O6-O9 harness abilities;
 - anything else not marked **[needs decision]**, "still to design", or in
   section D.
@@ -1289,7 +1289,7 @@ T24-T33 make Burn read as fire rather than an orange wipe: it takes its
 time and kindles, spreads unevenly, smoulders, throws turbulent flames and
 ash, and looks the same at every DPI. One commit each, in order.
 
-- **When to start.** T41 has landed, so T27 can start now. T25-T33 build on
+- **When to start.** T41 and T27 have landed, so T28 can start now. T25-T33 build on
   the groundwork ported from `feat/color-picker-redesign` (as of `c1ad0f3`). Where a
   task below names the branch's types, read `main`'s:
   `EffectOverlay` and `Art::Burn` are `FlameOverlay` (the burn's state, in
@@ -1311,24 +1311,6 @@ ash, and looks the same at every DPI. One commit each, in order.
   to that row's first column, instead of adding a new row.
 - **Burn's smoke.** If Burn's smoke (`render/burn_smoke.rs`) has landed,
   keep the overlay's drawing order: smoke, then flames, then ash.
-
-- [ ] **T27. The field owns its bands (platform; refactor).** **(junior)**
-  - Why: `GLOW`, `CHAR`, and `SCORCH` are global field units, so their
-    width in pixels depends on the noise and on the space's height. T28
-    gives each field its own bands; this task moves the code first, with
-    no visible change.
-  - `Mask::Burn` carries `gone: f32` (0 to 1) instead of `front`. The
-    free `front(gone)` and `stage(above)` become methods:
-    `BurnField::front(&self, gone)` and `BurnField::stage(&self, col, row,
-    front)`. The field stores `bands: Bands { glow, char, scorch }` (field
-    units), set by `for_space` to today's constants, which then go.
-  - `TransitionFrame`'s checks against the front (`front <= -burn::BANDS`
-    in `covers_window`, and `front >= 1.0` in the tests) become
-    `gone <= 0.0` and `gone >= 1.0`. `fill_burn`, `flame_bases`, and
-    `Art::Burn` take the front from the field.
-  - Tests: today's `burn.rs` tests, rewritten against a field, pass
-    unchanged in meaning. No new behavior, so no on-screen check; say so
-    in the commit body.
 
 - [ ] **T28. Burn spreads like fire (platform).** **(junior, senior review)**
   **[needs human]** The senior reads the solve and the timing before it lands.

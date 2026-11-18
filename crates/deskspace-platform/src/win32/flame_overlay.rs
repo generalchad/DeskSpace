@@ -50,8 +50,10 @@ impl FlameOverlay {
         self.overlay.follow(overlay_rect(rect, self.dpi))
     }
 
-    /// Draws the flames for a burn at `front`, `time` seconds into any clock.
-    pub(crate) fn draw(&mut self, front: f32, time: f32) {
+    /// Draws the flames for a burn `gone` of the way through, `time` seconds
+    /// into any clock.
+    pub(crate) fn draw(&mut self, gone: f32, time: f32) {
+        let front = self.field.front(gone);
         self.field.flame_bases(front, SPACING, &mut self.bases);
         flames::tongues(
             &self.bases,

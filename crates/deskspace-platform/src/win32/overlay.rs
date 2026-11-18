@@ -57,8 +57,8 @@ impl Overlay {
     pub(crate) fn draw(&mut self, frame: &TransitionFrame, time: f32) {
         match self {
             Self::Flames(flames) => {
-                if let Mask::Burn { front, .. } = frame.mask {
-                    flames.draw(front, time);
+                if let Mask::Burn { gone, .. } = frame.mask {
+                    flames.draw(gone, time);
                 }
             }
         }

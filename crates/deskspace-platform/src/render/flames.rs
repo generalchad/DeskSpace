@@ -703,7 +703,7 @@ mod tests {
         let mut burning = 0;
         for frame in 0..60 {
             let time = frame as f32 / 60.0;
-            field.flame_bases(burn::front(frame as f32 / 59.0), SPACING, &mut bases);
+            field.flame_bases(field.front(frame as f32 / 59.0), SPACING, &mut bases);
             tongues(&bases, space.1, (side, top), cell, time, 1.0, &mut flames);
             burning += usize::from(!flames.is_empty());
             paint(&mut pixels, width, height, &flames, time, &mut drawn);
