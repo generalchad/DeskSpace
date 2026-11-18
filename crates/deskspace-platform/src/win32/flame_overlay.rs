@@ -8,6 +8,7 @@ use windows::Win32::Foundation::HWND;
 
 use crate::render::ash::{self, Flake};
 use crate::render::burn::BurnField;
+use crate::render::burn_smoke::{self, Canvas as SmokeCanvas, Scratch as SmokeScratch};
 use crate::render::flames::{self, Rows, SPACING, Tongue};
 use crate::win32::layered_overlay::LayeredOverlay;
 
@@ -19,6 +20,7 @@ pub(crate) struct FlameOverlay {
     bases: Vec<crate::render::burn::FlameBase>,
     tongues: Vec<Tongue>,
     flakes: Vec<Flake>,
+    smoke: SmokeScratch,
     /// The rows of the pixel buffer the last frame drew, which the next one clears.
     drawn: Rows,
     space_height: f32,
@@ -41,6 +43,7 @@ impl FlameOverlay {
             bases: Vec::new(),
             tongues: Vec::new(),
             flakes: Vec::new(),
+            smoke: SmokeScratch::default(),
             drawn: Rows::ALL,
             space_height: rect.height as f32,
             dpi,
@@ -72,16 +75,30 @@ impl FlameOverlay {
         ash::flakes(&self.field, front, time, scale, &mut self.flakes);
         let (width, height) = self.overlay.pixel_size();
         let previous = self.drawn;
+        let mut smoke_rows = previous;
+        burn_smoke::paint(
+            SmokeCanvas {
+                pixels: self.overlay.pixels(),
+                width,
+                height,
+            },
+            &self.field,
+            front,
+            time,
+            &mut self.smoke,
+            &mut smoke_rows,
+        );
+        let mut flame_rows = Rows::NONE;
         flames::paint(
             self.overlay.pixels(),
             width,
             height,
             &self.tongues,
             time,
-            &mut self.drawn,
+            &mut flame_rows,
         );
         let ash_rows = ash::paint(&self.flakes, (width, height), self.overlay.pixels());
-        self.drawn = self.drawn.union(ash_rows);
+        self.drawn = smoke_rows.union(flame_rows).union(ash_rows);
         self.overlay.present(previous.union(self.drawn));
     }
 }

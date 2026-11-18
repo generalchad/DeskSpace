@@ -7123,3 +7123,4 @@ takes an id listed here or used anywhere above
 - **T29.** Turbulent flames (platform).
 - **T30.** A glow that lives (platform).
 - **T31.** Ash (platform).
+- **T44.** Burn's smoke (platform).

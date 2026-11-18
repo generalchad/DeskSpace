@@ -10,6 +10,7 @@
 
 use super::ash;
 use super::burn::{self, BurnField};
+use super::burn_smoke::{self, Canvas as SmokeCanvas, Scratch as SmokeScratch};
 use super::flames::{self, Rows, SPACING};
 use super::math::Grid;
 use deskspace_core::animation::DETAIL_DEFAULT;
@@ -65,11 +66,32 @@ fn frame(field: &BurnField, space: (u32, u32), dpi: u32, front: f32, time: f32) 
     let mut bases = Vec::new();
     let mut tongues = Vec::new();
     let mut flakes = Vec::new();
+    let mut smoke = SmokeScratch::default();
     field.flame_bases(front, SPACING, &mut bases);
     flames::tongues(&bases, space.1 as f32, dpi, time, SEED, &mut tongues);
     ash::flakes(field, front, time, scale, &mut flakes);
-    let mut drawn = Rows::ALL;
-    flames::paint(&mut flame_pixels, width, height, &tongues, time, &mut drawn);
+    let mut smoke_rows = Rows::NONE;
+    burn_smoke::paint(
+        SmokeCanvas {
+            pixels: &mut flame_pixels,
+            width,
+            height,
+        },
+        field,
+        front,
+        time,
+        &mut smoke,
+        &mut smoke_rows,
+    );
+    let mut flame_rows = Rows::NONE;
+    flames::paint(
+        &mut flame_pixels,
+        width,
+        height,
+        &tongues,
+        time,
+        &mut flame_rows,
+    );
     ash::paint(&flakes, (width, height), &mut flame_pixels);
 
     let sample = sample(space, scale);

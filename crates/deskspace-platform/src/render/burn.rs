@@ -381,6 +381,16 @@ impl BurnField {
         &self.flakes
     }
 
+    pub(crate) fn progress(&self, front: f32) -> f32 {
+        const END_MARGIN: f32 = 1e-4;
+        let bands = self.bands.total();
+        ((front + bands) / (1.0 + END_MARGIN + bands)).clamp(0.0, 1.0)
+    }
+
+    pub(crate) fn char_band(&self) -> (f32, f32) {
+        (self.bands.glow, self.bands.glow + self.bands.char)
+    }
+
     pub fn grid(&self) -> Grid {
         Grid {
             cols: self.field.cols(),

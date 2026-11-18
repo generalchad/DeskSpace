@@ -9,10 +9,12 @@ use super::burn::{self, FlameBase};
 use super::math;
 use super::noise;
 
-/// How much room the overlay keeps beside and above the space for flames to
-/// rise into, in pixels at 96 DPI; `margins` scales them for a display.
+/// How much room the overlay keeps beside and above the space for flames and
+/// rising smoke, in pixels at 96 DPI; `margins` scales them for a display.
 const MARGIN_SIDE: u32 = 24;
-const MARGIN_TOP: u32 = 72;
+const FLAME_REACH_PX: u32 = 72;
+pub const SMOKE_ROOM_PX: u32 = 120;
+const MARGIN_TOP: u32 = FLAME_REACH_PX + SMOKE_ROOM_PX;
 /// A flame every this many burn cells along the front.
 pub const SPACING: u32 = 5;
 
@@ -206,7 +208,7 @@ impl Rows {
     }
 
     /// Clears these rows of `pixels`, `width` by `height`.
-    fn clear(self, pixels: &mut [u32], width: u32, height: u32) {
+    pub(crate) fn clear(self, pixels: &mut [u32], width: u32, height: u32) {
         if self.is_empty() {
             return;
         }
@@ -400,12 +402,12 @@ mod tests {
     #[test]
     fn the_overlay_leaves_room_beside_and_above_the_space() {
         let (side, top) = margins(96);
-        assert_eq!((side, top), (24, 72));
+        assert_eq!((side, top), (24, 192));
         assert_eq!(overlay_size(300, 200, 96), (300 + 2 * side, 200 + top));
         assert_eq!(overlay_size(1, 1, 96), (1 + 2 * side, 1 + top));
-        assert_eq!(margins(144), (36, 108), "1.5 times the 96-DPI margins");
-        assert_eq!(margins(192), (48, 144));
-        assert_eq!(margins(1), (0, 1), "rounds down to a whole pixel");
+        assert_eq!(margins(144), (36, 288), "1.5 times the 96-DPI margins");
+        assert_eq!(margins(192), (48, 384));
+        assert_eq!(margins(1), (0, 2), "rounds down to a whole pixel");
     }
 
     #[test]
