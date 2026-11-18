@@ -419,6 +419,7 @@ mod tests {
                 phase: 0.0,
                 scale: 1.0,
                 seed: 1,
+                col: 0,
             };
             crate::render::flames::paint(&mut pixels, 200, 120, &[tongue], 0.0, &mut rows);
             rows

@@ -73,23 +73,25 @@ const RISE_PX_PER_S: f32 = 120.0;
 /// Maximum factor turbulence (`0.45 + 1.1 * n`) can multiply heat by.
 const MAX_TURBULENCE: f32 = 1.55;
 
-/// Every this many flames throws an ember.
-const EMBER_EVERY: usize = 3;
-/// Where an ember starts, up its flame, and how far above that it rises, in
+/// Spark motion & flare constants (at 96 DPI).
+const SPARK_MAX_PER_TONGUE: u32 = 2;
+/// Where a spark starts, up its flame, and how far above that it rises, in
 /// flame heights.
-const EMBER_START: f32 = 0.4;
-const EMBER_RISE: f32 = 2.2;
-/// Rises per second, and how far a flame's phase and its place in the row
-/// offset its ember, so the embers do not rise together.
-const EMBER_RATE: f32 = 0.9;
-const EMBER_PHASE_SHARE: f32 = 0.37;
-const EMBER_ORDER_SHARE: f32 = 0.13;
-/// The side-to-side drift, in radians per second, and its swing as a share
-/// of the flame's width.
-const EMBER_DRIFT_RATE: f32 = 3.0;
-const EMBER_DRIFT_SHARE: f32 = 0.6;
-/// How hot an ember starts, fading as it rises.
-const EMBER_HEAT: f32 = 0.55;
+const SPARK_START: f32 = 0.4;
+const SPARK_RISE: f32 = 2.5;
+/// Rises per second, and how far a flame's phase and col offset it.
+const SPARK_RATE: f32 = 1.3;
+const SPARK_PHASE_SHARE: f32 = 0.37;
+const SPARK_ORDER_SHARE: f32 = 0.23;
+/// Sideways drift speed (rad/s) and swing as a share of tongue width.
+const SPARK_DRIFT_RATE: f32 = 3.0;
+const SPARK_DRIFT_SHARE: f32 = 0.6;
+/// Streak integration step in seconds (`1 / 60` s, scaled for crisp visibility).
+const SPARK_STREAK_SECONDS: f32 = 1.0 / 60.0;
+/// Share of sparks that flare brightly once along their climb, and flare span.
+const FLARE_SALT: u32 = 0xF1A2_E5A1;
+const FLARE_SHARE: f32 = 0.15;
+const FLARE_PX: f32 = 6.0;
 
 /// Fire's colors: the color (red, green, blue) at each heat, running
 /// straight between them: deep red at the edges, through orange, to a
@@ -120,11 +122,12 @@ pub struct Tongue {
     pub heat: f32,
     /// Its own flicker, so neighbours do not move in step.
     pub phase: f32,
-    /// The display it was made for, `dpi / 96`: the ember it throws is this
-    /// much bigger.
+    /// The display it was made for, `dpi / 96`: sparks scale with this.
     pub scale: f32,
     /// Seeds turbulence and spark phases so two plays differ.
     pub seed: u32,
+    /// Burn grid column that spawned this tongue, seeding its spark count.
+    pub col: u32,
 }
 
 /// The tongues standing on `bases` at `time` (seconds) for a space
@@ -160,6 +163,7 @@ pub fn tongues(
             phase,
             scale,
             seed,
+            col: base.col,
         }
     }));
 }
@@ -185,6 +189,14 @@ impl Rows {
 
     pub(crate) fn new(top: u32, bottom: u32) -> Self {
         Self { top, bottom }
+    }
+
+    fn span(top: u32, bottom: u32) -> Self {
+        if top >= bottom {
+            Self::NONE
+        } else {
+            Self { top, bottom }
+        }
     }
 
     pub fn is_empty(self) -> bool {
@@ -288,8 +300,8 @@ pub fn paint(
             }
         });
     }
-    for (index, tongue) in tongues.iter().enumerate().step_by(EMBER_EVERY) {
-        now = now.union(paint_ember(pixels, width, height, tongue, time, index));
+    for tongue in tongues {
+        now = now.union(paint_sparks(pixels, width, height, tongue, time));
     }
     *drawn = now;
     tracing::trace!(
@@ -377,11 +389,12 @@ fn paint_tongue(
             *pixel = add(*pixel, fire_px);
             if let Some((q, q_top, q_cols)) = glow_acc.as_mut() {
                 let qy = (py / GLOW_STEP - *q_top) as usize;
-                let slot = &mut q[qy * *q_cols + (px / GLOW_STEP) as usize];
-                slot[0] += ((fire_px >> 24) & 0xff) as f32;
-                slot[1] += ((fire_px >> 16) & 0xff) as f32;
-                slot[2] += ((fire_px >> 8) & 0xff) as f32;
-                slot[3] += (fire_px & 0xff) as f32;
+                let channels = [24, 16, 8, 0].map(|s| ((fire_px >> s) & 0xff) as f32);
+                add4(
+                    &mut q[qy * *q_cols + (px / GLOW_STEP) as usize],
+                    channels,
+                    1.0,
+                );
             }
             row_hit = true;
         }
@@ -390,13 +403,19 @@ fn paint_tongue(
             lit_bottom = lit_bottom.max(py + 1);
         }
     }
-    if lit_top >= lit_bottom {
-        Rows::NONE
-    } else {
-        Rows {
-            top: lit_top,
-            bottom: lit_bottom,
-        }
+    Rows::span(lit_top, lit_bottom)
+}
+
+#[inline(always)]
+fn add4(acc: &mut [f32; 4], p: [f32; 4], scale: f32) {
+    for (a, v) in acc.iter_mut().zip(p) {
+        *a += v * scale;
+    }
+}
+
+fn shift_acc_row(acc: &mut [[f32; 4]], row: &[[f32; 4]], sign: f32) {
+    for (a, &p) in acc.iter_mut().zip(row.iter()) {
+        add4(a, p, sign);
     }
 }
 
@@ -428,31 +447,29 @@ fn apply_glow(
             continue;
         }
         any_src = true;
-        cell[0] = (cell[0] * inv_block).min(255.0);
-        cell[1] = (cell[1] * inv_block).min(cell[0]);
-        cell[2] = (cell[2] * inv_block).min(cell[0]);
-        cell[3] = (cell[3] * inv_block).min(cell[0]);
+        let a = (cell[0] * inv_block).min(255.0);
+        *cell = [
+            a,
+            (cell[1] * inv_block).min(a),
+            (cell[2] * inv_block).min(a),
+            (cell[3] * inv_block).min(a),
+        ];
     }
     if !any_src {
         return Rows::NONE;
     }
 
-    box_blur_2d(
-        &mut scratch.q0,
-        &mut scratch.q1,
-        &mut scratch.col_acc,
-        q_cols,
-        q_rows,
-    );
-    box_blur_2d(
-        &mut scratch.q0,
-        &mut scratch.q1,
-        &mut scratch.col_acc,
-        q_cols,
-        q_rows,
-    );
+    for _ in 0..2 {
+        box_blur_2d(
+            &mut scratch.q0,
+            &mut scratch.q1,
+            &mut scratch.col_acc,
+            q_cols,
+            q_rows,
+        );
+    }
 
-    for (dst, src) in scratch.q_px.iter_mut().zip(scratch.q0.iter()) {
+    for (dst, &src) in scratch.q_px.iter_mut().zip(scratch.q0.iter()) {
         let a = (src[0] * GLOW_GAIN).round().clamp(0.0, 255.0);
         if a < 1.0 {
             *dst = 0;
@@ -474,7 +491,6 @@ fn apply_glow(
         let qy0 = fy.floor() as u32;
         let qy1 = (qy0 + 1).min(full_q_rows as u32 - 1);
         let wy = ((fy - qy0 as f32) * 256.0).round() as u32;
-
         if !build_glow_vert_row(
             &scratch.q_px,
             &mut scratch.vert,
@@ -484,7 +500,6 @@ fn apply_glow(
         ) {
             continue;
         }
-
         let dst_start = py as usize * width as usize;
         let dst_row = &mut pixels[dst_start..dst_start + width as usize];
         if composite_glow_row(dst_row, &scratch.vert, q_cols) {
@@ -493,14 +508,7 @@ fn apply_glow(
         }
     }
 
-    if lit_top >= lit_bottom {
-        Rows::NONE
-    } else {
-        Rows {
-            top: lit_top,
-            bottom: lit_bottom,
-        }
-    }
+    Rows::span(lit_top, lit_bottom)
 }
 
 fn box_blur_2d(
@@ -516,75 +524,37 @@ fn box_blur_2d(
         let dst_row = &mut tmp[r * cols..(r + 1) * cols];
         let mut acc = [0.0f32; 4];
         for &p in src_row.iter().take((GLOW_RADIUS + 1).min(cols)) {
-            acc[0] += p[0];
-            acc[1] += p[1];
-            acc[2] += p[2];
-            acc[3] += p[3];
+            add4(&mut acc, p, 1.0);
         }
         for (c, dst) in dst_row.iter_mut().enumerate() {
-            *dst = [
-                acc[0] * inv_w,
-                acc[1] * inv_w,
-                acc[2] * inv_w,
-                acc[3] * inv_w,
-            ];
-            let sub = c.checked_sub(GLOW_RADIUS);
-            let add_idx = c + GLOW_RADIUS + 1;
-            if let Some(s) = sub {
-                let p = src_row[s];
-                acc[0] -= p[0];
-                acc[1] -= p[1];
-                acc[2] -= p[2];
-                acc[3] -= p[3];
+            *dst = acc.map(|v| v * inv_w);
+            if let Some(s) = c.checked_sub(GLOW_RADIUS) {
+                add4(&mut acc, src_row[s], -1.0);
             }
-            if add_idx < cols {
-                let p = src_row[add_idx];
-                acc[0] += p[0];
-                acc[1] += p[1];
-                acc[2] += p[2];
-                acc[3] += p[3];
+            if c + GLOW_RADIUS + 1 < cols {
+                add4(&mut acc, src_row[c + GLOW_RADIUS + 1], 1.0);
             }
         }
     }
 
     col_acc.fill([0.0; 4]);
     for r in 0..=GLOW_RADIUS.min(rows.saturating_sub(1)) {
-        let row = &tmp[r * cols..(r + 1) * cols];
-        for (acc, p) in col_acc.iter_mut().zip(row.iter()) {
-            acc[0] += p[0];
-            acc[1] += p[1];
-            acc[2] += p[2];
-            acc[3] += p[3];
-        }
+        shift_acc_row(col_acc, &tmp[r * cols..(r + 1) * cols], 1.0);
     }
     for r in 0..rows {
         let dst_row = &mut buf[r * cols..(r + 1) * cols];
-        for (dst, acc) in dst_row.iter_mut().zip(col_acc.iter()) {
-            *dst = [
-                acc[0] * inv_w,
-                acc[1] * inv_w,
-                acc[2] * inv_w,
-                acc[3] * inv_w,
-            ];
+        for (dst, &acc) in dst_row.iter_mut().zip(col_acc.iter()) {
+            *dst = acc.map(|v| v * inv_w);
         }
         if let Some(sub_r) = r.checked_sub(GLOW_RADIUS) {
-            let row = &tmp[sub_r * cols..(sub_r + 1) * cols];
-            for (acc, p) in col_acc.iter_mut().zip(row.iter()) {
-                acc[0] -= p[0];
-                acc[1] -= p[1];
-                acc[2] -= p[2];
-                acc[3] -= p[3];
-            }
+            shift_acc_row(col_acc, &tmp[sub_r * cols..(sub_r + 1) * cols], -1.0);
         }
-        let add_r = r + GLOW_RADIUS + 1;
-        if add_r < rows {
-            let row = &tmp[add_r * cols..(add_r + 1) * cols];
-            for (acc, p) in col_acc.iter_mut().zip(row.iter()) {
-                acc[0] += p[0];
-                acc[1] += p[1];
-                acc[2] += p[2];
-                acc[3] += p[3];
-            }
+        if r + GLOW_RADIUS + 1 < rows {
+            shift_acc_row(
+                col_acc,
+                &tmp[(r + GLOW_RADIUS + 1) * cols..(r + GLOW_RADIUS + 2) * cols],
+                1.0,
+            );
         }
     }
 }
@@ -596,36 +566,20 @@ fn build_glow_vert_row(
     (q_top, q_bottom): (u32, u32),
     (qy0, qy1, wy): (u32, u32, u32),
 ) -> bool {
-    let row0 = (qy0 >= q_top && qy0 < q_bottom)
-        .then(|| &q_px[(qy0 - q_top) as usize * q_cols..(qy0 - q_top + 1) as usize * q_cols]);
-    let row1 = (qy1 >= q_top && qy1 < q_bottom)
-        .then(|| &q_px[(qy1 - q_top) as usize * q_cols..(qy1 - q_top + 1) as usize * q_cols]);
+    let slice =
+        |qy| (qy >= q_top && qy < q_bottom).then(|| &q_px[(qy - q_top) as usize * q_cols..]);
+    let (r0, r1) = (slice(qy0), slice(qy1));
+    if r0.is_none() && r1.is_none() {
+        vert.fill(0);
+        return false;
+    }
     let mut any = 0u32;
-    match (row0, row1) {
-        (Some(r0), Some(r1)) => {
-            for (dst, (&a, &b)) in vert.iter_mut().zip(r0.iter().zip(r1.iter())) {
-                let v = if (a | b) == 0 { 0 } else { mix_swar(a, b, wy) };
-                *dst = v;
-                any |= v;
-            }
-        }
-        (Some(r0), None) => {
-            for (dst, &a) in vert.iter_mut().zip(r0.iter()) {
-                let v = if a == 0 { 0 } else { mix_swar(a, 0, wy) };
-                *dst = v;
-                any |= v;
-            }
-        }
-        (None, Some(r1)) => {
-            for (dst, &b) in vert.iter_mut().zip(r1.iter()) {
-                let v = if b == 0 { 0 } else { mix_swar(0, b, wy) };
-                *dst = v;
-                any |= v;
-            }
-        }
-        (None, None) => {
-            vert.fill(0);
-        }
+    for (c, dst) in vert.iter_mut().enumerate() {
+        let a = r0.map_or(0, |r| r[c]);
+        let b = r1.map_or(0, |r| r[c]);
+        let v = if (a | b) == 0 { 0 } else { mix_swar(a, b, wy) };
+        *dst = v;
+        any |= v;
     }
     any != 0
 }
@@ -635,29 +589,21 @@ fn composite_glow_row(dst_row: &mut [u32], vert: &[u32], q_cols: usize) -> bool 
     let width = dst_row.len();
     let max_qx = q_cols.saturating_sub(1);
     let mut row_hit = false;
-
     let lead = width.min(2);
-    if lead > 0 {
-        let v0 = vert[0];
-        if v0 != 0 {
-            row_hit = true;
-            for dst in dst_row.iter_mut().take(lead) {
-                *dst = add(*dst, v0);
-            }
-        }
+    if lead > 0 && vert[0] != 0 {
+        row_hit = true;
+        dst_row[..lead]
+            .iter_mut()
+            .for_each(|d| *d = add(*d, vert[0]));
     }
-
-    let mut px = 2usize;
-    let mut qx = 0usize;
+    let (mut px, mut qx) = (2usize, 0usize);
     while px < width {
-        let end = (px + 4).min(width);
-        let left = vert[qx];
-        let right = vert[(qx + 1).min(max_qx)];
+        let (left, right) = (vert[qx], vert[(qx + 1).min(max_qx)]);
         if (left | right) != 0 {
             row_hit = true;
-            for (slot, i) in (px..end).enumerate() {
-                let glow = mix_swar(left, right, WX[slot]);
-                dst_row[i] = add(dst_row[i], glow);
+            let end = (px + 4).min(width);
+            for (slot, d) in dst_row[px..end].iter_mut().enumerate() {
+                *d = add(*d, mix_swar(left, right, WX[slot]));
             }
         }
         px += 4;
@@ -675,50 +621,112 @@ fn mix_swar(a: u32, b: u32, w: u32) -> u32 {
     rb | (ag << 8)
 }
 
-/// A spark drifting up from a tongue, fading as it rises. Returns the rows
-/// it lit.
-fn paint_ember(
-    pixels: &mut [u32],
-    width: u32,
-    height: u32,
-    tongue: &Tongue,
-    time: f32,
-    index: usize,
-) -> Rows {
-    let offset = tongue.phase * EMBER_PHASE_SHARE
-        + noise::random(tongue.seed, index as u32) * EMBER_ORDER_SHARE;
-    let along = (time * EMBER_RATE + offset).fract().abs();
-    let drift = (time * EMBER_DRIFT_RATE + tongue.phase).sin();
-    let x = tongue.x + drift * tongue.width * EMBER_DRIFT_SHARE;
-    let y = tongue.y - tongue.height * (EMBER_START + EMBER_RISE * along);
-    let fade = 1.0 - along;
-    if x < 0.0 || y < 0.0 {
-        return Rows::NONE;
-    }
-    let (x, y) = (x as u32, y as u32);
-    if x >= width || y >= height {
-        return Rows::NONE;
-    }
-    let size = ember_px(tongue.scale);
-    for dy in 0..size {
-        for dx in 0..size {
-            let (px, py) = (x + dx, y + dy);
-            if px < width && py < height {
-                let pixel = &mut pixels[(py * width + px) as usize];
-                *pixel = add(*pixel, fire(EMBER_HEAT * fade));
-            }
+/// Returns how many sparks (0..=2) `tongue` throws from `noise::random(seed, col)`.
+fn spark_count(tongue: &Tongue) -> u32 {
+    let pick = noise::random(tongue.seed, tongue.col);
+    (pick * f32::from(SPARK_MAX_PER_TONGUE as u16 + 1))
+        .floor()
+        .clamp(0.0, SPARK_MAX_PER_TONGUE as f32) as u32
+}
+
+/// Evaluates one spark's `(along, x, y, vx, vy, heat, flare)` state at `time`.
+#[derive(Clone, Copy)]
+struct SparkState {
+    x: f32,
+    y: f32,
+    vx: f32,
+    vy: f32,
+    color: u32,
+}
+
+fn spark_state(tongue: &Tongue, slot: u32, time: f32) -> SparkState {
+    let spark_id = tongue
+        .col
+        .wrapping_mul(SPARK_MAX_PER_TONGUE + 1)
+        .wrapping_add(slot);
+    let rand_phase = noise::random(tongue.seed, spark_id);
+    let offset = tongue.phase * SPARK_PHASE_SHARE + rand_phase * SPARK_ORDER_SHARE;
+    let along = (time * SPARK_RATE + offset).fract().abs();
+
+    let angle = time * SPARK_DRIFT_RATE + tongue.phase + rand_phase * std::f32::consts::TAU;
+    let climb_px = tongue.height * SPARK_RISE;
+    let x = tongue.x + angle.sin() * tongue.width * SPARK_DRIFT_SHARE;
+    let y = tongue.y - tongue.height * SPARK_START - climb_px * along;
+    let vx = SPARK_DRIFT_RATE * angle.cos() * tongue.width * SPARK_DRIFT_SHARE;
+    let vy = -climb_px * SPARK_RATE;
+
+    let mut color = fire((1.0 - along).clamp(0.0, 1.0));
+    let flare_pick = noise::random(tongue.seed ^ FLARE_SALT, spark_id);
+    if flare_pick < FLARE_SHARE {
+        let flare_along = 0.25 + 0.65 * (flare_pick / FLARE_SHARE);
+        if (along - flare_along).abs() * climb_px <= FLARE_PX * 0.5 * tongue.scale {
+            color = u32::from_ne_bytes(color.to_ne_bytes().map(|c| c.saturating_mul(2)));
         }
     }
-    Rows {
-        top: y,
-        bottom: (y + size).min(height),
+    SparkState {
+        x,
+        y,
+        vx,
+        vy,
+        color,
     }
 }
 
-/// The side of an ember's square at `scale`, in pixels: two at 100 %, three
-/// at 200 %, never less than one.
-fn ember_px(scale: f32) -> u32 {
-    (2.0 * scale).round().max(1.0) as u32
+/// Shades every spark streak thrown by `tongue` at `time`, cooling down
+/// `FIRE_RAMP` with occasional bright flares, returning the row run reached.
+fn paint_sparks(pixels: &mut [u32], width: u32, height: u32, tongue: &Tongue, time: f32) -> Rows {
+    let count = spark_count(tongue);
+    if count == 0 || width == 0 || height == 0 {
+        return Rows::NONE;
+    }
+    (0..count).fold(Rows::NONE, |rows, slot| {
+        rows.union(paint_streak(
+            pixels,
+            width,
+            height,
+            spark_state(tongue, slot, time),
+            tongue.scale,
+        ))
+    })
+}
+
+fn paint_streak(
+    pixels: &mut [u32],
+    width: u32,
+    height: u32,
+    spark: SparkState,
+    scale: f32,
+) -> Rows {
+    let dt = SPARK_STREAK_SECONDS * scale.max(0.5);
+    let (dx, dy) = (spark.vx * dt, spark.vy * dt);
+    let (tail_x, tail_y) = (spark.x - dx, spark.y - dy);
+    let steps = ((dx * dx + dy * dy).sqrt().ceil() as u32).max(1);
+    let thickness = scale.round().max(1.0) as u32;
+    let (mut top_row, mut bottom_row, mut last_origin) = (u32::MAX, 0u32, None);
+
+    for step in 0..=steps {
+        let t = step as f32 / steps as f32;
+        let (sx, sy) = (tail_x + dx * t, tail_y + dy * t);
+        if !(0.0..width as f32).contains(&sx) || !(0.0..height as f32).contains(&sy) {
+            continue;
+        }
+        let (ox, oy) = (sx as u32, sy as u32);
+        if last_origin == Some((ox, oy)) {
+            continue;
+        }
+        last_origin = Some((ox, oy));
+        let py_end = (oy + thickness).min(height);
+        let px_end = (ox + thickness).min(width);
+        for py in oy..py_end {
+            for px in ox..px_end {
+                let idx = (py * width + px) as usize;
+                pixels[idx] = add(pixels[idx], spark.color);
+            }
+            top_row = top_row.min(py);
+            bottom_row = bottom_row.max(py + 1);
+        }
+    }
+    Rows::span(top_row, bottom_row)
 }
 
 /// Fire's color at `heat` (0 to 1), premultiplied, faint where it is cool.
@@ -817,9 +825,7 @@ mod tests {
         assert!((large.width - 2.0 * small.width).abs() < 1e-3);
         assert!((large.x - 2.0 * small.x).abs() < 1e-3);
         assert!((large.y - 2.0 * small.y).abs() < 1e-3);
-        assert_eq!(ember_px(1.0), 2);
-        assert_eq!(ember_px(2.0), 4);
-        assert_eq!(ember_px(0.4), 1, "never a zero-pixel ember");
+        assert_eq!(large.col, small.col);
     }
 
     #[test]
@@ -835,6 +841,7 @@ mod tests {
             phase: 0.0,
             scale: 1.0,
             seed: 1,
+            col: 0,
         };
         let mut drawn = Rows::ALL;
         paint(&mut pixels, width, height, &[tongue], 0.0, &mut drawn);
@@ -867,6 +874,7 @@ mod tests {
             phase: 1.0,
             scale: 1.0,
             seed: 3,
+            col: 0,
         };
         let mut first = vec![0; (width * height) as usize];
         let mut second = vec![1; (width * height) as usize];
@@ -913,6 +921,7 @@ mod tests {
                 phase: index as f32,
                 scale: 1.0,
                 seed: 2,
+                col: index as u32,
             })
             .collect();
         let mut drawn = Rows::ALL;
@@ -993,6 +1002,7 @@ mod tests {
                 phase: 0.7 * index as f32,
                 scale: 1.0,
                 seed: 1,
+                col: index as u32,
             }
         });
         let clump = (0..5).map(|index| Tongue {
@@ -1004,6 +1014,7 @@ mod tests {
             phase: 1.3 * index as f32,
             scale: 1.0,
             seed: 1,
+            col: index as u32,
         });
         let feet = [
             (0.0, 0.0),
@@ -1021,6 +1032,7 @@ mod tests {
             phase: index as f32,
             scale: 1.0,
             seed: 1,
+            col: index as u32,
         });
         vec![row.collect(), clump.collect(), edges.collect(), Vec::new()]
     }
@@ -1058,6 +1070,7 @@ mod tests {
             phase: 0.0,
             scale: 1.0,
             seed: 1,
+            col: 0,
         };
         paint(&mut pixels, width, height, &[tongue], 0.0, &mut drawn);
         assert!(drawn.bottom < height, "the flames stop above the last row");
@@ -1182,6 +1195,7 @@ mod tests {
             phase: 0.0,
             scale: 1.0,
             seed: 1,
+            col: 0,
         };
         paint(&mut pixels, width, height, &[tongue], 0.2, &mut drawn);
         let below_foot = pixels[(64 * width + 50) as usize];
@@ -1193,5 +1207,145 @@ mod tests {
             let a = px >> 24;
             ((px >> 16) & 0xff) <= a && ((px >> 8) & 0xff) <= a && (px & 0xff) <= a
         }));
+    }
+
+    #[test]
+    fn sparks_repeat_deterministically_and_cool_as_they_rise() {
+        let col = (0..100u32)
+            .find(|&c| {
+                let t = Tongue {
+                    x: 80.0,
+                    y: 220.0,
+                    height: 50.0,
+                    width: 20.0,
+                    heat: 1.0,
+                    phase: 0.0,
+                    scale: 1.0,
+                    seed: 5,
+                    col: c,
+                };
+                if spark_count(&t) == 0 {
+                    return false;
+                }
+                let spark_id = c * (SPARK_MAX_PER_TONGUE + 1);
+                noise::random(t.seed ^ FLARE_SALT, spark_id) >= FLARE_SHARE
+            })
+            .expect("find a non-flaring sparking tongue");
+
+        let tongue = Tongue {
+            x: 80.0,
+            y: 220.0,
+            height: 50.0,
+            width: 20.0,
+            heat: 1.0,
+            phase: 0.0,
+            scale: 1.0,
+            seed: 5,
+            col,
+        };
+        let spark_id = col * (SPARK_MAX_PER_TONGUE + 1);
+        let rand_phase = noise::random(tongue.seed, spark_id);
+        let offset = tongue.phase * SPARK_PHASE_SHARE + rand_phase * SPARK_ORDER_SHARE;
+        let time_for = |target_along: f32| -> f32 {
+            let mut delta = target_along - offset;
+            if delta < 0.0 {
+                delta += 1.0;
+            }
+            delta / SPARK_RATE
+        };
+
+        let low = spark_state(&tongue, 0, time_for(0.15));
+        let high = spark_state(&tongue, 0, time_for(0.8));
+        assert!(high.y < low.y, "higher spark has smaller y");
+        assert!(
+            (low.color >> 24) > (high.color >> 24),
+            "spark fades in alpha as it cools"
+        );
+        let rgb_sum = |px: u32| ((px >> 16) & 0xff) + ((px >> 8) & 0xff) + (px & 0xff);
+        assert!(
+            rgb_sum(low.color) > rgb_sum(high.color),
+            "spark cools down the ramp"
+        );
+
+        let (width, height) = (160u32, 240u32);
+        let mut a = vec![0u32; (width * height) as usize];
+        let mut b = vec![0u32; (width * height) as usize];
+        let ra = paint_sparks(&mut a, width, height, &tongue, 0.35);
+        let rb = paint_sparks(&mut b, width, height, &tongue, 0.35);
+        assert_eq!(ra, rb);
+        assert_eq!(a, b);
+        assert!(!ra.is_empty());
+    }
+
+    #[test]
+    fn flaring_spark_brightens_at_its_flare_and_stays_in_bounds() {
+        let (col, flare_pick) = (0..400u32)
+            .find_map(|c| {
+                let t = Tongue {
+                    x: 80.0,
+                    y: 220.0,
+                    height: 50.0,
+                    width: 20.0,
+                    heat: 1.0,
+                    phase: 0.0,
+                    scale: 1.0,
+                    seed: 9,
+                    col: c,
+                };
+                if spark_count(&t) == 0 {
+                    return None;
+                }
+                let spark_id = c * (SPARK_MAX_PER_TONGUE + 1);
+                let pick = noise::random(t.seed ^ FLARE_SALT, spark_id);
+                (pick < FLARE_SHARE).then_some((c, pick))
+            })
+            .expect("find a flaring spark");
+
+        let tongue = Tongue {
+            x: 80.0,
+            y: 220.0,
+            height: 50.0,
+            width: 20.0,
+            heat: 1.0,
+            phase: 0.0,
+            scale: 1.0,
+            seed: 9,
+            col,
+        };
+        let spark_id = col * (SPARK_MAX_PER_TONGUE + 1);
+        let offset = tongue.phase * SPARK_PHASE_SHARE
+            + noise::random(tongue.seed, spark_id) * SPARK_ORDER_SHARE;
+        let flare_along = 0.25 + 0.65 * (flare_pick / FLARE_SHARE);
+        let time_for = |target_along: f32| -> f32 {
+            let mut delta = target_along - offset;
+            if delta < 0.0 {
+                delta += 1.0;
+            }
+            delta / SPARK_RATE
+        };
+
+        let before = spark_state(&tongue, 0, time_for(flare_along - 0.12));
+        let during = spark_state(&tongue, 0, time_for(flare_along));
+        let lum = |px: u32| (px >> 24) + ((px >> 16) & 0xff) + ((px >> 8) & 0xff) + (px & 0xff);
+        assert!(
+            lum(during.color) > lum(before.color),
+            "flare luminosity ({}) should exceed just before flare ({})",
+            lum(during.color),
+            lum(before.color)
+        );
+
+        let (width, height) = (160u32, 240u32);
+        let mut p_before = vec![0u32; (width * height) as usize];
+        let mut p_during = vec![0u32; (width * height) as usize];
+        paint_streak(&mut p_before, width, height, before, 1.0);
+        paint_streak(&mut p_during, width, height, during, 1.0);
+        let max_before = p_before.iter().copied().map(lum).max().unwrap_or(0);
+        let max_during = p_during.iter().copied().map(lum).max().unwrap_or(0);
+        assert!(max_during > max_before);
+
+        for px in p_during.into_iter().chain(p_before) {
+            let a = px >> 24;
+            assert!(((px >> 16) & 0xff) <= a && ((px >> 8) & 0xff) <= a && (px & 0xff) <= a);
+        }
     }
 }
