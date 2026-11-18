@@ -173,7 +173,11 @@ impl Rows {
         top: 0,
         bottom: u32::MAX,
     };
-    const NONE: Self = Self { top: 0, bottom: 0 };
+    pub(crate) const NONE: Self = Self { top: 0, bottom: 0 };
+
+    pub(crate) fn new(top: u32, bottom: u32) -> Self {
+        Self { top, bottom }
+    }
 
     pub fn is_empty(self) -> bool {
         self.top >= self.bottom
@@ -338,7 +342,7 @@ fn ember_px(scale: f32) -> u32 {
 }
 
 /// Fire's color at `heat` (0 to 1), premultiplied, faint where it is cool.
-fn fire(heat: f32) -> u32 {
+pub(crate) fn fire(heat: f32) -> u32 {
     let heat = heat.clamp(0.0, 1.0);
     let (r, g, b) = fire_color(heat);
     let alpha = (heat * FIRE_ALPHA_GAIN).min(1.0);

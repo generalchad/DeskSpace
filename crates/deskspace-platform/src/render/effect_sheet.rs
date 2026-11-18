@@ -8,6 +8,7 @@
 //! the painter stretches them, bilinear between cells, so an edge looks as
 //! soft here as it does on screen.
 
+use super::ash;
 use super::burn::{self, BurnField};
 use super::flames::{self, Rows, SPACING};
 use super::math::Grid;
@@ -63,10 +64,13 @@ fn frame(field: &BurnField, space: (u32, u32), dpi: u32, front: f32, time: f32) 
     let mut flame_pixels = vec![0; (width * height) as usize];
     let mut bases = Vec::new();
     let mut tongues = Vec::new();
+    let mut flakes = Vec::new();
     field.flame_bases(front, SPACING, &mut bases);
     flames::tongues(&bases, space.1 as f32, dpi, time, SEED, &mut tongues);
+    ash::flakes(field, front, time, scale, &mut flakes);
     let mut drawn = Rows::ALL;
     flames::paint(&mut flame_pixels, width, height, &tongues, time, &mut drawn);
+    ash::paint(&flakes, (width, height), &mut flame_pixels);
 
     let sample = sample(space, scale);
     let mut pixels = vec![BACKDROP; (width * height) as usize];

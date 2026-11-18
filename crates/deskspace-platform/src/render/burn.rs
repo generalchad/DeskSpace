@@ -113,6 +113,9 @@ const EMBER_SHARE: f32 = 0.1;
 /// Flicker rates in rad/s for the live glow/paper light and char embers.
 const BURNING_RATE: f32 = 13.0;
 const EMBER_RATE: f32 = 5.0;
+/// Seed salt and share for ash flakes lifting off burned cells.
+const ASH_SALT: u32 = 0xA540_F1A3;
+const ASH_SHARE: f32 = 0.008;
 
 /// The noise's coarsest lattice, in cells, at the finest and per step of
 /// detail.
@@ -256,10 +259,14 @@ fn solve_coarse(node_cols: u32, node_rows: u32, lattice: f32, seed: u32) -> (Ris
 pub struct BurnField {
     field: RisingField,
     bands: Bands,
+    /// Display DPI the field was built for (`cell_px` and overlay margins).
+    dpi: u32,
     /// One cell in normalized field units, from `1 / (max_arrival * COARSE_STEP)`.
     units_per_cell: f32,
     /// Seed for deterministic per-cell shimmer phase and ember selection.
     seed: u32,
+    /// Cell indices (`row * cols + col`) selected to shed ash flakes.
+    flakes: Vec<u32>,
     /// Each row's lowest and highest cell value, which say what a moving
     /// front can have changed without reading every cell.
     extremes: Vec<(f32, f32)>,
@@ -338,15 +345,40 @@ impl BurnField {
             extremes.push((low, high));
         }
 
+        let mut flakes = Vec::with_capacity((values.len() as f32 * ASH_SHARE) as usize + 8);
+        let ash_seed = seed ^ ASH_SALT;
+        for index in 0..values.len() as u32 {
+            if noise::random(ash_seed, index) < ASH_SHARE {
+                flakes.push(index);
+            }
+        }
         let field = RisingField::from_values(grid.cols, grid.rows, values);
         let bands = Bands::from_pixels(cell_px(dpi), dpi, units_per_cell);
         Self {
             field,
             bands,
+            dpi,
             units_per_cell,
             seed,
+            flakes,
             extremes,
         }
+    }
+
+    pub(crate) fn dpi(&self) -> u32 {
+        self.dpi
+    }
+
+    pub(crate) fn seed(&self) -> u32 {
+        self.seed
+    }
+
+    pub(crate) fn values(&self) -> &[f32] {
+        self.field.values()
+    }
+
+    pub(crate) fn flake_cells(&self) -> &[u32] {
+        &self.flakes
     }
 
     pub fn grid(&self) -> Grid {

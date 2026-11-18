@@ -6,6 +6,7 @@
 use deskspace_core::geometry::Rect;
 use windows::Win32::Foundation::HWND;
 
+use crate::render::ash::{self, Flake};
 use crate::render::burn::BurnField;
 use crate::render::flames::{self, Rows, SPACING, Tongue};
 use crate::win32::layered_overlay::LayeredOverlay;
@@ -17,6 +18,7 @@ pub(crate) struct FlameOverlay {
     field: BurnField,
     bases: Vec<crate::render::burn::FlameBase>,
     tongues: Vec<Tongue>,
+    flakes: Vec<Flake>,
     /// The rows of the pixel buffer the last frame drew, which the next one clears.
     drawn: Rows,
     space_height: f32,
@@ -38,6 +40,7 @@ impl FlameOverlay {
             field: BurnField::for_space((rect.width as f32, rect.height as f32), detail, seed, dpi),
             bases: Vec::new(),
             tongues: Vec::new(),
+            flakes: Vec::new(),
             drawn: Rows::ALL,
             space_height: rect.height as f32,
             dpi,
@@ -65,6 +68,8 @@ impl FlameOverlay {
             self.seed,
             &mut self.tongues,
         );
+        let scale = self.dpi as f32 / 96.0;
+        ash::flakes(&self.field, front, time, scale, &mut self.flakes);
         let (width, height) = self.overlay.pixel_size();
         let previous = self.drawn;
         flames::paint(
@@ -75,6 +80,8 @@ impl FlameOverlay {
             time,
             &mut self.drawn,
         );
+        let ash_rows = ash::paint(&self.flakes, (width, height), self.overlay.pixels());
+        self.drawn = self.drawn.union(ash_rows);
         self.overlay.present(previous.union(self.drawn));
     }
 }
