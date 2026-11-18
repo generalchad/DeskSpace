@@ -7126,3 +7126,4 @@ takes an id listed here or used anywhere above
 - **T44.** Burn's smoke (platform).
 - **T46.** A glow around the flames, on the CPU (platform).
 - **T47.** Sparks that cool (platform).
+- **T48.** The char edge lifts (platform).

@@ -116,6 +116,9 @@ const EMBER_RATE: f32 = 5.0;
 /// Seed salt and share for ash flakes lifting off burned cells.
 const ASH_SALT: u32 = 0xA540_F1A3;
 const ASH_SHARE: f32 = 0.008;
+/// Lift bevel thickness on each side of the char band at 96 DPI and max alpha.
+const LIFT_PX: f32 = 2.0;
+const LIFT_ALPHA: f32 = 40.0;
 
 /// The noise's coarsest lattice, in cells, at the finest and per step of
 /// detail.
@@ -267,6 +270,8 @@ pub struct BurnField {
     seed: u32,
     /// Cell indices (`row * cols + col`) selected to shed ash flakes.
     flakes: Vec<u32>,
+    /// Gradient response (`0..=255`) for char edge lift shading.
+    lift: Vec<u8>,
     /// Each row's lowest and highest cell value, which say what a moving
     /// front can have changed without reading every cell.
     extremes: Vec<(f32, f32)>,
@@ -352,6 +357,7 @@ impl BurnField {
                 flakes.push(index);
             }
         }
+        let lift = compute_lift(&values, grid);
         let field = RisingField::from_values(grid.cols, grid.rows, values);
         let bands = Bands::from_pixels(cell_px(dpi), dpi, units_per_cell);
         Self {
@@ -361,6 +367,7 @@ impl BurnField {
             units_per_cell,
             seed,
             flakes,
+            lift,
             extremes,
         }
     }
@@ -450,6 +457,7 @@ impl BurnField {
                 time,
                 seed: self.seed,
                 bands: self.bands,
+                lift: &self.lift[start..end],
             },
             &mut paper[start..end],
             &mut marks[start..end],
@@ -596,11 +604,62 @@ pub fn cell_pixels(stage: Stage, shimmer: f32) -> (u32, u32) {
 }
 
 #[derive(Clone, Copy)]
-struct RowFill {
+struct RowFill<'a> {
     front: f32,
     time: f32,
     seed: u32,
     bands: Bands,
+    lift: &'a [u8],
+}
+
+fn compute_lift(values: &[f32], grid: Grid) -> Vec<u8> {
+    let (cols, rows) = (grid.cols as usize, grid.rows as usize);
+    let mut out = vec![0u8; cols * rows];
+    if cols == 0 || rows == 0 {
+        return out;
+    }
+    for row in 0..rows {
+        let up = row.saturating_sub(1) * cols;
+        let cur = row * cols;
+        let down = (row + 1).min(rows - 1) * cols;
+        for col in 0..cols {
+            let left = cur + col.saturating_sub(1);
+            let right = cur + (col + 1).min(cols - 1);
+            let gx = values[right] - values[left];
+            let gy = values[down + col] - values[up + col];
+            let denom = gx.abs() + gy.abs();
+            let factor = if denom > 1e-7 {
+                (0.5 - 0.5 * gy / denom).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            out[cur + col] = (factor * 255.0).round() as u8;
+        }
+    }
+    out
+}
+
+fn lift_char(marks: u32, along: f32, lift: u8) -> u32 {
+    if lift == 0 {
+        return marks;
+    }
+    let band = (LIFT_PX / CHAR_PX).clamp(0.0, 0.5);
+    let strength = f32::from(lift) / 255.0;
+    if along >= 1.0 - band {
+        let edge = ((along - (1.0 - band)) / band).clamp(0.0, 1.0);
+        let alpha = (edge * strength * LIFT_ALPHA)
+            .round()
+            .clamp(0.0, LIFT_ALPHA) as u8;
+        over(premultiplied((255, 230, 200), alpha), marks)
+    } else if along < band {
+        let edge = (1.0 - along / band).clamp(0.0, 1.0);
+        let alpha = (edge * strength * LIFT_ALPHA)
+            .round()
+            .clamp(0.0, LIFT_ALPHA) as u8;
+        over(premultiplied((0, 0, 0), alpha), marks)
+    } else {
+        marks
+    }
 }
 
 fn is_ember(seed: u32, index: u32) -> bool {
@@ -615,7 +674,7 @@ fn cell_shimmer(seed: u32, index: u32, time: f32, rate: f32) -> f32 {
 fn fill_pixels(
     values: &[f32],
     start_index: u32,
-    fill: RowFill,
+    fill: RowFill<'_>,
     paper: &mut [u32],
     marks: &mut [u32],
 ) {
@@ -641,7 +700,12 @@ fn fill_pixels(
             | Stage::Scorched(_)
             | Stage::Whole => 0.0,
         };
-        (*paper, *marks) = cell_pixels(stage, shimmer);
+        let (p, mut m) = cell_pixels(stage, shimmer);
+        if let Stage::Charred { along, .. } = stage {
+            let lift = fill.lift.get(offset).copied().unwrap_or(0);
+            m = lift_char(m, along, lift);
+        }
+        (*paper, *marks) = (p, m);
     }
 }
 
@@ -769,6 +833,7 @@ mod tests {
             time: 0.2,
             seed: 1,
             bands: Bands::DEFAULT,
+            lift: &[0; 3],
         };
         fill_pixels(&values, 0, fill, &mut paper, &mut marks);
         assert_eq!(paper[0], 0, "below the front is gone");
@@ -1101,6 +1166,74 @@ mod tests {
         field.fill_rows(field.front(0.5), 0.7, 0..rows, &mut paper, &mut marks);
         for px in paper.into_iter().chain(marks) {
             check(px);
+        }
+    }
+
+    #[test]
+    fn char_edge_lift_highlights_unburned_side_and_keeps_whole_and_gone_unchanged() {
+        let grid = Grid { cols: 8, rows: 200 };
+        let values: Vec<f32> = (0..grid.rows)
+            .flat_map(|r| {
+                let v = 1.0 - (r as f32 / (grid.rows - 1) as f32);
+                std::iter::repeat_n(v, grid.cols as usize)
+            })
+            .collect();
+        let lift = compute_lift(&values, grid);
+        // Interior rows burn straight upward, so gradient points to unburned top (255).
+        assert_eq!(lift[100 * grid.cols as usize], 255);
+
+        let mut paper = vec![0u32; grid.cell_count()];
+        let mut marks = vec![0u32; grid.cell_count()];
+        let fill = RowFill {
+            front: 0.5,
+            time: 0.0,
+            seed: 1,
+            bands: Bands::DEFAULT,
+            lift: &lift,
+        };
+        fill_pixels(&values, 0, fill, &mut paper, &mut marks);
+
+        // Top row (value=1.0 -> Whole) and bottom row (value=0.0 -> Gone) are unchanged.
+        assert_eq!((paper[0], marks[0]), (u32::MAX, 0));
+        let last = grid.cell_count() - 1;
+        assert_eq!((paper[last], marks[last]), (0, 0));
+
+        // Find char cells near unburned side (high along) and fire side (low along).
+        let (_, plain_char) = cell_pixels(
+            Stage::Charred {
+                along: 0.5,
+                ember: false,
+            },
+            0.0,
+        );
+        let red = |px: u32| (px >> 16) & 0xff;
+        let mut highlight_px = None;
+        let mut shadow_px = None;
+        for row in 1..grid.rows - 1 {
+            for col in 0..grid.cols {
+                let idx = (row * grid.cols + col) as usize;
+                let above = values[idx] - fill.front;
+                if let Stage::Charred {
+                    along,
+                    ember: false,
+                } = Bands::DEFAULT.stage(above, || is_ember(fill.seed, idx as u32))
+                {
+                    if along > 0.75 {
+                        highlight_px = Some(marks[idx]);
+                    } else if along < 0.25 {
+                        shadow_px = Some(marks[idx]);
+                    }
+                }
+            }
+        }
+        let hi = highlight_px.expect("charred cell near unburned side");
+        let sh = shadow_px.expect("charred cell near fire side");
+        assert!(red(hi) > red(plain_char), "unburned side is highlighted");
+        assert!(red(sh) < red(plain_char), "fire side is shadowed");
+
+        for px in paper.into_iter().chain(marks) {
+            let a = px >> 24;
+            assert!(((px >> 16) & 0xff) <= a && ((px >> 8) & 0xff) <= a && (px & 0xff) <= a);
         }
     }
 }

@@ -25,6 +25,13 @@ Notable changes to DeskSpace, newest first. The format follows
 - Burn scales with the display, so on a 150 % or 200 % monitor its edge is as
   ragged as at 100 % and its flames as tall, rather than a finer edge with
   smaller flames.
+- Burn plays like real paper catching fire: the burn spreads upward along an
+  uneven front with spot holes that open ahead and join in; the glowing rim,
+  winking embers, and warm firelight on the paper ahead shimmer with the
+  clock; the char edge lifts slightly; turbulent additive flames carry a soft
+  halo and throw cooling, flaring spark streaks; tumbling ash flakes lift off
+  the edge; and wispy smoke plumes rise behind the fire and fade out above
+  the flames.
 - CRT plays like a monitor switching on: the line's light fades as the
   raster opens, and the whole space flashes white as it finishes filling
   before the picture settles. Hiding plays it backwards, so a space flashes
