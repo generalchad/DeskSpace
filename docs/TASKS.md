@@ -1685,10 +1685,8 @@ These are in the order we would take them. Each lands alone.
 
 - [ ] **P16. Measure labels.** Two Explorer behaviors wait for this: the Details
   header menu's "Size all columns to fit" (W30) and List columns sized to the longest
-  label (W17 uses a fixed 200 px and an ellipsis). The design is ROADMAP D25. P16a,
-  P16c, and P16d are in the junior list, so these are the parts that remain:
-  - [ ] **P16b.** The `Ui` method, over `CreateTextLayout` as `d2d/title.rs` uses it,
-    with a test that "WWW" measures wider than "iii".
+  label (W17 uses a fixed 200 px and an ellipsis). The design is ROADMAP D25. P16c
+  and P16d are in the junior list, so this is the part that remains:
   - [ ] **P16e.** After: P16a, P16b, P16d. List's cell width follows the longest
     label: where it is stored, and when it is measured again. A `SyncLens` is the
     likely trigger, and no scene or wheel notch may measure.

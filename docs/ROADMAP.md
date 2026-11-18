@@ -892,6 +892,8 @@ A native, lightweight, offline Windows desktop organizer that:
   columns to fit" and List columns sized to the longest label.
   - The seam is `Ui::measure_label_widths(&[&str], font) -> Vec<i32>` over
     DirectWrite, which is what draws these labels. The app stays Win32-free.
+    As built (P16b), the font is the `ItemLayout` and label size the scene
+    already carries, which pick the format the painter draws a name with.
   - There is no worker and no cache, so nothing has to show "until it answers".
     Character count picks the candidates: scan the labels without measuring, keep
     the longest 64, and measure only those. A wide label short on characters can

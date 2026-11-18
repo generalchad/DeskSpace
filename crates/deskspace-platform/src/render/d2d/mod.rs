@@ -20,6 +20,7 @@ mod glyph;
 mod graphics;
 mod item;
 mod label_lines;
+mod label_widths;
 #[cfg(test)]
 pub(crate) mod png;
 mod prepared;
@@ -31,6 +32,7 @@ pub(crate) use bitmap::{decode_bitmap, decode_icon};
 pub(crate) use color_picker::ColorPickerPainter;
 pub(crate) use drag_image::render_items;
 pub(crate) use glyph::rasterize;
+pub(crate) use label_widths::measure_label_widths;
 pub use prepared::PreparedScene;
 pub(crate) use zoom_bar::ZoomBarPainter;
 

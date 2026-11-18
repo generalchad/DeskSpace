@@ -187,15 +187,8 @@ unsafe fn draw_item_label(
     let Some(label_rect) = layout.label else {
         return;
     };
-    let details_format = matches!(
-        scene.item_layout,
-        ItemLayout::Details | ItemLayout::Tiles | ItemLayout::Content
-    );
-    let format = if details_format {
-        graphics.details_format.clone()
-    } else {
-        graphics.item_label_format_for(scene.label_size, scene.item_layout)
-    };
+    // The format a name is measured in too (`label_widths`).
+    let format = graphics.item_label_format_for(scene.label_size, scene.item_layout);
     // SAFETY: caller is inside BeginDraw/EndDraw.
     unsafe {
         if let (Some(buffer), Some((_, text_edit))) = (edit, &scene.editing_item) {

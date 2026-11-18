@@ -7129,3 +7129,4 @@ takes an id listed here or used anywhere above
 - **T48.** The char edge lifts (platform).
 - **P15f.** Everything that holds an x follows Details' sideways scroll.
 - **P15.** Scroll Details sideways.
+- **P16b.** `Ui::measure_label_widths`, over DirectWrite.

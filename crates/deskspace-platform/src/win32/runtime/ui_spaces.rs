@@ -3,6 +3,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::*;
+use crate::render::ItemLayout;
 
 // Process state: whether the first scene has been pushed, so the startup
 // timeline logs it once. Nothing clears it.
@@ -115,6 +116,20 @@ impl Ui {
         };
         // SAFETY: a live space window, and no runtime borrow is held.
         unsafe { space_animation::dismiss(hwnd, play) };
+    }
+
+    /// The width in pixels each of `labels` takes drawn on one line as an
+    /// item's name in `layout` at `label_size` percent, as a space's painter
+    /// draws it (ROADMAP D25), for sizing a column to its labels. Each is a
+    /// text layout on the UI thread, so pass only the candidates
+    /// (`longest_by_chars`).
+    pub fn measure_label_widths(
+        &self,
+        labels: &[&str],
+        layout: ItemLayout,
+        label_size: u8,
+    ) -> Vec<i32> {
+        d2d::measure_label_widths(labels, layout, label_size)
     }
 
     pub fn space_ids(&self) -> Vec<u64> {
