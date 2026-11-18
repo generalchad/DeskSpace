@@ -113,7 +113,13 @@ fn sheet(space: (u32, u32), dpi: u32) -> Picture {
     let mut pixels = vec![BACKDROP; (width * height) as usize];
     let field = BurnField::for_space((space.0 as f32, space.1 as f32), DETAIL, SEED, dpi);
     for frame_index in 0..FRAMES {
-        let picture = frame(&field, space, dpi, gone(frame_index), time(frame_index));
+        let picture = frame(
+            &field,
+            space,
+            dpi,
+            field.front(gone(frame_index)),
+            time(frame_index),
+        );
         let left = (frame_index % COLUMNS) as u32 * cell_width;
         let top = (frame_index / COLUMNS) as u32 * cell_height;
         for y in 0..cell_height {

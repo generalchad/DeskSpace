@@ -2,18 +2,22 @@
 //! a sheet of paper. No Win32 here, so the painter (the paper) and the flame
 //! overlay (the flames) share it and the tests cover both.
 //!
-//! A `BurnField` gives every cell of the space a value from 0 to 1: smooth
-//! noise plus a bias toward the bottom, so the paper burns from the bottom up
-//! along a ragged front. A frame's `front` says how far the burn has got;
-//! each cell's distance above it picks its `Stage`, from gone through the
-//! glowing edge, char, and scorch, to untouched paper.
+//! A `BurnField` gives every cell of the space a value from 0 to 1: when a
+//! seeded fire front solved on a coarse grid reaches it, with fine noise along
+//! the edge, so the paper catches unevenly, climbs faster than it spreads, and
+//! opens spot holes. A frame's `front` says how far the burn has got; each
+//! cell's distance above it picks its `Stage`, from gone through the glowing
+//! edge, char, and scorch, to untouched paper.
 
+use std::cmp::{Ordering, Reverse};
+use std::collections::BinaryHeap;
 use std::ops::Range;
+use std::time::Instant;
 
 use deskspace_core::animation::DETAIL_RANGE;
 
 use super::math::Grid;
-use super::noise::RisingField;
+use super::noise::{self, RisingField};
 
 /// Pixels per field cell at 96 DPI; `cell_px` scales it for a display.
 pub const CELL: u32 = 3;
@@ -34,21 +38,27 @@ struct Bands {
 }
 
 impl Bands {
+    /// Default band widths in field units for band-stage unit tests.
+    #[cfg(test)]
     const DEFAULT: Self = Self {
         glow: 0.035,
         char: 0.045,
         scorch: 0.07,
     };
 
+    fn from_pixels(cell_px: u32, dpi: u32, units_per_cell: f32) -> Self {
+        let scale = dpi.max(1) as f32 / 96.0;
+        let to_units = |px: f32| (px * scale) / cell_px.max(1) as f32 * units_per_cell;
+        Self {
+            glow: to_units(GLOW_PX),
+            char: to_units(CHAR_PX),
+            scorch: to_units(SCORCH_PX),
+        }
+    }
+
     /// Everything the burn touches beyond what is already gone.
     fn total(self) -> f32 {
         self.glow + self.char + self.scorch
-    }
-
-    /// The distances above the front where a cell's `Stage` changes: a front
-    /// that does not pass one of these changes nothing.
-    fn edges(self) -> [f32; 4] {
-        [0.0, self.glow, self.glow + self.char, self.total()]
     }
 
     fn stage(self, above: f32) -> Stage {
@@ -66,8 +76,29 @@ impl Bands {
     }
 }
 
-/// How much of a cell's value is noise; the rest burns the bottom first.
-const NOISE_SHARE: f32 = 0.55;
+/// Coarse-grid stride in fine cells for Dijkstra's arrival solve.
+const COARSE_STEP: u32 = 4;
+/// Burn speed bounds across the paper.
+const SPEED_MIN: f32 = 0.35;
+const SPEED_MAX: f32 = 1.0;
+/// Fire climbs faster toward row 0 than it spreads across or down.
+const CLIMB_UP: f32 = 1.8;
+const CLIMB_DOWN: f32 = 0.45;
+/// Stagger across bottom-row ignition, as a fraction of coarse grid height.
+const BOTTOM_STAGGER: f32 = 0.2;
+/// Spot fires: at most `SPOTS_MAX`, one per `SPOT_AREA` coarse nodes, delayed
+/// so holes open and join the main front on larger spaces.
+const SPOT_AREA: u32 = 600;
+const SPOTS_MAX: u32 = 3;
+const SPOT_DELAY: f32 = 0.3;
+const SPOT_SALT: u32 = 0x5007_F12E;
+/// Fine raggedness added over the smooth coarse arrival field.
+const EDGE_RAG: f32 = 0.015;
+/// Band thicknesses in pixels at 96 DPI.
+const GLOW_PX: f32 = 3.0;
+const CHAR_PX: f32 = 5.0;
+const SCORCH_PX: f32 = 12.0;
+
 /// The noise's coarsest lattice, in cells, at the finest and per step of
 /// detail.
 const LATTICE_BASE: f32 = 6.0;
@@ -78,11 +109,140 @@ fn grid_for(size: (f32, f32), dpi: u32) -> Grid {
     Grid::covering(size, cell_px(dpi))
 }
 
+#[derive(Debug, Clone, Copy)]
+struct Cost(f32);
+
+impl PartialEq for Cost {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.total_cmp(&other.0) == Ordering::Equal
+    }
+}
+
+impl Eq for Cost {}
+
+impl PartialOrd for Cost {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Cost {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.total_cmp(&other.0)
+    }
+}
+
+/// Time to step across `length` (1 or √2) into a cell with `speed` and `climb`.
+fn step_cost(length: f32, speed: f32, climb: f32) -> f32 {
+    length / (speed * climb)
+}
+
+/// Solves fire arrival times on a coarse grid using Dijkstra's algorithm:
+/// https://en.wikipedia.org/wiki/Dijkstra%27s_algorithm
+fn solve_coarse(node_cols: u32, node_rows: u32, lattice: f32, seed: u32) -> (RisingField, f32) {
+    let node_cols = node_cols.max(1);
+    let node_rows = node_rows.max(1);
+    let total = node_cols as usize * node_rows as usize;
+    let mut speeds = vec![0.0; total];
+    for nrow in 0..node_rows {
+        let row_slice =
+            &mut speeds[nrow as usize * node_cols as usize..(nrow as usize + 1) * node_cols as usize];
+        noise::fractal_row(
+            (nrow * COARSE_STEP) as f32,
+            COARSE_STEP as f32,
+            lattice,
+            seed,
+            row_slice,
+        );
+        for speed in row_slice {
+            *speed = SPEED_MIN + (SPEED_MAX - SPEED_MIN) * *speed;
+        }
+    }
+
+    let mut arrivals = vec![f32::INFINITY; total];
+    let mut heap = BinaryHeap::with_capacity(total / 2);
+
+    // Bottom row ignites across the edge with seeded stagger.
+    let bottom_row = node_rows - 1;
+    let stagger = BOTTOM_STAGGER * node_rows as f32;
+    for col in 0..node_cols {
+        let idx = (bottom_row * node_cols + col) as usize;
+        let start = stagger * noise::random(seed, col);
+        arrivals[idx] = start;
+        heap.push(Reverse((Cost(start), idx as u32)));
+    }
+
+    // Spot fires in the lower 60 % of rows and middle 80 % of columns.
+    let spots = ((total as u32) / SPOT_AREA).min(SPOTS_MAX);
+    let row_start = ((node_rows as f32 * 0.4).floor() as u32).min(node_rows - 1);
+    let row_span = (node_rows - row_start).max(1);
+    let col_start = (node_cols as f32 * 0.1).floor() as u32;
+    let col_end = ((node_cols as f32 * 0.9).ceil() as u32)
+        .max(col_start + 1)
+        .min(node_cols);
+    let col_span = (col_end - col_start).max(1);
+    let spot_start = SPOT_DELAY * node_rows as f32;
+    for spot in 0..spots {
+        let r_col = noise::random(seed ^ SPOT_SALT, spot * 2);
+        let r_row = noise::random(seed ^ SPOT_SALT, spot * 2 + 1);
+        let col = (col_start + (r_col * col_span as f32) as u32).min(node_cols - 1);
+        let row = (row_start + (r_row * row_span as f32) as u32).min(node_rows - 1);
+        let idx = (row * node_cols + col) as usize;
+        if spot_start < arrivals[idx] {
+            arrivals[idx] = spot_start;
+            heap.push(Reverse((Cost(spot_start), idx as u32)));
+        }
+    }
+
+    const NEIGHBORS: [(i32, i32, f32, f32); 8] = [
+        (0, -1, 1.0, CLIMB_UP),
+        (-1, -1, std::f32::consts::SQRT_2, CLIMB_UP),
+        (1, -1, std::f32::consts::SQRT_2, CLIMB_UP),
+        (-1, 0, 1.0, 1.0),
+        (1, 0, 1.0, 1.0),
+        (0, 1, 1.0, CLIMB_DOWN),
+        (-1, 1, std::f32::consts::SQRT_2, CLIMB_DOWN),
+        (1, 1, std::f32::consts::SQRT_2, CLIMB_DOWN),
+    ];
+
+    let cols_i = node_cols as i32;
+    let rows_i = node_rows as i32;
+    while let Some(Reverse((Cost(time), idx))) = heap.pop() {
+        let idx_usize = idx as usize;
+        if time > arrivals[idx_usize] {
+            continue;
+        }
+        let col = (idx % node_cols) as i32;
+        let row = (idx / node_cols) as i32;
+        for (dc, dr, length, climb) in NEIGHBORS {
+            let nc = col + dc;
+            let nr = row + dr;
+            if nc < 0 || nc >= cols_i || nr < 0 || nr >= rows_i {
+                continue;
+            }
+            let nidx = (nr as u32 * node_cols + nc as u32) as usize;
+            let next = time + step_cost(length, speeds[nidx], climb);
+            if next < arrivals[nidx] {
+                arrivals[nidx] = next;
+                heap.push(Reverse((Cost(next), nidx as u32)));
+            }
+        }
+    }
+
+    let max_arrival = arrivals.iter().copied().fold(0.0f32, f32::max).max(1e-4);
+    (
+        RisingField::from_values(node_cols, node_rows, arrivals),
+        max_arrival,
+    )
+}
+
 /// The burn field of a space, one value per cell.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BurnField {
     field: RisingField,
     bands: Bands,
+    /// One cell in normalized field units, from `1 / (max_arrival * COARSE_STEP)`.
+    units_per_cell: f32,
     /// Each row's lowest and highest cell value, which say what a moving
     /// front can have changed without reading every cell.
     extremes: Vec<(f32, f32)>,
@@ -94,26 +254,79 @@ impl BurnField {
     /// shape. The painter and the flames each make one from the same play, so
     /// the flames stand on the edge the paper burns.
     pub fn for_space(size: (f32, f32), detail: u8, seed: u32, dpi: u32) -> Self {
-        Self::new(grid_for(size, dpi), detail, seed)
+        let started = Instant::now();
+        let grid = grid_for(size, dpi);
+        let field = Self::new(grid, detail, seed, dpi);
+        tracing::debug!(
+            elapsed_us = started.elapsed().as_micros() as u64,
+            cols = grid.cols,
+            rows = grid.rows,
+            "built burn field"
+        );
+        field
     }
 
-    fn new(grid: Grid, detail: u8, seed: u32) -> Self {
+    fn new(grid: Grid, detail: u8, seed: u32, dpi: u32) -> Self {
         let detail = detail.clamp(DETAIL_RANGE.0, DETAIL_RANGE.1);
         let lattice = LATTICE_BASE + LATTICE_PER_DETAIL * f32::from(detail);
-        let field = RisingField::new(grid.cols, grid.rows, lattice, NOISE_SHARE, seed);
-        let extremes = field
-            .values()
-            .chunks(grid.cols.max(1) as usize)
-            .map(|row| {
-                row.iter()
-                    .fold((f32::INFINITY, f32::NEG_INFINITY), |(low, high), &value| {
-                        (low.min(value), high.max(value))
-                    })
-            })
-            .collect();
+        let node_cols = grid.cols.div_ceil(COARSE_STEP).max(1);
+        let node_rows = grid.rows.div_ceil(COARSE_STEP).max(1);
+        let (coarse, max_arrival) = solve_coarse(node_cols, node_rows, lattice, seed);
+        let units_per_cell = 1.0 / (max_arrival * COARSE_STEP as f32);
+        let inv_max = 1.0 / max_arrival;
+        let inv_step = 1.0 / COARSE_STEP as f32;
+
+        let mut values = vec![0.0; grid.cell_count()];
+        let mut extremes = Vec::with_capacity(grid.rows as usize);
+        let mut noise_row = vec![0.0; grid.cols as usize];
+        let coarse_vals = coarse.values();
+        let max_nc = node_cols - 1;
+        let max_nr = node_rows - 1;
+        // One fine octave over the coarse solve gives ragged paper detail
+        // while keeping a 1920x1080 field build within the 3 ms budget.
+        let fine_size = lattice * 0.25;
+        for (row, out_row) in values.chunks_exact_mut(grid.cols as usize).enumerate() {
+            let row = row as u32;
+            noise_row.fill(0.0);
+            noise::add_octave_row(row as f32, 1.0, fine_size, 2, 1.0, seed, &mut noise_row);
+            let nr0 = (row / COARSE_STEP).min(max_nr);
+            let nr1 = (nr0 + 1).min(max_nr);
+            let ty = (row % COARSE_STEP) as f32 * inv_step;
+            let r0 = &coarse_vals[nr0 as usize * node_cols as usize..];
+            let r1 = &coarse_vals[nr1 as usize * node_cols as usize..];
+
+            let mut low = f32::INFINITY;
+            let mut high = f32::NEG_INFINITY;
+            let step_u = COARSE_STEP as usize;
+            for (nc0, (noise_chunk, dst_chunk)) in noise_row
+                .chunks(step_u)
+                .zip(out_row.chunks_mut(step_u))
+                .enumerate()
+            {
+                let nc0 = nc0.min(max_nc as usize);
+                let nc1 = (nc0 + 1).min(max_nc as usize);
+                let v0 = (r0[nc0] + (r1[nc0] - r0[nc0]) * ty) * inv_max;
+                let v1 = (r0[nc1] + (r1[nc1] - r0[nc1]) * ty) * inv_max;
+                let dv = (v1 - v0) * inv_step;
+                let mut arrival = v0;
+                for (&rag_noise, dst) in noise_chunk.iter().zip(dst_chunk.iter_mut()) {
+                    let rag = EDGE_RAG * (rag_noise - 0.5);
+                    let value = (arrival + rag).clamp(0.0, 1.0);
+                    low = low.min(value);
+                    high = high.max(value);
+                    *dst = value;
+                    arrival += dv;
+                }
+            }
+            extremes.push((low, high));
+        }
+
+        let field = RisingField::from_values(grid.cols, grid.rows, values);
+        let bands = Bands::from_pixels(cell_px(dpi), dpi, units_per_cell);
         Self {
             field,
-            bands: Bands::DEFAULT,
+            bands,
+            units_per_cell,
             extremes,
         }
     }
@@ -133,8 +346,11 @@ impl BurnField {
     /// nothing is touched, at 1 everything, the bands included, has burned
     /// away.
     pub fn front(&self, gone: f32) -> f32 {
+        // Push slightly past 1.0 at gone=1 so a cell clamped to 1.0 crosses
+        // below 0 (`Stage::Gone`) rather than staying at `Burning(0.0)`.
+        const END_MARGIN: f32 = 1e-4;
         let bands = self.bands.total();
-        gone * (1.0 + bands) - bands
+        gone * (1.0 + END_MARGIN + bands) - bands
     }
 
     /// What cell (`col`, `row`) is at `front`.
@@ -175,16 +391,12 @@ impl BurnField {
             return None;
         }
         let (low, high) = (previous.min(front), previous.max(front));
-        let edges = self.bands.edges();
-        self.rows_where(|min, max| {
-            edges
-                .iter()
-                .any(|edge| max >= low + edge && min < high + edge)
-        })
-        // `stage` compares `value - front` in `f32`, and that subtraction can
-        // land a cell an edge's width the other side of one than the values
-        // predict; a row each side costs little and keeps it from going stale.
-        .map(|rows| rows.start.saturating_sub(1)..(rows.end + 1).min(self.field.rows()))
+        let bands = self.bands.total();
+        self.rows_where(|min, max| max >= low && min < high + bands)
+            // `stage` compares `value - front` in `f32`, and that subtraction can
+            // land a cell an edge's width the other side of one than the values
+            // predict; a row each side costs little and keeps it from going stale.
+            .map(|rows| rows.start.saturating_sub(1)..(rows.end + 1).min(self.field.rows()))
     }
 
     /// The rows a burn at `front` marks at all: where a cell is burning,
@@ -305,7 +517,7 @@ mod tests {
 
     #[test]
     fn flames_stand_on_the_burning_edge() {
-        let field = BurnField::new(Grid { cols: 60, rows: 40 }, 5, 0);
+        let field = BurnField::new(Grid { cols: 60, rows: 40 }, 5, 0, 96);
         let mut bases = Vec::new();
         field.flame_bases(0.4, 4, &mut bases);
         assert!(!bases.is_empty());
@@ -320,7 +532,7 @@ mod tests {
 
     #[test]
     fn the_field_stays_in_range_and_burns_the_bottom_first() {
-        let field = BurnField::new(Grid { cols: 80, rows: 60 }, 5, 0);
+        let field = BurnField::new(Grid { cols: 80, rows: 60 }, 5, 0, 96);
         assert!(
             field
                 .field
@@ -339,7 +551,7 @@ mod tests {
 
     #[test]
     fn the_front_is_ragged() {
-        let field = BurnField::new(Grid { cols: 80, rows: 60 }, 5, 0);
+        let field = BurnField::new(Grid { cols: 80, rows: 60 }, 5, 0, 96);
         let row = 30;
         let (low, high) = (0..80)
             .map(|col| field.value(col, row))
@@ -354,7 +566,7 @@ mod tests {
 
     #[test]
     fn the_front_runs_from_untouched_to_all_gone() {
-        let field = BurnField::new(Grid { cols: 40, rows: 30 }, 5, 0);
+        let field = BurnField::new(Grid { cols: 40, rows: 30 }, 5, 0, 96);
         let all = |gone, expected| {
             let front = field.front(gone);
             (0..30).all(|row| (0..40).all(|col| field.stage(col, row, front) == expected))
@@ -400,7 +612,7 @@ mod tests {
     #[test]
     fn a_moving_front_touches_every_row_whose_cells_it_changes() {
         let (cols, rows) = (80, 60);
-        let field = BurnField::new(Grid { cols, rows }, 5, 0);
+        let field = BurnField::new(Grid { cols, rows }, 5, 0, 96);
         let mut previous = field.front(0.0);
         let mut moved = 0;
         for step in 1..=40 {
@@ -434,7 +646,7 @@ mod tests {
     #[test]
     fn the_marked_rows_hold_every_marked_cell() {
         let (cols, rows) = (60, 40);
-        let field = BurnField::new(Grid { cols, rows }, 5, 0);
+        let field = BurnField::new(Grid { cols, rows }, 5, 0, 96);
         for step in 0..=40 {
             let front = field.front(step as f32 / 40.0);
             let marked_rows = field.rows_marked(front);
@@ -460,7 +672,7 @@ mod tests {
     #[test]
     fn fill_rows_leaves_the_rows_it_is_not_given() {
         let (cols, rows) = (10, 4);
-        let field = BurnField::new(Grid { cols, rows }, 5, 0);
+        let field = BurnField::new(Grid { cols, rows }, 5, 0, 96);
         let (mut paper, mut marks) = ([7u32; 40], [7u32; 40]);
         field.fill_rows(0.5, 1..3, &mut paper, &mut marks);
 
@@ -528,15 +740,45 @@ mod tests {
     }
 
     #[test]
-    fn the_field_values_are_pinned() {
-        let field = BurnField::new(Grid { cols: 60, rows: 40 }, 5, 0);
-        assert_eq!(
-            (
-                field.value(0, 0).to_bits(),
-                field.value(30, 20).to_bits(),
-                field.value(59, 39).to_bits(),
-            ),
-            (0x3f19_85c6, 0x3eae_8ac5, 0x3e35_7780)
-        );
+    fn step_cost_prefers_climbing_up() {
+        let up = step_cost(1.0, 0.7, CLIMB_UP);
+        let level = step_cost(1.0, 0.7, 1.0);
+        let down = step_cost(1.0, 0.7, CLIMB_DOWN);
+        assert!(up < level && level < down);
+    }
+
+    #[test]
+    fn a_spot_fire_opens_a_hole_ahead_of_the_main_front() {
+        let (coarse, max_arrival) = solve_coarse(300, 300, LATTICE_BASE + LATTICE_PER_DETAIL * 5.0, 1);
+        let has_hole = (0..300).any(|col| {
+            (0..299).any(|row| {
+                coarse.value(col, row) < coarse.value(col, row + 1)
+            })
+        });
+        assert!(has_hole && max_arrival > 0.0, "a higher cell burns before a lower one");
+    }
+
+    #[test]
+    fn glow_thickness_stays_similar_on_short_and_tall_spaces() {
+        let median_glow_px = |height: f32| {
+            let field = BurnField::for_space((320.0, height), 5, 1, 96);
+            let front = field.front(0.5);
+            let Grid { cols, rows } = field.grid();
+            let mut counts: Vec<f32> = (0..cols)
+                .filter_map(|col| {
+                    let cells = (0..rows)
+                        .filter(|&row| matches!(field.stage(col, row, front), Stage::Burning(_)))
+                        .count();
+                    (cells > 0).then_some(cells as f32 * cell_px(96) as f32)
+                })
+                .collect();
+            counts.sort_by(f32::total_cmp);
+            assert!(!counts.is_empty());
+            counts[counts.len() / 2]
+        };
+        let short = median_glow_px(100.0);
+        let tall = median_glow_px(400.0);
+        let ratio = (short / tall).max(tall / short);
+        assert!(ratio < 2.0, "short={short} px, tall={tall} px, ratio={ratio}");
     }
 }

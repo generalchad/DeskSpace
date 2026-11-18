@@ -22,7 +22,7 @@ are collected in section V instead of blocking:
 - section B's icon picker tasks: B49 next;
 - section K (K10-K13, K15), each a pure move with rules that
   leave nothing to design;
-- section T: T28-T31 in order, then T44 and T46-T48;
+- section T: T29-T31 in order, then T44 and T46-T48;
 - O5 and the O6-O9 harness abilities;
 - anything else not marked **[needs decision]**, "still to design", or in
   section D.
@@ -1289,7 +1289,7 @@ T24-T33 make Burn read as fire rather than an orange wipe: it takes its
 time and kindles, spreads unevenly, smoulders, throws turbulent flames and
 ash, and looks the same at every DPI. One commit each, in order.
 
-- **When to start.** T41 and T27 have landed, so T28 can start now. T25-T33 build on
+- **When to start.** T41, T27, and T28 have landed, so T29 can start now. T25-T33 build on
   the groundwork ported from `feat/color-picker-redesign` (as of `c1ad0f3`). Where a
   task below names the branch's types, read `main`'s:
   `EffectOverlay` and `Art::Burn` are `FlameOverlay` (the burn's state, in
@@ -1311,60 +1311,6 @@ ash, and looks the same at every DPI. One commit each, in order.
   to that row's first column, instead of adding a new row.
 - **Burn's smoke.** If Burn's smoke (`render/burn_smoke.rs`) has landed,
   keep the overlay's drawing order: smoke, then flames, then ash.
-
-- [ ] **T28. Burn spreads like fire (platform).** **(junior, senior review)**
-  **[needs human]** The senior reads the solve and the timing before it lands.
-  - Why: a threshold sweeping through noise moves at one speed along a
-    blobby edge. Fire catches unevenly, climbs faster than it spreads,
-    runs up in fingers, and burns holes that join the main front.
-  - `render/noise.rs`: port the branch's `random(seed, index)` and
-    `RisingField::value_at` with their tests. T41a left them for this task,
-    their first caller; T29-T31, T44, and T47 use them too.
-  - `render/burn.rs`: a cell's value becomes when the fire reaches it,
-    scaled to 0 to 1. Leave the stages, `cell_pixels`, and the painter as
-    they are.
-    - **Coarse grid.** Solve on a grid of `cols.div_ceil(4)` by
-      `rows.div_ceil(4)` nodes, so a full-HD space stays cheap.
-    - **Speed** of a node: `SPEED_MIN + (SPEED_MAX - SPEED_MIN) *
-      fractal(..)`, with the seeded `noise::fractal` at today's lattice
-      for the detail. `SPEED_MIN` is 0.35 and `SPEED_MAX` is 1.0.
-    - **Steps.** A step to each of the 8 neighbours costs
-      `length / (speed(to) * climb)`. `length` is 1 for the four sides
-      and √2 for the diagonals. `climb` is `CLIMB_UP` (1.8) toward
-      row 0, 1.0 level, and `CLIMB_DOWN` (0.45) away from it.
-    - **Sources.** Each bottom-row node starts at `BOTTOM_STAGGER`
-      (0.2) × node rows × `noise::random(seed, col)`. Spot fires add
-      `(nodes / SPOT_AREA).min(SPOTS_MAX)` sources (`SPOT_AREA` 600
-      nodes, `SPOTS_MAX` 3). They sit at seeded nodes in the lower 60 %
-      of rows and the middle 80 % of columns, and each starts at
-      `SPOT_DELAY` (0.3) × node rows.
-    - **Solve** with Dijkstra's algorithm: `std::collections::BinaryHeap`
-      over `Reverse` of an `f32` wrapper ordered by `total_cmp`. Cite
-      https://en.wikipedia.org/wiki/Dijkstra%27s_algorithm beside it.
-    - **Cell values.** A cell takes the coarse arrival at its position
-      (bilinear, as `RisingField::value_at` samples), divided by the
-      largest arrival. Then add `EDGE_RAG` (0.015) × (fine
-      `noise::fractal` − 0.5), so the edge stays ragged like paper, and
-      clamp the result to 0 to 1.
-    - **Bands from pixels.** The field keeps `units_per_cell` (1 / the
-      largest arrival, divided by 4 for the coarse grid). `for_space`
-      sets each band to `px / cell_px(dpi) * units_per_cell` from
-      `GLOW_PX` 3, `CHAR_PX` 5, and `SCORCH_PX` 12.
-  - `for_space` logs how long it took at `debug`. Both the painter and
-    the overlay build the field, so in a release build a 1920 × 1080
-    space at 100 % must build in under 3 ms. Put the timing in the
-    commit body.
-  - Tests: values stay within 0 to 1; the row means rise from the bottom
-    up (keep the test); a pure `step_cost(length, speed, climb)` costs
-    less up than level, and less level than down; a 300 × 300-node field with
-    seed 1 has a column where a higher cell burns before a lower one (a
-    hole); the median glow thickness, in pixels, of a 100 px and a
-    400 px tall field differs by less than a factor of two.
-  - **[needs human]** check: the bottom catches unevenly; the fire runs
-    up in fingers; on a large space, a hole or two opens in the middle
-    and joins the main front; the glowing edge is a similarly thin line
-    on small and large spaces; Detail still coarsens it; startup and
-    exit with many spaces do not stutter.
 
 - [ ] **T29. Turbulent flames (platform).** **(junior)** **[needs human]**
   - Why: today's flames are identical teardrops every `SPACING` cells,
@@ -2504,7 +2450,7 @@ that has it.
 | Flat material (part script) | Fade, Pixelate, Gradient, Dissolve, and Burn on hide, show, and delete (and in the debug preview) on Acrylic, Blur, and Solid spaces with a border, with Windows' "Transparency effects" off and on: no outline stays around the fading space, and it comes back once a show ends; with the switch off, no dark box either, the dark fill coming back only once a show ends; with it on, see the T13 row; Roll, Fly, and CRT look as before. |
 | T12 (part script) (D12) | Windows 11 with "Transparency effects" on: the log says "spaces use composition"; the R3 list passes unchanged with each backdrop (Acrylic and Blur blurred, Clear and Solid not), at 100 % and 150 %, corners and border as before, and the T8 row still passes, the blur stepping on and off as today. With the switch off at startup, the log names it and spaces look as before T12. Windows 10, `--placement desktop-*`, and `--click-through` change nothing. Idle CPU and GPU no higher than before. |
 | T13 (D12) | Windows 11 confirmed 2026-10-18 (maintainer). Still to check: on Windows 10 the blur still steps; idle GPU no higher than before. |
-| T17, T18, T24, T25, T26, B54 (part script) (D12) | Burn on Startup (hide, show, a new space, startup, exit) and on Delete, on each backdrop at 100 % and 150 %: the space burns from the bottom up along a ragged edge that glows, chars, and scorches ahead of itself, like paper; flames lick up from the edge and past the top and sides of the frame with no box or blur around them, and never show over another application (cover the space with a window and they stay behind it), while with `--on-top` they follow the space above other windows; Detail changes how ragged the edge is; reversing mid-burn (the hotkey twice) un-burns it; no flame window is left behind after it ends, after a delete, or after quitting mid-burn; a desktop-hosted space burns without flames; Burn at 250 ms plays for about half a second, catching slowly and then racing to the end; un-burning starts fast and settles; every other effect looks and times as before; no flame pixel is left behind where a tongue was; at exit, two spaces of the same size burn along different edges; one space burns differently each time it is hidden; reversing mid-burn still un-burns along the same edge. After Burn's paint was trimmed to the cells each frame reaches (2026-11-15): a burn still looks as it did, with its char, scorch, and flame band whole and no seam across the space. After Burn's cells, margins, and flames learned to scale with the display (2026-11-16): on a 150 % and a 200 % monitor, a burn looks as it does at 100 %, only bigger, with the edge as ragged relative to the space and the flames as tall relative to the title bar. |
+| T17, T18, T24, T25, T26, T28, B54 (part script) (D12) | Burn on Startup (hide, show, a new space, startup, exit) and on Delete, on each backdrop at 100 % and 150 %: the space burns from the bottom up along a ragged edge that glows, chars, and scorches ahead of itself, like paper; flames lick up from the edge and past the top and sides of the frame with no box or blur around them, and never show over another application (cover the space with a window and they stay behind it), while with `--on-top` they follow the space above other windows; Detail changes how ragged the edge is; reversing mid-burn (the hotkey twice) un-burns it; no flame window is left behind after it ends, after a delete, or after quitting mid-burn; a desktop-hosted space burns without flames; Burn at 250 ms plays for about half a second, catching slowly and then racing to the end; un-burning starts fast and settles; every other effect looks and times as before; no flame pixel is left behind where a tongue was; at exit, two spaces of the same size burn along different edges; one space burns differently each time it is hidden; reversing mid-burn still un-burns along the same edge. After Burn's paint was trimmed to the cells each frame reaches (2026-11-15): a burn still looks as it did, with its char, scorch, and flame band whole and no seam across the space. After Burn's cells, margins, and flames learned to scale with the display (2026-11-16): on a 150 % and a 200 % monitor, a burn looks as it does at 100 %, only bigger, with the edge as ragged relative to the space and the flames as tall relative to the title bar. After Burn switched to the coarse Dijkstra fire-spread field (2026-11-18): the bottom catches unevenly; the fire runs up in fingers; on a large space, a hole or two opens in the middle and joins the main front; the glowing edge is a similarly thin line on small and large spaces; Detail still coarsens it; startup and exit with many spaces do not stutter. |
 | U3 (v0.3) (part script) (D11) | Space menu and tray menu list Undo and Redo at the top, greyed when empty and named for the top action ("Undo Move space", "Redo Move space"); moving, resizing, reordering, sorting, fitting, locking, folding, renaming, creating, and deleting an empty space each undo and redo from both menus. |
 | U4 (v0.3) (script) (D11) | Ctrl+Z after a space move puts it back, Ctrl+Y moves it again; with no space current, Ctrl+Z on the desktop still undoes an Explorer rename. |
 | U5 (v0.3) (part script) (D11) | Drop a file into a space and undo (it is back where it was); delete a space with stored files, undo, then redo; rename an item and undo. |

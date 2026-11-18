@@ -7119,3 +7119,4 @@ takes an id listed here or used anywhere above
 - **G13.** Tab scrolls a long page to the focused control (platform).
 - **C23.** The "Folder moved" notice as plain text (platform; render).
 - **T27.** The field owns its bands (platform; refactor).
+- **T28.** Burn spreads like fire (platform).
