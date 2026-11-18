@@ -3,6 +3,7 @@
 //! past the space's frame, shaded on the CPU into premultiplied pixels for a
 //! layered overlay window. Pure, so the layout and the shading are tested.
 
+use std::cell::RefCell;
 use std::time::Instant;
 
 use super::burn::{self, FlameBase};
@@ -101,6 +102,11 @@ const FIRE_RAMP: [(f32, (f32, f32, f32)); 4] = [
 ];
 /// Fire's opacity per unit of heat: fully opaque from 1 / `FIRE_ALPHA_GAIN`.
 const FIRE_ALPHA_GAIN: f32 = 1.6;
+/// Quarter-resolution glow around flames: downsample block, separable box-blur
+/// radius in quarter cells (2 passes), and additive brightness gain.
+const GLOW_STEP: u32 = 4;
+const GLOW_RADIUS: usize = 3;
+const GLOW_GAIN: f32 = 0.5;
 
 /// One tongue of fire, in overlay pixels.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -217,6 +223,19 @@ impl Rows {
     }
 }
 
+#[derive(Default)]
+struct GlowScratch {
+    q0: Vec<[f32; 4]>,
+    q1: Vec<[f32; 4]>,
+    col_acc: Vec<[f32; 4]>,
+    q_px: Vec<u32>,
+    vert: Vec<u32>,
+}
+
+thread_local! {
+    static GLOW: RefCell<GlowScratch> = RefCell::new(GlowScratch::default());
+}
+
 /// Shades `tongues` at `time` (seconds) into `pixels`, `width` by `height`
 /// premultiplied BGRA (`0xAARRGGBB`). Overlapping fire adds channel by channel,
 /// capped at 255.
@@ -234,9 +253,40 @@ pub fn paint(
 ) {
     let started = Instant::now();
     drawn.clear(pixels, width, height);
+    let band_rows = tongue_row_bounds(tongues, height);
     let mut now = Rows::NONE;
-    for tongue in tongues {
-        now = now.union(paint_tongue(pixels, width, height, tongue, time));
+    if !band_rows.is_empty() && width > 0 {
+        GLOW.with(|cell| {
+            let mut scratch = cell.borrow_mut();
+            let (q_top, q_bottom, full_q_rows) = glow_quarter_bounds(band_rows, height);
+            let q_cols = width.div_ceil(GLOW_STEP) as usize;
+            let q_rows = (q_bottom - q_top) as usize;
+            let q_len = q_cols * q_rows;
+            scratch.q0.resize(q_len, [0.0; 4]);
+            scratch.q0.fill([0.0; 4]);
+
+            for tongue in tongues {
+                let rows = paint_tongue(
+                    pixels,
+                    width,
+                    height,
+                    tongue,
+                    time,
+                    Some((&mut scratch.q0, q_top, q_cols)),
+                );
+                now = now.union(rows);
+            }
+            if !now.is_empty() {
+                let glow_rows = apply_glow(
+                    pixels,
+                    width,
+                    height,
+                    (q_top, q_bottom, full_q_rows),
+                    &mut scratch,
+                );
+                now = now.union(glow_rows);
+            }
+        });
     }
     for (index, tongue) in tongues.iter().enumerate().step_by(EMBER_EVERY) {
         now = now.union(paint_ember(pixels, width, height, tongue, time, index));
@@ -249,8 +299,36 @@ pub fn paint(
     );
 }
 
-/// Shades one tongue, and returns the rows it reaches.
-fn paint_tongue(pixels: &mut [u32], width: u32, height: u32, tongue: &Tongue, time: f32) -> Rows {
+fn tongue_row_bounds(tongues: &[Tongue], height: u32) -> Rows {
+    let mut bounds = Rows::NONE;
+    for tongue in tongues {
+        let top = (tongue.y - tongue.height).floor().max(0.0) as u32;
+        let bottom = (tongue.y.ceil().max(0.0) as u32).min(height);
+        bounds = bounds.union(Rows { top, bottom });
+    }
+    bounds
+}
+
+fn glow_quarter_bounds(band_rows: Rows, height: u32) -> (u32, u32, usize) {
+    let full_q_rows = height.div_ceil(GLOW_STEP) as usize;
+    let expand = (GLOW_RADIUS * 2) as u32;
+    let q_src_top = band_rows.top / GLOW_STEP;
+    let q_src_bottom = band_rows.bottom.div_ceil(GLOW_STEP).min(full_q_rows as u32);
+    let q_top = q_src_top.saturating_sub(expand);
+    let q_bottom = (q_src_bottom + expand).min(full_q_rows as u32);
+    (q_top, q_bottom, full_q_rows)
+}
+
+/// Shades one tongue directly into `pixels` and optionally accumulates its raw
+/// pixel channels into the quarter-resolution grid `glow_acc` `(cells, q_top, q_cols)`.
+fn paint_tongue(
+    pixels: &mut [u32],
+    width: u32,
+    height: u32,
+    tongue: &Tongue,
+    time: f32,
+    mut glow_acc: Option<(&mut [[f32; 4]], u32, usize)>,
+) -> Rows {
     let left = (tongue.x - tongue.width).floor().max(0.0) as u32;
     let right = ((tongue.x + tongue.width).ceil() as u32).min(width);
     let top = (tongue.y - tongue.height).floor().max(0.0) as u32;
@@ -259,6 +337,8 @@ fn paint_tongue(pixels: &mut [u32], width: u32, height: u32, tongue: &Tongue, ti
     let inv_turb_w = 1.0 / (tongue.width * 0.6).max(0.5);
     let inv_turb_h = 1.0 / (tongue.height * 0.3).max(0.5);
     let scroll = time * RISE_PX_PER_S * tongue.scale;
+    let mut lit_top = u32::MAX;
+    let mut lit_bottom = 0u32;
     for py in top..bottom {
         // 0 at the foot, 1 at the tip.
         let up = (tongue.y - py as f32) / tongue.height;
@@ -283,6 +363,8 @@ fn paint_tongue(pixels: &mut [u32], width: u32, height: u32, tongue: &Tongue, ti
             .min(right as f32)
             .max(0.0)) as u32;
         let ny = (py as f32 + scroll) * inv_turb_h;
+        let row_offset = (py * width) as usize;
+        let mut row_hit = false;
         for px in first..last {
             let across = ((px as f32 + 0.5 - center).abs() / half).min(1.0);
             let n = noise::value_noise(px as f32 * inv_turb_w, ny, 0, tongue.seed);
@@ -290,11 +372,307 @@ fn paint_tongue(pixels: &mut [u32], width: u32, height: u32, tongue: &Tongue, ti
             if heat <= HEAT_CUTOFF {
                 continue;
             }
-            let pixel = &mut pixels[(py * width + px) as usize];
-            *pixel = add(*pixel, fire(heat));
+            let fire_px = fire(heat);
+            let pixel = &mut pixels[row_offset + px as usize];
+            *pixel = add(*pixel, fire_px);
+            if let Some((q, q_top, q_cols)) = glow_acc.as_mut() {
+                let qy = (py / GLOW_STEP - *q_top) as usize;
+                let slot = &mut q[qy * *q_cols + (px / GLOW_STEP) as usize];
+                slot[0] += ((fire_px >> 24) & 0xff) as f32;
+                slot[1] += ((fire_px >> 16) & 0xff) as f32;
+                slot[2] += ((fire_px >> 8) & 0xff) as f32;
+                slot[3] += (fire_px & 0xff) as f32;
+            }
+            row_hit = true;
+        }
+        if row_hit {
+            lit_top = lit_top.min(py);
+            lit_bottom = lit_bottom.max(py + 1);
         }
     }
-    Rows { top, bottom }
+    if lit_top >= lit_bottom {
+        Rows::NONE
+    } else {
+        Rows {
+            top: lit_top,
+            bottom: lit_bottom,
+        }
+    }
+}
+
+/// Blurs the accumulated flame light in `scratch.q0` (covering quarter rows
+/// `q_top..q_bottom`) with two separable radius-3 box passes and adds
+/// `glow * GLOW_GAIN` directly onto `pixels`.
+fn apply_glow(
+    pixels: &mut [u32],
+    width: u32,
+    height: u32,
+    (q_top, q_bottom, full_q_rows): (u32, u32, usize),
+    scratch: &mut GlowScratch,
+) -> Rows {
+    let q_cols = width.div_ceil(GLOW_STEP) as usize;
+    let q_rows = (q_bottom - q_top) as usize;
+    if q_cols == 0 || q_rows == 0 || full_q_rows == 0 {
+        return Rows::NONE;
+    }
+    let q_len = q_cols * q_rows;
+    scratch.q1.resize(q_len, [0.0; 4]);
+    scratch.col_acc.resize(q_cols, [0.0; 4]);
+    scratch.q_px.resize(q_len, 0);
+    scratch.vert.resize(q_cols, 0);
+
+    let inv_block = 1.0 / (GLOW_STEP * GLOW_STEP) as f32;
+    let mut any_src = false;
+    for cell in &mut scratch.q0 {
+        if cell[0] == 0.0 {
+            continue;
+        }
+        any_src = true;
+        cell[0] = (cell[0] * inv_block).min(255.0);
+        cell[1] = (cell[1] * inv_block).min(cell[0]);
+        cell[2] = (cell[2] * inv_block).min(cell[0]);
+        cell[3] = (cell[3] * inv_block).min(cell[0]);
+    }
+    if !any_src {
+        return Rows::NONE;
+    }
+
+    box_blur_2d(
+        &mut scratch.q0,
+        &mut scratch.q1,
+        &mut scratch.col_acc,
+        q_cols,
+        q_rows,
+    );
+    box_blur_2d(
+        &mut scratch.q0,
+        &mut scratch.q1,
+        &mut scratch.col_acc,
+        q_cols,
+        q_rows,
+    );
+
+    for (dst, src) in scratch.q_px.iter_mut().zip(scratch.q0.iter()) {
+        let a = (src[0] * GLOW_GAIN).round().clamp(0.0, 255.0);
+        if a < 1.0 {
+            *dst = 0;
+            continue;
+        }
+        let r = (src[1] * GLOW_GAIN).round().clamp(0.0, a) as u32;
+        let g = (src[2] * GLOW_GAIN).round().clamp(0.0, a) as u32;
+        let b = (src[3] * GLOW_GAIN).round().clamp(0.0, a) as u32;
+        *dst = ((a as u32) << 24) | (r << 16) | (g << 8) | b;
+    }
+
+    let out_top = (q_top * GLOW_STEP).saturating_sub(2);
+    let out_bottom = (q_bottom * GLOW_STEP + 2).min(height);
+    let mut lit_top = u32::MAX;
+    let mut lit_bottom = 0u32;
+
+    for py in out_top..out_bottom {
+        let fy = ((py as f32 + 0.5) * 0.25 - 0.5).clamp(0.0, (full_q_rows - 1) as f32);
+        let qy0 = fy.floor() as u32;
+        let qy1 = (qy0 + 1).min(full_q_rows as u32 - 1);
+        let wy = ((fy - qy0 as f32) * 256.0).round() as u32;
+
+        if !build_glow_vert_row(
+            &scratch.q_px,
+            &mut scratch.vert,
+            q_cols,
+            (q_top, q_bottom),
+            (qy0, qy1, wy),
+        ) {
+            continue;
+        }
+
+        let dst_start = py as usize * width as usize;
+        let dst_row = &mut pixels[dst_start..dst_start + width as usize];
+        if composite_glow_row(dst_row, &scratch.vert, q_cols) {
+            lit_top = lit_top.min(py);
+            lit_bottom = lit_bottom.max(py + 1);
+        }
+    }
+
+    if lit_top >= lit_bottom {
+        Rows::NONE
+    } else {
+        Rows {
+            top: lit_top,
+            bottom: lit_bottom,
+        }
+    }
+}
+
+fn box_blur_2d(
+    buf: &mut [[f32; 4]],
+    tmp: &mut [[f32; 4]],
+    col_acc: &mut [[f32; 4]],
+    cols: usize,
+    rows: usize,
+) {
+    let inv_w = 1.0 / (GLOW_RADIUS * 2 + 1) as f32;
+    for r in 0..rows {
+        let src_row = &buf[r * cols..(r + 1) * cols];
+        let dst_row = &mut tmp[r * cols..(r + 1) * cols];
+        let mut acc = [0.0f32; 4];
+        for &p in src_row.iter().take((GLOW_RADIUS + 1).min(cols)) {
+            acc[0] += p[0];
+            acc[1] += p[1];
+            acc[2] += p[2];
+            acc[3] += p[3];
+        }
+        for (c, dst) in dst_row.iter_mut().enumerate() {
+            *dst = [
+                acc[0] * inv_w,
+                acc[1] * inv_w,
+                acc[2] * inv_w,
+                acc[3] * inv_w,
+            ];
+            let sub = c.checked_sub(GLOW_RADIUS);
+            let add_idx = c + GLOW_RADIUS + 1;
+            if let Some(s) = sub {
+                let p = src_row[s];
+                acc[0] -= p[0];
+                acc[1] -= p[1];
+                acc[2] -= p[2];
+                acc[3] -= p[3];
+            }
+            if add_idx < cols {
+                let p = src_row[add_idx];
+                acc[0] += p[0];
+                acc[1] += p[1];
+                acc[2] += p[2];
+                acc[3] += p[3];
+            }
+        }
+    }
+
+    col_acc.fill([0.0; 4]);
+    for r in 0..=GLOW_RADIUS.min(rows.saturating_sub(1)) {
+        let row = &tmp[r * cols..(r + 1) * cols];
+        for (acc, p) in col_acc.iter_mut().zip(row.iter()) {
+            acc[0] += p[0];
+            acc[1] += p[1];
+            acc[2] += p[2];
+            acc[3] += p[3];
+        }
+    }
+    for r in 0..rows {
+        let dst_row = &mut buf[r * cols..(r + 1) * cols];
+        for (dst, acc) in dst_row.iter_mut().zip(col_acc.iter()) {
+            *dst = [
+                acc[0] * inv_w,
+                acc[1] * inv_w,
+                acc[2] * inv_w,
+                acc[3] * inv_w,
+            ];
+        }
+        if let Some(sub_r) = r.checked_sub(GLOW_RADIUS) {
+            let row = &tmp[sub_r * cols..(sub_r + 1) * cols];
+            for (acc, p) in col_acc.iter_mut().zip(row.iter()) {
+                acc[0] -= p[0];
+                acc[1] -= p[1];
+                acc[2] -= p[2];
+                acc[3] -= p[3];
+            }
+        }
+        let add_r = r + GLOW_RADIUS + 1;
+        if add_r < rows {
+            let row = &tmp[add_r * cols..(add_r + 1) * cols];
+            for (acc, p) in col_acc.iter_mut().zip(row.iter()) {
+                acc[0] += p[0];
+                acc[1] += p[1];
+                acc[2] += p[2];
+                acc[3] += p[3];
+            }
+        }
+    }
+}
+
+fn build_glow_vert_row(
+    q_px: &[u32],
+    vert: &mut [u32],
+    q_cols: usize,
+    (q_top, q_bottom): (u32, u32),
+    (qy0, qy1, wy): (u32, u32, u32),
+) -> bool {
+    let row0 = (qy0 >= q_top && qy0 < q_bottom)
+        .then(|| &q_px[(qy0 - q_top) as usize * q_cols..(qy0 - q_top + 1) as usize * q_cols]);
+    let row1 = (qy1 >= q_top && qy1 < q_bottom)
+        .then(|| &q_px[(qy1 - q_top) as usize * q_cols..(qy1 - q_top + 1) as usize * q_cols]);
+    let mut any = 0u32;
+    match (row0, row1) {
+        (Some(r0), Some(r1)) => {
+            for (dst, (&a, &b)) in vert.iter_mut().zip(r0.iter().zip(r1.iter())) {
+                let v = if (a | b) == 0 { 0 } else { mix_swar(a, b, wy) };
+                *dst = v;
+                any |= v;
+            }
+        }
+        (Some(r0), None) => {
+            for (dst, &a) in vert.iter_mut().zip(r0.iter()) {
+                let v = if a == 0 { 0 } else { mix_swar(a, 0, wy) };
+                *dst = v;
+                any |= v;
+            }
+        }
+        (None, Some(r1)) => {
+            for (dst, &b) in vert.iter_mut().zip(r1.iter()) {
+                let v = if b == 0 { 0 } else { mix_swar(0, b, wy) };
+                *dst = v;
+                any |= v;
+            }
+        }
+        (None, None) => {
+            vert.fill(0);
+        }
+    }
+    any != 0
+}
+
+fn composite_glow_row(dst_row: &mut [u32], vert: &[u32], q_cols: usize) -> bool {
+    const WX: [u32; 4] = [32, 96, 160, 224];
+    let width = dst_row.len();
+    let max_qx = q_cols.saturating_sub(1);
+    let mut row_hit = false;
+
+    let lead = width.min(2);
+    if lead > 0 {
+        let v0 = vert[0];
+        if v0 != 0 {
+            row_hit = true;
+            for dst in dst_row.iter_mut().take(lead) {
+                *dst = add(*dst, v0);
+            }
+        }
+    }
+
+    let mut px = 2usize;
+    let mut qx = 0usize;
+    while px < width {
+        let end = (px + 4).min(width);
+        let left = vert[qx];
+        let right = vert[(qx + 1).min(max_qx)];
+        if (left | right) != 0 {
+            row_hit = true;
+            for (slot, i) in (px..end).enumerate() {
+                let glow = mix_swar(left, right, WX[slot]);
+                dst_row[i] = add(dst_row[i], glow);
+            }
+        }
+        px += 4;
+        qx = (qx + 1).min(max_qx);
+    }
+    row_hit
+}
+
+#[inline(always)]
+fn mix_swar(a: u32, b: u32, w: u32) -> u32 {
+    const MASK: u32 = 0x00FF_00FF;
+    let inv = 256 - w;
+    let rb = ((((a & MASK) * inv) + ((b & MASK) * w)) >> 8) & MASK;
+    let ag = (((((a >> 8) & MASK) * inv) + (((b >> 8) & MASK) * w)) >> 8) & MASK;
+    rb | (ag << 8)
 }
 
 /// A spark drifting up from a tongue, fading as it rises. Returns the rows
@@ -446,7 +824,7 @@ mod tests {
 
     #[test]
     fn a_tongue_is_bright_at_its_foot_and_nothing_elsewhere() {
-        let (width, height) = (120, 120);
+        let (width, height) = (120, 140);
         let mut pixels = vec![7; (width * height) as usize];
         let tongue = Tongue {
             x: 60.0,
@@ -464,7 +842,11 @@ mod tests {
         let foot_alpha = (95..100).map(|y| at(60, y) >> 24).max().unwrap_or(0);
         assert!(foot_alpha > 200, "the foot burns");
         assert_eq!(at(5, 5), 0, "far away stays clear");
-        assert_eq!(at(60, 110), 0, "nothing below the foot");
+        assert!(
+            (at(60, 105) >> 24) > (at(60, 114) >> 24),
+            "glow fades away below the foot"
+        );
+        assert_eq!(at(60, 130), 0, "nothing past the glow below the foot");
         for pixel in pixels {
             let alpha = pixel >> 24;
             for shift in [0, 8, 16] {
@@ -669,7 +1051,7 @@ mod tests {
         let mut drawn = Rows::ALL;
         let tongue = Tongue {
             x: 60.0,
-            y: 100.0,
+            y: 80.0,
             height: 30.0,
             width: 12.0,
             heat: 1.0,
@@ -714,5 +1096,102 @@ mod tests {
         assert_eq!(pixels, [1, 1, 1, 0, 0, 0]);
         Rows::ALL.clear(&mut pixels, 3, 2);
         assert_eq!(pixels, [0; 6]);
+    }
+
+    #[test]
+    fn empty_buffer_produces_no_glow() {
+        let (width, height) = (64, 64);
+        let mut pixels = vec![0u32; (width * height) as usize];
+        let (q_top, q_bottom, full_q_rows) = glow_quarter_bounds(Rows::new(16, 24), height);
+        let q_cols = width.div_ceil(GLOW_STEP) as usize;
+        let mut scratch = GlowScratch {
+            q0: vec![[0.0; 4]; q_cols * (q_bottom - q_top) as usize],
+            ..GlowScratch::default()
+        };
+        let rows = apply_glow(
+            &mut pixels,
+            width,
+            height,
+            (q_top, q_bottom, full_q_rows),
+            &mut scratch,
+        );
+        assert_eq!(rows, Rows::NONE);
+        assert!(pixels.iter().all(|&px| px == 0));
+
+        let mut drawn = Rows::NONE;
+        paint(&mut pixels, width, height, &[], 0.0, &mut drawn);
+        assert_eq!(drawn, Rows::NONE);
+        assert!(pixels.iter().all(|&px| px == 0));
+    }
+
+    #[test]
+    fn bright_spot_glows_evenly_and_keeps_pixels_premultiplied() {
+        let (width, height) = (64, 64);
+        let mut pixels = vec![0u32; (width * height) as usize];
+        let (q_top, q_bottom, full_q_rows) = glow_quarter_bounds(Rows::new(28, 32), height);
+        let q_cols = width.div_ceil(GLOW_STEP) as usize;
+        let mut scratch = GlowScratch {
+            q0: vec![[0.0; 4]; q_cols * (q_bottom - q_top) as usize],
+            ..GlowScratch::default()
+        };
+        let c = fire(1.0);
+        let qy = (7 - q_top) as usize;
+        scratch.q0[qy * q_cols + 7] = [
+            ((c >> 24) & 0xff) as f32 * 16.0,
+            ((c >> 16) & 0xff) as f32 * 16.0,
+            ((c >> 8) & 0xff) as f32 * 16.0,
+            (c & 0xff) as f32 * 16.0,
+        ];
+        let rows = apply_glow(
+            &mut pixels,
+            width,
+            height,
+            (q_top, q_bottom, full_q_rows),
+            &mut scratch,
+        );
+        assert!(!rows.is_empty());
+
+        let at = |x: u32, y: u32| pixels[(y * width + x) as usize];
+        let left = at(22, 29) >> 24;
+        let right = at(37, 29) >> 24;
+        let above = at(29, 22) >> 24;
+        let below = at(29, 37) >> 24;
+        assert!(left > 0 && right > 0 && above > 0 && below > 0);
+        assert_eq!(left, right);
+        assert_eq!(above, below);
+        assert_eq!(left, above);
+        assert_eq!(at(0, 0), 0);
+        assert_eq!(at(63, 63), 0);
+        assert!(pixels.iter().all(|&px| {
+            let a = px >> 24;
+            ((px >> 16) & 0xff) <= a && ((px >> 8) & 0xff) <= a && (px & 0xff) <= a
+        }));
+    }
+
+    #[test]
+    fn flame_glow_warms_neighbours_outside_tongue_outline() {
+        let (width, height) = (100, 100);
+        let mut pixels = vec![0u32; (width * height) as usize];
+        let mut drawn = Rows::ALL;
+        let tongue = Tongue {
+            x: 50.0,
+            y: 60.0,
+            height: 30.0,
+            width: 16.0,
+            heat: 1.0,
+            phase: 0.0,
+            scale: 1.0,
+            seed: 1,
+        };
+        paint(&mut pixels, width, height, &[tongue], 0.2, &mut drawn);
+        let below_foot = pixels[(64 * width + 50) as usize];
+        assert!(
+            (below_foot >> 24) > 0,
+            "halo should reach below the tongue's foot"
+        );
+        assert!(pixels.iter().all(|&px| {
+            let a = px >> 24;
+            ((px >> 16) & 0xff) <= a && ((px >> 8) & 0xff) <= a && (px & 0xff) <= a
+        }));
     }
 }

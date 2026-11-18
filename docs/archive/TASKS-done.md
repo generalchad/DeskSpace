@@ -7124,3 +7124,4 @@ takes an id listed here or used anywhere above
 - **T30.** A glow that lives (platform).
 - **T31.** Ash (platform).
 - **T44.** Burn's smoke (platform).
+- **T46.** A glow around the flames, on the CPU (platform).
