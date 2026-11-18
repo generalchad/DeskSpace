@@ -56,6 +56,9 @@ Notable changes to DeskSpace, newest first. The format follows
 
 ### Fixed
 
+- Several spaces burning at once burn all the way. The spaces used to freeze
+  partway while their flames kept rising, and other effects could stall the
+  same way when many spaces played them together.
 - A space's items show and sort by their files' current size and dates
   after a restart. DeskSpace kept what a file had when it was added, so a
   file edited since sorted, grouped, and showed in Details by its old size

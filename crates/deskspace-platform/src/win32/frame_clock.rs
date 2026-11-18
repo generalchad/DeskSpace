@@ -9,6 +9,16 @@
 //! any window animates, and posts each one a frame right after it, so every
 //! refresh gets exactly one.
 //! https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/nf-dwmapi-dwmflush
+//!
+//! Frames go out in rounds: a new round only once every window has finished
+//! the last. A composition space's drawing reaches the screen only when the
+//! compositor commits, and it commits only when the UI thread's queue runs
+//! dry. Each window used to get its next frame as soon as it began handling
+//! the last, so when a round took longer than a refresh (several spaces
+//! burning at once) a frame always waited in the queue: the spaces froze
+//! mid-burn while their flames, on layered windows that need no commit, rose
+//! on (seen 2026-11-18). Waiting for the whole round leaves the queue empty
+//! until the next composition, every round.
 
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::thread;
@@ -82,8 +92,10 @@ impl Drop for Subscription {
     }
 }
 
-/// Marks `window`'s frame as handled, so the next composition sends another.
-pub(crate) fn delivered(window: HWND) {
+/// Handles `window`'s frame with `draw`, and only then marks it handled, so
+/// the next round waits for the work and not just its start.
+pub(crate) fn handle(window: HWND, draw: impl FnOnce()) {
+    draw();
     clock().windows.delivered(WindowKey::of(window));
 }
 
@@ -115,7 +127,7 @@ fn run() {
             let posted =
                 unsafe { PostMessageW(Some(key.window()), messages::FRAME, WPARAM(0), LPARAM(0)) };
             if posted.is_err() {
-                clock().windows.remove(key);
+                clock().windows.undeliverable(key);
             }
         }
     }
@@ -151,9 +163,9 @@ fn rest_after(waited: bool, elapsed: Duration) -> Option<Duration> {
 }
 
 /// The animating windows, each with how many subscriptions it holds and
-/// whether a frame sent to it is still waiting in its queue. A window whose
-/// UI thread is busy gets one frame, not a backlog of them, however many
-/// subscriptions it has.
+/// whether a frame sent to it is still unhandled. A window gets one frame per
+/// round, not a backlog of them, however many subscriptions it has, and no
+/// round starts while any frame of the last is unhandled.
 #[derive(Debug, Default)]
 struct Subscribers {
     entries: Vec<Entry>,
@@ -203,18 +215,28 @@ impl Subscribers {
         }
     }
 
+    /// A frame could not be posted to `window`, which is gone: it no longer
+    /// holds up the round, and drops a subscription.
+    fn undeliverable(&mut self, window: WindowKey) {
+        self.delivered(window);
+        self.remove(window);
+    }
+
     fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
-    /// Fills `due` with the windows owed a frame, and marks them waiting.
+    /// Fills `due` with the next round, every window, and marks them
+    /// waiting; or leaves it empty while any window has not finished the
+    /// last round.
     fn take_due(&mut self, due: &mut Vec<WindowKey>) {
         due.clear();
+        if self.entries.iter().any(|entry| entry.waiting) {
+            return;
+        }
         for entry in &mut self.entries {
-            if !entry.waiting {
-                entry.waiting = true;
-                due.push(entry.window);
-            }
+            entry.waiting = true;
+            due.push(entry.window);
         }
     }
 
@@ -242,16 +264,41 @@ mod tests {
     }
 
     #[test]
-    fn a_busy_window_gets_one_frame_not_a_backlog() {
+    fn a_round_waits_for_every_window_to_finish_the_last() {
         let mut windows = Subscribers::new();
         windows.add(ONE);
         windows.add(TWO);
         assert_eq!(due(&mut windows), [ONE, TWO]);
         windows.delivered(TWO);
-        assert_eq!(due(&mut windows), [TWO], "1 has not handled its frame yet");
+        assert!(
+            due(&mut windows).is_empty(),
+            "1 has not handled its frame yet, so the queue may not run dry"
+        );
         windows.delivered(ONE);
-        windows.delivered(TWO);
         assert_eq!(due(&mut windows), [ONE, TWO]);
+    }
+
+    #[test]
+    fn a_window_joining_mid_round_waits_for_the_next() {
+        let mut windows = Subscribers::new();
+        windows.add(ONE);
+        assert_eq!(due(&mut windows), [ONE]);
+        windows.add(TWO);
+        assert!(due(&mut windows).is_empty());
+        windows.delivered(ONE);
+        assert_eq!(due(&mut windows), [ONE, TWO]);
+    }
+
+    #[test]
+    fn a_window_that_cannot_be_posted_to_does_not_hold_up_the_round() {
+        let mut windows = Subscribers::new();
+        windows.add(ONE);
+        windows.add(ONE);
+        windows.add(TWO);
+        assert_eq!(due(&mut windows), [ONE, TWO]);
+        windows.undeliverable(ONE);
+        windows.delivered(TWO);
+        assert_eq!(due(&mut windows), [ONE, TWO], "1 kept a subscription");
     }
 
     #[test]

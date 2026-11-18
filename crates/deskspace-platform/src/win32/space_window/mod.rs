@@ -604,9 +604,10 @@ unsafe extern "system" fn wndproc(
             }
             WM_ERASEBKGND => LRESULT(1),
             messages::FRAME => {
-                frame_clock::delivered(window);
-                space_animation::on_frame(window);
-                highlight::on_frame(window);
+                frame_clock::handle(window, || {
+                    space_animation::on_frame(window);
+                    highlight::on_frame(window);
+                });
                 LRESULT(0)
             }
             WM_TIMER if wparam.0 == REPAINT_TIMER_ID => {

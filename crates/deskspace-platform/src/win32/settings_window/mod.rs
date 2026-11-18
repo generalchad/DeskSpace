@@ -673,8 +673,7 @@ unsafe extern "system" fn wndproc(
                 LRESULT(0)
             }
             messages::FRAME => {
-                frame_clock::delivered(window);
-                title::on_title_frame(window);
+                frame_clock::handle(window, || title::on_title_frame(window));
                 LRESULT(0)
             }
             WM_CLOSE => {
