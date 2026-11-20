@@ -1798,23 +1798,6 @@ These are in the order we would take them. Each lands alone.
     changes, and renaming the browsed folder from Explorer still takes the lens
     back as W42's row says.
 
-- [ ] **P39. Catch a re-entrant `with_state` borrow at run time (fix; unsafe).**
-  `window_state::with_state` hands out a `&mut T` made from a raw pointer. Only its
-  `# Safety` contract stops a second borrow of the same window while the first is
-  live, and a slip there is undefined behavior rather than a logged bug.
-  `with_runtime` catches the same mistake for the runtime with a `RefCell` and logs
-  it, but window state has no such net. R19 designs the lasting fix (a handle); this
-  is the cheap net until then, and R19 can keep it.
-  - A thread-local list of the windows borrowed now. `with_state` on a window already
-    borrowed logs at `error` and returns `None`, as `with_runtime` does. `free` on a
-    borrowed window logs and leaks the box instead of freeing it, so a slip leaks
-    memory rather than use it after it is freed.
-  - No allocation per call on the paint path: a list that stops growing after its
-    first use, or a small fixed array.
-  - Tests need a real window: create a message-only one (`HWND_MESSAGE`) in the test,
-    or stop and ask. A nested `with_state` on one window returns `None` and leaves
-    the outer borrow working. Nested borrows of two different windows both work.
-
 - [ ] **P45. Split the color picker's window procedure (refactor; unsafe).**
   `wndproc` in `win32/color_picker/mod.rs` (198 lines) handles its 17 messages inline
   in one `unsafe` block. SonarCloud rates it the most complex function in the code
