@@ -364,12 +364,23 @@ impl DrawingSurface {
 
     fn end(&mut self) -> windows::core::Result<()> {
         // SAFETY: closes the draw `begin` opened, popping its clip first.
+        // `ICompositionDrawingSurfaceInterop::EndDraw` can return `Ok(())`
+        // even when Direct2D rejected commands in the batch (for example
+        // `D2DERR_WRONG_FACTORY`), leaving the surface unchanged without
+        // reporting an error. Flushing first surfaces that error while still
+        // closing the surface draw.
+        // https://learn.microsoft.com/en-us/windows/win32/api/d2d1/nf-d2d1-id2d1rendertarget-flush
         unsafe {
-            if let Some(context) = self.drawing.take() {
-                context.SetTransform(&Matrix3x2::identity());
-                context.PopAxisAlignedClip();
-            }
-            self.surface.EndDraw()
+            let flushed = match self.drawing.take() {
+                Some(context) => {
+                    context.SetTransform(&Matrix3x2::identity());
+                    context.PopAxisAlignedClip();
+                    context.Flush(None, None)
+                }
+                None => Ok(()),
+            };
+            let ended = self.surface.EndDraw();
+            flushed.and(ended)
         }
     }
 }

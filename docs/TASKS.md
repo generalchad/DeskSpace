@@ -1816,22 +1816,6 @@ These are in the order we would take them. Each lands alone.
     field, type a hex value, use the arrows and Esc, and sample from the screen with
     a right-click. All behave as before.
 
-- [ ] **P51. Report a composition draw Direct2D refused (fix; render).** After the
-  v0.3.0 tag. P49 hid for days because a composition surface's
-  `ICompositionDrawingSurfaceInterop::EndDraw` returns success even when Direct2D
-  discarded the draw's commands (`D2DERR_WRONG_FACTORY` there), so `paint` logged
-  nothing and the window kept an old frame.
-  - In `DrawingSurface::end` (`render/d2d/canvas.rs`), call `Flush` on the context
-    after popping the clip and before the surface's `EndDraw`, and return its error,
-    so `Painter::render` sees it: a lost device is recreated as now, and anything
-    else is logged as "space paint failed". Still call `EndDraw` when `Flush` fails.
-  - Tests: a draw that uses a stroke style from another factory (P49's test shows
-    how to make one) returns an error from `Painter::draw` on a surface canvas; or,
-    if a test cannot make a composition surface, stop and ask.
-  - Done when: the gates pass. **[needs human]** check: spaces still draw, and a
-    `-v` log shows no new errors over a session of clicks, folds, and settings
-    changes.
-
 - [ ] **P53. Settings shows another scope's pages after a scope click (fix;
   settings window).** Found 2026-11-15 (maintainer), seen once.
   - Seen: with a lens's pages showing, a single click on Global in the
@@ -2308,6 +2292,7 @@ that has it.
 | P13d (item facts) | With `./scripts/dev.ps1 -Release -Verbosity 1` on a scratch config with a few hundred items in normal spaces, some on a slow disk or a network share: the spaces appear, take clicks, and scroll with no stall while the facts are read, and the log shows one "read a space's items again" line per space, after "startup: icon worker idle". Edit a file a space lists while DeskSpace is closed: after the start, Details shows its new size and date, and a space sorted by Size with Keep sorted on has moved it to its new place. An item saved before Date created was recorded sorts by its real date under Sort by ▸ Date created. Right after the start, move a space and press Ctrl+Z: the move is undone, with no "can't undo" message. A lens behaves as before. Checked without a screen on 2026-11-16: a start rewrote a scratch config's two wrong sizes and dates with the files' own, and the next start wrote nothing. |
 | New shortcuts (no replace) | A shortcut is now written under a temporary name and renamed, so check each way of making one still works, on a normal space and on a lens over a throwaway folder: New shortcut ▸ From installed apps… (a desktop app and a Store app), Custom shortcut… to a program and to a web address, Paste shortcut, a Start-menu app dragged onto the space, and a `.lnk` dragged with Alt held. Each shortcut appears once under its own name, shows its app's icon, and opens its target; a second one of the same name is "name (2)"; Ctrl+Z removes it. In the lens's folder in Explorer, no file starting `~deskspace-` is left, and the lens never lists one, even for a moment. |
 | Offline items (D3) | On a scratch config: Shift-drop a file from a USB stick, and one from a network share, onto a normal space, and drop a file from the desktop onto it. Exit, unplug the stick, disconnect the share, delete the stored file from the store folder in Explorer, and start again. The spaces appear at once, with no stall; the two offline items stay, with a generic icon, and the deleted file's item disappears a moment after the space shows, with the space re-fitting as it does after a delete. Plug the stick back in and restart: its item has its icon again. With the stick out, delete another item of that space from its menu: the offline items still stay. Double-click an offline item: Windows reports that it cannot find it, and nothing else happens. Checked without a screen on 2026-11-16: a start on a scratch config kept an item on an unmounted drive letter, removed one whose file was deleted, and refreshed the third. |
+| P51 (composition flush) | Windows 11 with Transparency effects on: spaces still draw as before, and a `-v` log shows no new "space paint failed" or Direct2D errors over a session of clicks, folds, animations, and settings changes. |
 
 ## Found while working
 

@@ -671,3 +671,206 @@ pub(crate) struct PaintFrame {
 pub(crate) struct BorderStroke {
     pub width: f32,
 }
+
+#[cfg(test)]
+mod tests {
+    use windows::Foundation::Size;
+    use windows::Graphics::DirectX::{DirectXAlphaMode, DirectXPixelFormat};
+    use windows::UI::Composition::Compositor;
+    use windows::Win32::System::WinRT::Composition::ICompositorInterop;
+    use windows::Win32::System::WinRT::{
+        CreateDispatcherQueueController, DQTAT_COM_STA, DQTYPE_THREAD_CURRENT,
+        DispatcherQueueOptions, RO_INIT_SINGLETHREADED, RoInitialize, RoUninitialize,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CreateWindowExW, DestroyWindow, HWND_MESSAGE, WINDOW_EX_STYLE, WINDOW_STYLE,
+    };
+    use windows::core::Interface;
+
+    use super::*;
+    use crate::render::ItemMetrics;
+    use crate::render::scene::{DropInto, ItemLayout};
+
+    /// `D2DERR_WRONG_FACTORY`: an object from another Direct2D factory was
+    /// passed to this target.
+    /// https://learn.microsoft.com/en-us/windows/win32/direct2d/direct2d-error-codes
+    const D2DERR_WRONG_FACTORY: HRESULT = HRESULT(0x8899_0012_u32 as i32);
+
+    struct TestWindow(HWND);
+
+    impl Drop for TestWindow {
+        fn drop(&mut self) {
+            // SAFETY: `self.0` was created on this thread and is destroyed once.
+            let _ = unsafe { DestroyWindow(self.0) };
+        }
+    }
+
+    fn focused_item_scene() -> PreparedScene {
+        let scene = SpaceScene {
+            chrome: true,
+            title: "Test".into(),
+            title_keeps_end: false,
+            title_icon: None,
+            back_button: None,
+            title_height: 28,
+            tint: Color::rgba(32, 32, 32, 180),
+            title_fill: Color::rgba(32, 32, 32, 200),
+            title_text: Color::rgb(255, 255, 255),
+            item_text: Color::rgb(255, 255, 255),
+            hover_fill: Color::rgba(255, 255, 255, 30),
+            selected_fill: Color::rgba(255, 255, 255, 50),
+            marquee_color: Color::rgb(0, 120, 212),
+            show_marquee_border: true,
+            check_fill: Color::rgb(0, 120, 212),
+            border: Color::TRANSPARENT,
+            text_shadow: None,
+            label_lines: 1,
+            label_size: 100,
+            locked: false,
+            folded: false,
+            highlight: false,
+            highlight_fades: false,
+            drop_into: DropInto::Space,
+            placeholder: None,
+            notice: None,
+            focused_item: Some(1),
+            details: None,
+            status: None,
+            editing: None,
+            editing_item: None,
+            edit: EditColors {
+                fill: Color::TRANSPARENT,
+                text: Color::TRANSPARENT,
+                selection: Color::TRANSPARENT,
+                selection_text: Color::TRANSPARENT,
+                border: Color::TRANSPARENT,
+            },
+            caret_visible: true,
+            metrics: ItemMetrics::for_scale(1.0),
+            item_layout: ItemLayout::Grid,
+            items: vec![ItemVisual {
+                id: 1,
+                rect: Rect::new(8, 36, 74, 62),
+                label: "Item".into(),
+                icon: None,
+                state: ItemState::Selected,
+                hovered: false,
+                checked: false,
+                cut: false,
+                label_color: None,
+                cells: Vec::new(),
+            }],
+            group_headers: Vec::new(),
+            show_check_boxes: false,
+            check_boxes_persistent: false,
+            marquee: None,
+            scroll_thumb: None,
+            scroll_thumb_x: None,
+        };
+        PreparedScene::new(scene)
+    }
+
+    #[test]
+    fn surface_draw_reports_a_wrong_factory_stroke_error() {
+        std::thread::spawn(|| {
+            // SAFETY: initializes WinRT STA on this fresh test thread; balanced
+            // with `RoUninitialize` below if it succeeded.
+            let winrt_init = unsafe { RoInitialize(RO_INIT_SINGLETHREADED) };
+            // SAFETY: called on this WinRT STA thread with a valid options struct.
+            let queue = unsafe {
+                CreateDispatcherQueueController(DispatcherQueueOptions {
+                    dwSize: std::mem::size_of::<DispatcherQueueOptions>() as u32,
+                    threadType: DQTYPE_THREAD_CURRENT,
+                    apartmentType: DQTAT_COM_STA,
+                })
+            }
+            .expect("dispatcher queue");
+            let compositor = Compositor::new().expect("compositor");
+            let device = create_device().expect("d2d device");
+            let interop: ICompositorInterop = compositor.cast().expect("compositor interop");
+            // SAFETY: `compositor` is live and `device` came from this thread's factory.
+            let comp_graphics =
+                unsafe { interop.CreateGraphicsDevice(&device) }.expect("composition graphics");
+            drop(device);
+            let content = comp_graphics
+                .CreateDrawingSurface(
+                    Size {
+                        Width: 1.0,
+                        Height: 1.0,
+                    },
+                    DirectXPixelFormat::B8G8R8A8UIntNormalized,
+                    DirectXAlphaMode::Premultiplied,
+                )
+                .expect("content surface");
+            let blur_mask = comp_graphics
+                .CreateDrawingSurface(
+                    Size {
+                        Width: 1.0,
+                        Height: 1.0,
+                    },
+                    DirectXPixelFormat::B8G8R8A8UIntNormalized,
+                    DirectXAlphaMode::Premultiplied,
+                )
+                .expect("blur mask surface");
+            // SAFETY: message-only window of the system "Static" class on this thread.
+            let hwnd = unsafe {
+                CreateWindowExW(
+                    WINDOW_EX_STYLE(0),
+                    w!("Static"),
+                    w!(""),
+                    WINDOW_STYLE(0),
+                    0,
+                    0,
+                    160,
+                    120,
+                    Some(HWND_MESSAGE),
+                    None,
+                    None,
+                    None,
+                )
+            }
+            .expect("message-only test window");
+            let window = TestWindow(hwnd);
+            let prepared = focused_item_scene();
+            let frame = PaintFrame {
+                opaque: false,
+                radius: 8,
+                outline_radius: 8.0,
+                border: None,
+                highlight: 0.0,
+            };
+            let mut painter =
+                Painter::on_surface(&content, &blur_mask, &comp_graphics).expect("surface painter");
+            let first = painter.draw(window.0, &prepared, frame, None);
+            // Recreate the thread's factories so `focus_stroke` belongs to a
+            // different factory than the composition graphics device's.
+            release_graphics();
+            let second = painter.draw(window.0, &prepared, frame, None);
+
+            drop(painter);
+            drop(content);
+            drop(blur_mask);
+            drop(comp_graphics);
+            drop(compositor);
+            drop(queue);
+            drop(window);
+            release_graphics();
+            if winrt_init.is_ok() {
+                // SAFETY: balances the successful `RoInitialize` above.
+                unsafe { RoUninitialize() };
+            }
+
+            assert!(first.is_ok(), "matching factory draw failed: {first:?}");
+            assert!(
+                matches!(
+                    second,
+                    Err(PlatformError::Win32(ref err)) if err.code() == D2DERR_WRONG_FACTORY
+                ),
+                "expected D2DERR_WRONG_FACTORY, got {second:?}"
+            );
+            assert!(!is_device_lost(D2DERR_WRONG_FACTORY));
+        })
+        .join()
+        .unwrap();
+    }
+}

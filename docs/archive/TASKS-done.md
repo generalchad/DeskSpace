@@ -7131,3 +7131,4 @@ takes an id listed here or used anywhere above
 - **P15.** Scroll Details sideways.
 - **P16b.** `Ui::measure_label_widths`, over DirectWrite.
 - **P39.** Catch a re-entrant `with_state` borrow at run time (fix; unsafe).
+- **P51.** Report a composition draw Direct2D refused (fix; render).

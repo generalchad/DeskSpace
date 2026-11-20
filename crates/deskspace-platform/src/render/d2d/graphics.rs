@@ -79,7 +79,7 @@ pub(super) fn graphics() -> Result<Rc<Graphics>, PlatformError> {
 /// and each window's render target, were made from this thread's Direct2D
 /// factory when they were first needed. A stroke style from a new factory
 /// made every draw of a focused item fail with `D2DERR_WRONG_FACTORY`, and a
-/// composition surface reports nothing, so the window went on showing an old
+/// composition surface's EndDraw reported nothing on its own, so the window went on showing an old
 /// frame, another space's, or nothing. Every startup sets the type scale
 /// after composition has made its device, so it happened on every run.
 pub(crate) fn rebuild_text_formats() {
