@@ -60,11 +60,6 @@ const ALLOWED: &[Allowed] = &[
         why: "Drops, delete, prune, and the layer sync share one file path.",
         task: "K15",
     },
-    Allowed {
-        path: "deskspace-app/src/app/view.rs",
-        why: "Look resolution, refresh, reflow, and the layer cache share state.",
-        task: "K11",
-    },
 ];
 
 #[test]

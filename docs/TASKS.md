@@ -91,7 +91,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Saving, dispatching a `Command` | `deskspace-app/src/app/persist.rs` |
 | Undo and redo stack, applying entries | `deskspace-app/src/app/undo/` (`mod.rs` applying and restoring, `stack.rs` the stack and entries, `files.rs` reversing file changes) |
 | An `Effect` a pure decision returns, and `App::run` that carries it out (R17) | `deskspace-app/src/app/effect.rs` |
-| What a space looks like, refresh/re-flow, takeover | `deskspace-app/src/app/view.rs` |
+| What a space looks like, refresh/re-flow, takeover | `deskspace-app/src/app/view/` (`mod.rs`, `system_look.rs`, `cache.rs`, `look.rs`, `layer.rs`) |
 | Surface (space or desktop layer) lookups | `deskspace-app/src/app/hit.rs` |
 | Mouse, resize, hover | `deskspace-app/src/app/pointer/` (`mod.rs` gestures, `hover.rs` hover and cursor, `space_events.rs` the event entry) |
 | The mouse wheel: zoom, Details sideways, the view's axis | `deskspace-app/src/app/wheel.rs` |
@@ -100,7 +100,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Dragging a Details header or its dividers | `deskspace-app/src/app/columns.rs` |
 | Selection, arrow keys, type-to-select | `deskspace-app/src/app/selection.rs` |
 | Group names and which group an item is in (pure) | `deskspace-app/src/grouping.rs` |
-| A grouped space's display order | `deskspace-core/src/grouping.rs` (`Grouping`), read by `ViewLayout`; `App::sync_grouping` in `app/view.rs` keeps it current |
+| A grouped space's display order | `deskspace-core/src/grouping.rs` (`Grouping`), read by `ViewLayout`; `App::sync_grouping` in `app/view/mod.rs` keeps it current |
 | Inline rename | `deskspace-app/src/app/rename.rs` |
 | Drops, delete, prune | `deskspace-app/src/app/files.rs` |
 | A normal space's item facts, read again at startup | `deskspace-app/src/app/facts.rs` (asking and applying), `deskspace-platform/src/fact_jobs.rs` (the worker's batches), `IconCache::read_item_facts` in `win32/icons/` |
@@ -1418,19 +1418,6 @@ moves.
     neither, but ask a senior to review: a missed `pub(super)` that makes you
     reach for a wrapper is not a pure move any more. Stop and ask instead.
   - Done when: `mod.rs` is under about 500 lines and the K rules above hold.
-
-- [ ] **K11. Split `app/view.rs`.** 1,253 lines. Turn it into `app/view/mod.rs`
-  plus:
-  - `system_look.rs`: `SystemLook` and its `impl`.
-  - `cache.rs`: `ViewCache`, `CachedGrouping`, `StampHasher`, and
-    `grouping_stamp`, with their tests.
-  - `look.rs`: `Cells`, `LayoutScale`, and the `App` methods from `theme_for` to
-    `metrics_of` (the look, scale, and layout accessors), with their tests.
-  - `layer.rs`: `LayerState`, and the `App` methods from `refresh_shell_display`
-    to `refresh_desktop_layer` (the desktop layer and takeover), with their tests.
-  - `mod.rs` keeps `sync_windows*`, `view_for`, grouping, the refresh, restyle,
-    and reflow methods, the view changes, and `changed_in_place`.
-  - Done when: `mod.rs` is under about 600 lines and the K rules above hold.
 
 - [ ] **K12. Split `scene.rs`.** 1,163 lines. Turn it into `scene/mod.rs` plus:
   - `details.rs`: `DETAILS_CELL_PAD`, `DetailsCellText`, and the functions from
