@@ -14,6 +14,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::input::{MouseButton, SpaceEvent};
 use crate::ui::CursorShape;
+use crate::win32::press_trace;
 use crate::win32::system::{hiword, loword};
 
 use super::{is_hosted, space_event, with_state};
@@ -176,6 +177,13 @@ pub(super) unsafe fn on_button_down(window: HWND, message: u32, wparam: WPARAM, 
     let Modifiers { ctrl, shift } = modifiers(wparam);
     // SAFETY: `window` is a live space window.
     unsafe {
+        press_trace::log_press_from_elsewhere(
+            window,
+            POINT {
+                x: loword(lparam.0),
+                y: hiword(lparam.0),
+            },
+        );
         // Capture so the matching button-up arrives even if the cursor leaves
         // the window mid-drag.
         // https://learn.microsoft.com/en-us/windows/win32/inputdev/about-mouse-input#mouse-capture

@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::win32::file_op::OnCollision;
+use crate::win32::press_trace;
 
 impl Ui {
     /// Opens `path` with its default verb, as a double-click in Explorer does.
@@ -52,6 +53,7 @@ impl Ui {
     /// desktop layer. Blocks like `item_menu`, with the same id limit.
     pub fn desktop_menu(&mut self, entries: &[MenuEntry], at: Point) -> Option<ItemMenuChoice> {
         let owner = with_runtime(|runtime| runtime.controller)?;
+        press_trace::log_desktop_menu(at, desktop_layer_window());
         shell_items::track_desktop_menu(owner, entries, at)
     }
 

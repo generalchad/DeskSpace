@@ -7137,3 +7137,4 @@ takes an id listed here or used anywhere above
 - **K13.** Split `app/menus.rs`.
 - **K15.** Split `app/files.rs`.
 - **K10.** Split `win32/folder_watch.rs`.
+- **P55a.** Make a taskbar click that opens the desktop menu visible.

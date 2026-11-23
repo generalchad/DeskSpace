@@ -119,7 +119,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Controller window (tray, hotkeys, timers, `WM_APP` dispatch) | `deskspace-platform/src/win32/controller.rs` |
 | `WM_APP` message ids | `deskspace-platform/src/win32/messages.rs` |
 | Keys (spaces are never focused) | `deskspace-platform/src/win32/keyboard.rs` (`fn watched_key`), `win32/key_modes.rs` (the hook's flags), `win32/hook_thread.rs` (the thread the keyboard and mouse hooks run on) |
-| Space window procedure, DWM, shadow window | `deskspace-platform/src/win32/space_window/` (`mod.rs`, `zorder.rs`, `mouse.rs`, `frame.rs`, `paint.rs`), `dwm.rs`, `shadow_window.rs`, `render/shadow.rs` |
+| Space window procedure, DWM, shadow window | `deskspace-platform/src/win32/space_window/` (`mod.rs`, `zorder.rs`, `mouse.rs`, `frame.rs`, `paint.rs`), `dwm.rs`, `shadow_window.rs`, `render/shadow.rs`; `win32/press_trace.rs` logs where a press or the desktop menu's click came from |
 | An animation effect | `deskspace-core/src/animation.rs` (the tables), `deskspace-platform/src/render/transition.rs` (frame math), `render/d2d/` (drawing), `win32/space_animation.rs` (playing it on a window), `win32/overlay.rs` and `win32/layered_overlay.rs` (windows beside the space); the recipe is section T |
 | Drawing | `deskspace-platform/src/render/scene.rs`, `render/d2d/` (`mod.rs` the `Painter`, `chrome.rs` headers and the status bar, `effects.rs` an animation's resources, `prepared.rs` the `PreparedScene`, `drag_image.rs` the drag image) |
 | The zoom pop-up window and its layout | `deskspace-platform/src/win32/zoom_bar.rs`, `render/zoom_bar.rs`, `render/d2d/zoom_bar.rs` |
@@ -1797,29 +1797,27 @@ These are in the order we would take them. Each lands alone.
     layer spans the screen, so the point finds no item and opens the desktop
     menu, and that release frees the capture. `scripts/zorder.ps1`'s hit
     test ignores capture. What leaves a capture behind is not known yet.
-  - [ ] **P55a. Make it visible (log; platform).** No behavior change.
-    - `Ui::desktop_menu` logs one `debug` line: the point, the class of the
-      window `WindowFromPoint` finds there, whether a `Shell_TrayWnd` or
-      `Shell_SecondaryTrayWnd` contains the point, and the class of the
-      window just above the layer (`GetWindow`, `GW_HWNDPREV`).
-    - `on_button_down` logs a `debug` line when the window under the press
-      belongs to another process: that press came by capture.
-    - The "inside a taskbar" test is a pure `contains_any(point, rects)`,
-      with tests.
-    - Then the maintainer reproduces with `-Verbosity 1` and runs
-      `scripts/zorder.ps1` right after; the lines say which way in it was.
+  - Reproduce (maintainer): with `-Verbosity 1`, right-click the taskbar
+    until the desktop menu shows, and run `scripts/zorder.ps1` right after.
+    `win32/press_trace.rs` logs two `debug` lines. "opening the desktop
+    menu" names the window under the point, the taskbar holding it and
+    whether that taskbar is above the layer, and the window just above the
+    layer. "a press reached a surface from over another program's window"
+    says the press came through the capture, and `held_capture` whether the
+    surface still held one from an earlier press.
   - [ ] **P55b. A press is ours only when it is over us (fix; platform).**
-    After: P55a. Lands without waiting for the reproduction: the rule holds
-    whatever the cause. In `on_button_down`, when the window under the press
+    Lands without waiting for the reproduction: the rule holds whatever
+    the cause. In `on_button_down`, when the window under the press
     belongs to another process, release the capture and drop the press (no
     `MouseDown`). Every surface, spaces included. It compares processes, not
     windows, so a press on DeskSpace's own shadow or animation overlays
     still counts. The decision is a pure function with tests.
-  - [ ] **P55c. If the layer was above the taskbar.** After: P55a's
-    reproduction, and only if its lines show `WindowFromPoint` finding the
-    layer over a taskbar. Find what raised the layer from the window logged
-    above it, and stop it. If that is not clear, refuse to open the desktop
-    menu at a point inside a taskbar's rectangle (`contains_any`). If it
+  - [ ] **P55c. If the layer was above the taskbar.** After: the
+    reproduction, and only if its lines show a taskbar below the layer.
+    Find what raised the layer from the window logged above it, and stop
+    it. If that is not clear, refuse to open the desktop menu at a point
+    inside a taskbar's rectangle (`taskbar_under` in
+    `win32/press_trace.rs`). If it
     needs a design choice, bring the evidence to the maintainer. If the
     lines show capture instead and P55b fixed it, delete this part.
   - P55's check below goes with whichever part lands last.

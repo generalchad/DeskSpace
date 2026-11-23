@@ -43,6 +43,7 @@ mod messages;
 pub(crate) mod names;
 mod outside_click;
 mod overlay;
+mod press_trace;
 mod runtime;
 mod settings_window;
 mod shadow_window;
