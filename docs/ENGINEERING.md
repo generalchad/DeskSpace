@@ -93,7 +93,7 @@ Four rules come first, because the rest follow from them:
   instead of keeping them "just in case"; the compiler finds unused private
   items, and `crates/deskspace-app/tests/guards/dead_pub.rs` a library's unused
   `pub` ones. Keep pure logic (core,
-  `settings/`, `scene.rs`, helpers such as `next_in_direction`) apart from
+  `settings/`, `scene/`, helpers such as `next_in_direction`) apart from
   Win32 calls so it can be unit-tested. When code and docs disagree, fix the
   docs in the same commit.
 - **Extensible.** New behavior plugs into an extension point instead of a

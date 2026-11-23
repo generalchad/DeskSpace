@@ -74,7 +74,7 @@ platform, data-driven UI) are `ENGINEERING.md` section 3.
   global hotkeys.
 - `deskspace-app`: two binaries. `deskspace` (`main.rs`) holds the `clap` CLI
   (`cli.rs`), startup and seeding (`bootstrap.rs`), the `EventHandler`
-  (`App`, `app.rs`), model-to-scene conversion (`scene.rs`), the settings
+  (`App`, `app.rs`), model-to-scene conversion (`scene/`), the settings
   form and its mapping onto `Config` (`settings/`, pure), and the managed
   store for dropped files (`storage.rs`). `deskspace-watchdog`
   (`watchdog_main.rs`) is the takeover crash helper. `app.rs` keeps the `App`

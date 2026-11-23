@@ -110,7 +110,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Settings pages, fields, `field::` ids (pure) | `deskspace-app/src/settings/` (`mod.rs`, `ids.rs`, `tables.rs`, `pages.rs`, `apply.rs`, `session.rs`) |
 | Show/hide, desktop verb, start with Windows | `deskspace-app/src/app/visibility.rs` |
 | Update checks, downloads, automatic installs | `deskspace-app/src/app/update.rs`, `deskspace-update/src/lib.rs` |
-| Model → `SpaceScene` (pure) | `deskspace-app/src/scene.rs` |
+| Model → `SpaceScene` (pure) | `deskspace-app/src/scene/` (`mod.rs`, `details.rs`, `status.rs`, `chrome.rs`) |
 | Test fixtures that build the model through `Command`s | `deskspace-app/src/fixtures.rs` |
 | Managed store for dropped files | `deskspace-app/src/storage.rs` |
 | Events the platform raises | `deskspace-platform/src/input.rs` |
@@ -243,7 +243,7 @@ through `theme_for(id)`, `grid_for(id)`, and `palette_for(id)`, never
 
 1. `render/scene.rs`: a `SpaceScene` field with a `///` doc and a neutral
    default (copy `highlight`).
-2. `deskspace-app/src/scene.rs`: fill it in `space_scene` (and
+2. `deskspace-app/src/scene/mod.rs`: fill it in `space_scene` (and
    `desktop_layer_scene` if the layer needs it), with a scene test (copy
    `the_settings_highlight_reaches_the_scene`).
 3. `render/d2d/`: draw it in `Painter`'s paint path without allocating;
@@ -1418,23 +1418,6 @@ moves.
     neither, but ask a senior to review: a missed `pub(super)` that makes you
     reach for a wrapper is not a pure move any more. Stop and ask instead.
   - Done when: `mod.rs` is under about 500 lines and the K rules above hold.
-
-- [ ] **K12. Split `scene.rs`.** 1,163 lines. Turn it into `scene/mod.rs` plus:
-  - `details.rs`: `DETAILS_CELL_PAD`, `DetailsCellText`, and the functions from
-    `details_view` to `details_cells`, plus `details_scroll_thumb`, with their
-    tests.
-  - `status.rs`: the `STATUS_*` constants and the functions from `status_bar` to
-    `status_tip`, with their tests.
-  - `chrome.rs`: the `TITLE_ICON_*`, `BACK_BUTTON_*`, and `SCROLL_THUMB_*`
-    constants, `title_icon_rect` to `title_icon_request`, `title_tip`, and
-    `thumb_end_margin`, `scroll_thumb`, and `thumb_span`, with their tests.
-  - `mod.rs` keeps `SurfaceLook`, `ViewState`, the style functions, the space,
-    layer, and drag scenes, `group_headers`, `item_layout`, the cell and label
-    functions, and the text shadow helpers.
-  - Many tests build a whole scene and check one part of it. Those stay in
-    `mod.rs`; move only a test that calls a moved function directly.
-  - Collides with: P16c.
-  - Done when: `mod.rs` is under about 700 lines and the K rules above hold.
 
 - [ ] **K13. Split `app/menus.rs`.** 1,131 lines. Turn it into `app/menus/mod.rs`
   plus:

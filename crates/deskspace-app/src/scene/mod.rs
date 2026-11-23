@@ -1,45 +1,37 @@
+mod chrome;
+mod details;
+mod status;
+
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use deskspace_core::item::ItemKind;
-use deskspace_core::space::DEFAULT_TITLE_HEIGHT;
 use deskspace_core::theme::LABEL_SIZE_RANGE;
-use deskspace_core::view_layout::{ScrollAxis, ViewLayout, ViewMetrics};
+use deskspace_core::view_layout::{ViewLayout, ViewMetrics};
 use deskspace_core::{
     Backdrop, Color, DesktopLayer, GridSpec, Item, ItemId, LabelShadow, Palette, Point, Rect,
-    SortKey, SortRule, Space, SpaceView, Theme, ViewMode,
+    Space, SpaceView, Theme, ViewMode,
 };
 use deskspace_platform::{
-    DetailsColumnVisual, DetailsView, DropInto, GroupHeaderVisual, Icon, IconCache, ItemLayout,
-    ItemMetrics, ItemState, ItemVisual, ShadowStyle, SpaceScene, SpaceStyle, StatusBar,
-    StatusButtonVisual, TitleIcon, format_date, format_kb, type_name,
+    DropInto, GroupHeaderVisual, Icon, IconCache, ItemLayout, ItemMetrics, ItemState, ItemVisual,
+    ShadowStyle, SpaceScene, SpaceStyle, TitleIcon, format_date, format_kb, type_name,
 };
 
-use crate::settings::{NAME_MIN_WIDTH, STATUS_BUTTONS, VIEW_MODES, shown_details_columns};
+use chrome::{scroll_thumb, title_icon_request};
+use details::details_scroll_thumb;
+use status::status_bar;
 
-const SCROLL_THUMB_WIDTH: i32 = 4;
-const SCROLL_THUMB_MARGIN: i32 = 3;
-const SCROLL_THUMB_MIN_HEIGHT: i32 = 24;
-/// A title icon is a 16 px square 10 px from the left edge at 96 DPI, scaled
-/// with the title bar like the title text.
-const TITLE_ICON_SIZE: i32 = 16;
-const TITLE_ICON_INSET: i32 = 10;
-/// The Back button of a browsed lens (D18), at 96 DPI: a 24 px square, 4 px
-/// from the left edge, and 2 px before the title icon. Provisional until
-/// the Back button's on-screen check compares it with Explorer's.
-const BACK_BUTTON_SIZE: i32 = 24;
-const BACK_BUTTON_INSET: i32 = 4;
-const BACK_BUTTON_GAP: i32 = 2;
-/// The gap between a Details column's text and its divider, at 96 DPI.
-const DETAILS_CELL_PAD: i32 = 6;
-/// Explorer's status-bar button size, gap, and edge inset at 96 DPI.
-/// Provisional until the status bar's on-screen check measures Explorer's own.
-const STATUS_BUTTON_SIZE: i32 = 22;
-const STATUS_BUTTON_GAP: i32 = 2;
-const STATUS_BAR_INSET: i32 = 4;
-
-/// The app's Details row text: one item in, its column texts out.
-pub type DetailsCellText<'a> = &'a mut dyn FnMut(&Item) -> Vec<String>;
+pub(crate) use chrome::title_tip;
+pub use chrome::{
+    back_button_at, back_button_rect, title_icon_at, title_icon_button, title_icon_rect,
+    title_icon_rect_of,
+};
+pub use details::DetailsCellText;
+pub(crate) use details::{
+    details_cells, details_columns, details_header_column_at, details_max_scroll,
+    details_rule_after, details_view, drop_mark_x,
+};
+pub(crate) use status::{status_button_at, status_button_rect, status_tip};
 /// Below this tint alpha the backdrop shows through so much that labels need
 /// a shadow to stay readable on busy wallpapers.
 const TEXT_SHADOW_BELOW_ALPHA: u8 = 64;
@@ -376,85 +368,6 @@ pub fn space_scene_with_details(
     }
 }
 
-/// Where a space's title icon goes in a space `title_height` pixels tall: a
-/// square `TITLE_ICON_SIZE` at 96 DPI, `TITLE_ICON_INSET` from the left edge,
-/// centered vertically, both scaled by `title_height / DEFAULT_TITLE_HEIGHT`.
-pub fn title_icon_rect(title_height: i32) -> Rect {
-    title_icon_rect_after(title_height, None)
-}
-
-/// Where `space`'s title icon goes, moved past its Back button while the lens
-/// is `browsed`.
-pub fn title_icon_rect_of(space: &Space, browsed: bool) -> Rect {
-    title_icon_rect_after(
-        space.title_height,
-        browsed.then(|| back_button_rect(space.title_height)),
-    )
-}
-
-/// The title icon as a button while its space's title is renamed: the picture
-/// it has, or the placeholder when `image` is `None` (D16, D26).
-pub fn title_icon_button(rect: Rect, image: Option<Icon>, hovered: bool) -> TitleIcon {
-    TitleIcon {
-        rect,
-        image,
-        button: true,
-        hovered,
-    }
-}
-
-/// Whether `point`, in desktop coordinates, is on `space`'s title icon, which
-/// is a button only while its title is renamed.
-pub fn title_icon_at(space: &Space, browsed: bool, point: Point) -> bool {
-    let origin = space.rect().origin();
-    title_icon_rect_of(space, browsed)
-        .offset(origin.x, origin.y)
-        .contains(point)
-}
-
-/// `title_icon_rect`, moved past a Back button at `back` when there is one,
-/// by the same inset it keeps from the edge otherwise.
-fn title_icon_rect_after(title_height: i32, back: Option<Rect>) -> Rect {
-    let scale = title_height as f32 / DEFAULT_TITLE_HEIGHT as f32;
-    let size = ((TITLE_ICON_SIZE as f32) * scale).round().max(1.0) as i32;
-    let gap = match back {
-        Some(_) => BACK_BUTTON_GAP,
-        None => TITLE_ICON_INSET,
-    };
-    let left = back.map_or(0, Rect::right) + ((gap as f32) * scale).round() as i32;
-    Rect::new(left, ((title_height - size) / 2).max(0), size, size)
-}
-
-/// Where the Back button goes in a title bar `title_height` pixels tall while
-/// a lens shows a subfolder: a square `BACK_BUTTON_SIZE` at 96 DPI,
-/// `BACK_BUTTON_INSET` from the left edge, centered vertically, scaled with
-/// the bar like the title icon.
-pub fn back_button_rect(title_height: i32) -> Rect {
-    let scale = title_height as f32 / DEFAULT_TITLE_HEIGHT as f32;
-    let size = ((BACK_BUTTON_SIZE as f32) * scale).round().max(1.0) as i32;
-    let inset = ((BACK_BUTTON_INSET as f32) * scale).round() as i32;
-    Rect::new(inset, ((title_height - size) / 2).max(0), size, size)
-}
-
-/// Whether `point`, in desktop coordinates, is on the Back button of
-/// `space`, which shows one only while `browsed`.
-pub fn back_button_at(space: &Space, browsed: bool, point: Point) -> bool {
-    let origin = space.rect().origin();
-    browsed
-        && back_button_rect(space.title_height)
-            .contains(Point::new(point.x - origin.x, point.y - origin.y))
-}
-
-/// What a lens's title bar asks the icon cache for: the folder it shows
-/// (`sub` below its own) and whether that folder is available, so the icon
-/// and the flag describe the same folder, as Explorer's does. Pure, so the
-/// scene test needs no shell.
-fn title_icon_request(space: &Space, sub: &Path, unavailable: bool) -> Option<(PathBuf, bool)> {
-    space
-        .folder_view()
-        .map(|folder| (subfolder_path(&folder.path, sub), !unavailable))
-}
-
 /// Builds the draw list for the chrome-less desktop layer (ROADMAP D7). A
 /// layer item's position is absolute, in virtual-desktop coordinates, so
 /// `origin` (the layer window's top-left) is subtracted for window-local
@@ -690,335 +603,6 @@ pub(crate) fn item_layout(mode: ViewMode) -> ItemLayout {
     }
 }
 
-/// The Details header for `space`: its columns and which one is sorted, or
-/// `None` in any other view. Column rects are relative to the content area.
-pub(crate) fn details_view(
-    space: &Space,
-    layout: &ViewLayout,
-    content_width: i32,
-    padding: i32,
-    scale: f32,
-    scroll_x: i32,
-) -> Option<DetailsView> {
-    if space.view().mode != ViewMode::Details {
-        return None;
-    }
-    let (columns, scroll_x) = scrolled_details_columns(
-        space.view(),
-        content_width,
-        padding,
-        scroll_x,
-        layout.header_height(),
-        scale,
-    );
-    Some(DetailsView {
-        header_height: layout.header_height(),
-        cell_pad: (DETAILS_CELL_PAD as f32 * scale).round().max(1.0) as i32,
-        columns,
-        sorted: details_sorted(space.view()),
-        drop_mark: None,
-        scroll_x,
-        visible: (padding, (content_width - padding).max(padding)),
-    })
-}
-
-/// The x of the insertion mark before column `insert_at`, or after the last
-/// column past it.
-pub(crate) fn drop_mark_x(columns: &[DetailsColumnVisual], insert_at: usize) -> Option<i32> {
-    columns
-        .get(insert_at)
-        .map(|column| column.rect.x)
-        .or_else(|| columns.last().map(|column| column.rect.right()))
-}
-
-/// The Details columns `view` shows, laid out across `content_width`: Name
-/// takes the width left over, down to `NAME_MIN_WIDTH`, unless a divider drag
-/// holds it, and the rest keep their own widths. Rects are relative to the
-/// content area, shifted left by `offset` for a sideways scroll, which is
-/// clamped to what the columns need.
-pub(crate) fn details_columns(
-    view: &SpaceView,
-    content_width: i32,
-    padding: i32,
-    offset: i32,
-    header_height: i32,
-    scale: f32,
-) -> Vec<DetailsColumnVisual> {
-    scrolled_details_columns(view, content_width, padding, offset, header_height, scale).0
-}
-
-/// `details_columns`, and the offset they were shifted by once clamped.
-fn scrolled_details_columns(
-    view: &SpaceView,
-    content_width: i32,
-    padding: i32,
-    offset: i32,
-    header_height: i32,
-    scale: f32,
-) -> (Vec<DetailsColumnVisual>, i32) {
-    let scale = scale.max(0.1);
-    let scaled = |value: i32| ((value as f32 * scale).round() as i32).max(1);
-    let fixed: i32 = shown_details_columns(view)
-        .skip(1)
-        .map(|(_, width)| scaled(width))
-        .sum();
-    let rest = ((content_width - padding * 2 - fixed).max(scaled(NAME_MIN_WIDTH))).max(1);
-    let name_width = view
-        .columns
-        .first()
-        .and_then(|name| name.width)
-        .map_or(rest, |held| scaled(i32::from(held)));
-    let mut x = padding;
-    let mut columns: Vec<DetailsColumnVisual> = shown_details_columns(view)
-        .enumerate()
-        .map(|(index, (column, width))| {
-            let width = if index == 0 {
-                name_width
-            } else {
-                scaled(width)
-            };
-            let visual = DetailsColumnVisual {
-                rect: Rect::new(x, 0, width, header_height),
-                label: column.label.to_owned(),
-                align: column.align,
-            };
-            x += width;
-            visual
-        })
-        .collect();
-    let offset = offset.clamp(0, details_max_scroll(&columns, content_width, padding));
-    for column in &mut columns {
-        column.rect.x -= offset;
-    }
-    (columns, offset)
-}
-
-/// How far the Details columns can scroll sideways in `content_width`, leaving
-/// `padding` at the right edge. Zero when the columns already fit.
-pub(crate) fn details_max_scroll(
-    columns: &[DetailsColumnVisual],
-    content_width: i32,
-    padding: i32,
-) -> i32 {
-    columns.last().map_or(0, |column| {
-        (column.rect.right() - content_width + padding).max(0)
-    })
-}
-
-/// The column whose header shows Explorer's arrow, and whether it points up.
-fn details_sorted(view: &SpaceView) -> Option<(usize, bool)> {
-    shown_details_columns(view)
-        .position(|(column, _)| column.key == view.sort.key)
-        .map(|index| (index, !view.sort.descending))
-}
-
-/// The Details column whose header contains `point`, relative to the content
-/// area. `None` below the header row.
-pub(crate) fn details_header_column_at(view: &DetailsView, point: Point) -> Option<usize> {
-    view.columns
-        .iter()
-        .position(|column| column.rect.contains(point))
-}
-
-/// The sort rule after a click on `view`'s shown Details column `index`:
-/// clicking the sorted column reverses it, and any other column becomes the
-/// key in ascending order, as Explorer does. An index past the shown columns
-/// keeps the rule.
-pub(crate) fn details_rule_after(view: &SpaceView, index: usize) -> SortRule {
-    let rule = view.sort;
-    let Some(key) = shown_details_columns(view)
-        .nth(index)
-        .map(|(column, _)| column.key)
-    else {
-        return rule;
-    };
-    if rule.key == key {
-        SortRule {
-            descending: !rule.descending,
-            ..rule
-        }
-    } else {
-        SortRule {
-            key,
-            descending: false,
-            ..rule
-        }
-    }
-}
-
-/// The text of one Details row for the columns `view` shows after Name, in
-/// display order. It reads the item's facts only, never the disk.
-pub(crate) fn details_cells(view: &SpaceView, item: &Item) -> Vec<String> {
-    shown_details_columns(view)
-        .skip(1)
-        .map(|(column, _)| match column.key {
-            SortKey::Modified => item.modified.map(format_date).unwrap_or_default(),
-            SortKey::Created => item.created.map(format_date).unwrap_or_default(),
-            SortKey::Kind => {
-                type_name(&item.path, item.kind == ItemKind::Folder).unwrap_or_default()
-            }
-            SortKey::Size => item
-                .size
-                .filter(|_| item.kind != ItemKind::Folder)
-                .map(format_kb)
-                .unwrap_or_default(),
-            SortKey::Name => String::new(),
-        })
-        .collect()
-}
-
-/// The status bar for `space`, or `None` while it is off or folded. Its
-/// segments read the space's items and selection; an unavailable lens keeps
-/// only the buttons, as Explorer does for a folder it cannot open.
-fn status_bar(space: &Space, view: &ViewState) -> Option<StatusBar> {
-    let height = space.status_bar_height();
-    if height <= 0 {
-        return None;
-    }
-    let rect = Rect::new(0, space.rect().height - height, space.rect().width, height);
-    let segments = if view.folder_unavailable {
-        Vec::new()
-    } else {
-        let selected: Vec<&Item> = view
-            .selected
-            .iter()
-            .filter_map(|id| space.items().iter().find(|item| item.id == *id))
-            .collect();
-        status_segments(
-            space.items().len(),
-            selected.len(),
-            selected_bytes(&selected),
-        )
-    };
-    Some(StatusBar {
-        height,
-        rect,
-        segments,
-        buttons: status_buttons(
-            rect,
-            space.title_height,
-            space.view().mode,
-            view.hovered_status,
-        ),
-    })
-}
-
-/// Explorer's status segments: the item count, then the selection, then the
-/// selected files' size when every selected item is a file with a known size.
-pub(crate) fn status_segments(
-    count: usize,
-    selected: usize,
-    selected_bytes: Option<u64>,
-) -> Vec<String> {
-    let mut segments = vec![format!("{count} item{}", if count == 1 { "" } else { "s" })];
-    if selected > 0 {
-        segments.push(format!(
-            "{selected} item{} selected",
-            if selected == 1 { "" } else { "s" }
-        ));
-    }
-    if let Some(bytes) = selected_bytes {
-        segments.push(format_kb(bytes));
-    }
-    segments
-}
-
-/// The selected items' total size, or `None` unless every one is a file with
-/// a known size (so a folder or an unreadable path hides it).
-pub(crate) fn selected_bytes(selected: &[&Item]) -> Option<u64> {
-    if selected.is_empty()
-        || selected
-            .iter()
-            .any(|item| item.kind == ItemKind::Folder || item.size.is_none())
-    {
-        return None;
-    }
-    Some(selected.iter().filter_map(|item| item.size).sum())
-}
-
-/// The view buttons at the right of status bar `rect`, from `STATUS_BUTTONS`.
-fn status_buttons(
-    rect: Rect,
-    title_height: i32,
-    mode: ViewMode,
-    hovered: Option<usize>,
-) -> Vec<StatusButtonVisual> {
-    let scale = (title_height as f32 / DEFAULT_TITLE_HEIGHT as f32).max(0.1);
-    let scaled = |value: i32| ((value as f32 * scale).round() as i32).max(1);
-    let size = scaled(STATUS_BUTTON_SIZE);
-    let gap = scaled(STATUS_BUTTON_GAP);
-    let inset = scaled(STATUS_BAR_INSET);
-    let count = STATUS_BUTTONS.len() as i32;
-    let mut x = rect.right() - inset - count * size - (count - 1) * gap;
-    let y = rect.y + (rect.height - size) / 2;
-    STATUS_BUTTONS
-        .iter()
-        .enumerate()
-        .map(|(index, button)| {
-            let visual = StatusButtonVisual {
-                rect: Rect::new(x, y, size, size),
-                mode: button.mode,
-                glyph: button.glyph,
-                checked: button.mode == mode,
-                hovered: hovered == Some(index),
-            };
-            x += size + gap;
-            visual
-        })
-        .collect()
-}
-
-/// The status button at `point` (desktop coordinates) on `space`, if any.
-pub(crate) fn status_button_at(space: &Space, point: Point) -> Option<usize> {
-    (0..STATUS_BUTTONS.len()).find(|index| {
-        status_button_rect(space, *index).is_some_and(|rect| {
-            rect.contains(Point::new(
-                point.x - space.rect().x,
-                point.y - space.rect().y,
-            ))
-        })
-    })
-}
-
-/// The rect of status button `index` on `space`, in window coordinates.
-pub(crate) fn status_button_rect(space: &Space, index: usize) -> Option<Rect> {
-    let height = space.status_bar_height();
-    if height <= 0 {
-        return None;
-    }
-    let rect = Rect::new(0, space.rect().height - height, space.rect().width, height);
-    status_buttons(rect, space.title_height, space.view().mode, None)
-        .get(index)
-        .map(|button| button.rect)
-}
-
-/// Explorer's tip for status button `index`, with its view's Ctrl+Shift
-/// digit when it has one.
-pub(crate) fn status_tip(index: usize) -> Option<String> {
-    let button = STATUS_BUTTONS.get(index)?;
-    let digit = VIEW_MODES
-        .iter()
-        .find(|(mode, ..)| *mode == button.mode)
-        .and_then(|(.., digit)| *digit);
-    Some(match digit {
-        Some(digit) => format!("{} (Ctrl+Shift+{digit})", button.tip),
-        None => button.tip.to_owned(),
-    })
-}
-
-/// The tip a lens's title bar shows on hover: the folder it displays,
-/// with `Folder not available` first when its folder is gone. `None` for a
-/// normal space, whose title shows nothing, as before.
-pub(crate) fn title_tip(space: &Space, shown: &Path, unavailable: bool) -> Option<String> {
-    space.is_lens().then(|| {
-        if unavailable {
-            format!("Folder not available\n{}", shown.display())
-        } else {
-            shown.display().to_string()
-        }
-    })
-}
-
 /// The text for a view's secondary lines, made by the app when the scene is
 /// built: a Details row's columns after Name, a tile's type and size,
 /// or a content row's labelled details.
@@ -1111,112 +695,13 @@ fn contrast_shadow(text: Color) -> Color {
     }
 }
 
-/// Keeps the scroll indicator's far end clear of the rounded corner.
-fn thumb_end_margin(corner_radius: i32) -> i32 {
-    SCROLL_THUMB_MARGIN + corner_radius / 2
-}
-
-/// A thin bar along the content's far edge, on the scroll axis: the right edge
-/// for a vertical view, the bottom for a horizontal one. Its length and
-/// position show which part of the content is visible. `None` when everything
-/// fits.
-fn scroll_thumb(
-    space: &Space,
-    layout: &ViewLayout,
-    scroll: i32,
-    corner_radius: i32,
-) -> Option<Rect> {
-    if space.folded() {
-        return None;
-    }
-    let content = space.content_rect();
-    let viewport = layout.viewport(content.size());
-    let max_scroll = layout.max_scroll(content.size());
-    if max_scroll == 0 {
-        return None;
-    }
-    let extent = layout.extent();
-    let end_margin = thumb_end_margin(corner_radius);
-    // The bar stops at the content's bottom, which the status bar may raise.
-    let content_bottom = content.bottom() - space.rect().y;
-    match layout.axis() {
-        ScrollAxis::Vertical => {
-            let track_top = space.title_height + SCROLL_THUMB_MARGIN;
-            let track_height = content_bottom - end_margin - track_top;
-            if track_height <= 0 {
-                return None;
-            }
-            let (offset, thumb_height) =
-                thumb_span(track_height, viewport, extent, scroll, max_scroll);
-            Some(Rect::new(
-                space.rect().width - SCROLL_THUMB_MARGIN - SCROLL_THUMB_WIDTH,
-                track_top + offset,
-                SCROLL_THUMB_WIDTH,
-                thumb_height,
-            ))
-        }
-        ScrollAxis::Horizontal => {
-            let track_width = viewport - SCROLL_THUMB_MARGIN - end_margin;
-            if track_width <= 0 {
-                return None;
-            }
-            let (offset, thumb_width) =
-                thumb_span(track_width, viewport, extent, scroll, max_scroll);
-            Some(Rect::new(
-                SCROLL_THUMB_MARGIN + offset,
-                content_bottom - SCROLL_THUMB_MARGIN - SCROLL_THUMB_WIDTH,
-                thumb_width,
-                SCROLL_THUMB_WIDTH,
-            ))
-        }
-    }
-}
-
-/// The bar along the bottom of a Details space whose columns pass its right
-/// edge, showing how far they are scrolled sideways. `None` when the columns
-/// fit, in any other view, and while folded. The rows' own bar stops short of
-/// the bottom (`thumb_end_margin`), so the two never touch.
-fn details_scroll_thumb(
-    space: &Space,
-    content_width: i32,
-    padding: i32,
-    scale: f32,
-    scroll_x: i32,
-    corner_radius: i32,
-) -> Option<Rect> {
-    if space.folded() || space.view().mode != ViewMode::Details {
-        return None;
-    }
-    let columns = details_columns(space.view(), content_width, padding, 0, 0, scale);
-    let max_scroll = details_max_scroll(&columns, content_width, padding);
-    let track_width = content_width - SCROLL_THUMB_MARGIN - thumb_end_margin(corner_radius);
-    if max_scroll == 0 || track_width <= 0 {
-        return None;
-    }
-    let extent = content_width + max_scroll;
-    let (offset, thumb_width) =
-        thumb_span(track_width, content_width, extent, scroll_x, max_scroll);
-    let content_bottom = space.content_rect().bottom() - space.rect().y;
-    Some(Rect::new(
-        SCROLL_THUMB_MARGIN + offset,
-        content_bottom - SCROLL_THUMB_MARGIN - SCROLL_THUMB_WIDTH,
-        thumb_width,
-        SCROLL_THUMB_WIDTH,
-    ))
-}
-
-/// A thumb's offset along a `track` and its length, for a `viewport` onto
-/// `extent` of content scrolled by `scroll`, at most `max_scroll`.
-fn thumb_span(track: i32, viewport: i32, extent: i32, scroll: i32, max_scroll: i32) -> (i32, i32) {
-    let length = (track * viewport / extent)
-        .max(SCROLL_THUMB_MIN_HEIGHT)
-        .min(track);
-    let offset = (track - length) * scroll.clamp(0, max_scroll) / max_scroll;
-    (offset, length)
-}
-
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
+    use super::chrome::{
+        BACK_BUTTON_GAP, SCROLL_THUMB_MARGIN, SCROLL_THUMB_WIDTH, thumb_end_margin,
+        title_icon_rect_after,
+    };
+    use super::details::tests::two_column_details;
     use super::*;
     use crate::fixtures::apply;
     use deskspace_core::ItemFacts;
@@ -1250,7 +735,7 @@ mod tests {
         desktop.space(id).unwrap().clone()
     }
 
-    fn space() -> Space {
+    pub(super) fn space() -> Space {
         let mut space = Space::new(SpaceId(1), "Work", Rect::new(500, 300, 240, 200));
         let mut item = Item::new(ItemId(4), "C:/missing/report.txt", ItemFacts::default());
         item.position = Point::new(12, 12);
@@ -1475,7 +960,7 @@ mod tests {
     }
 
     /// A space in Details view holding one item, sized like a lens.
-    fn details_space() -> Space {
+    pub(super) fn details_space() -> Space {
         let mut desktop = Desktop::new();
         let id = crate::fixtures::create_space(&mut desktop, "Details", Rect::new(0, 0, 360, 200));
         crate::fixtures::add_item(&mut desktop, id, "C:/missing/report.txt");
@@ -1539,218 +1024,6 @@ mod tests {
     }
 
     #[test]
-    fn a_details_header_click_maps_to_its_column_and_reverses() {
-        let space = details_space();
-        let layout = ViewLayout::for_space(
-            &space,
-            ViewMetrics::for_view(
-                &SpaceView::default().with_mode(ViewMode::Details),
-                GridSpec::default(),
-                1.0,
-                100,
-            ),
-        );
-        let view = details_view(
-            &space,
-            &layout,
-            space.content_rect().width,
-            GridSpec::default().padding,
-            1.0,
-            0,
-        )
-        .unwrap();
-        assert_eq!(
-            details_header_column_at(&view, view.columns[0].rect.center()),
-            Some(0)
-        );
-        assert_eq!(
-            details_header_column_at(&view, view.columns[1].rect.center()),
-            Some(1)
-        );
-        assert_eq!(
-            details_header_column_at(&view, Point::new(10, view.header_height + 5)),
-            None,
-            "below the header no column is hit"
-        );
-
-        let viewed = |sort| SpaceView {
-            sort,
-            ..SpaceView::default()
-        };
-        let rule = SortRule::default();
-        let reversed = details_rule_after(&viewed(rule), 0);
-        assert_eq!(
-            reversed,
-            SortRule {
-                key: SortKey::Name,
-                descending: true,
-                folders_first: false,
-            }
-        );
-        assert_eq!(details_rule_after(&viewed(reversed), 0), rule);
-        let by_size = details_rule_after(&viewed(reversed), 3);
-        assert_eq!(by_size.key, SortKey::Size);
-        assert!(!by_size.descending);
-    }
-
-    #[test]
-    fn the_date_created_column_starts_hidden() {
-        let view = SpaceView {
-            sort: SortRule {
-                key: SortKey::Created,
-                ..SortRule::default()
-            },
-            ..SpaceView::default()
-        };
-        assert_eq!(
-            details_sorted(&view),
-            None,
-            "a hidden column shows no arrow"
-        );
-        assert_eq!(
-            details_rule_after(&view, 4),
-            view.sort,
-            "past the shown columns"
-        );
-        let item = Item::new(
-            ItemId(1),
-            "C:/a.txt",
-            ItemFacts {
-                created: Some(1_700_000_000),
-                ..ItemFacts::default()
-            },
-        );
-        assert_eq!(details_cells(&view, &item).len(), 3, "Date, Type, and Size");
-    }
-
-    #[test]
-    fn the_header_and_rows_show_the_spaces_own_columns_in_its_order() {
-        use deskspace_core::{Column, ColumnSpec};
-
-        let view = SpaceView {
-            columns: ColumnSpec::sanitize(vec![
-                ColumnSpec {
-                    id: Column::Size,
-                    width: Some(200),
-                },
-                ColumnSpec {
-                    id: Column::Created,
-                    width: None,
-                },
-            ]),
-            sort: SortRule {
-                key: SortKey::Size,
-                ..SortRule::default()
-            },
-            ..SpaceView::default()
-        };
-        let columns = details_columns(&view, 1000, 0, 0, 24, 1.0);
-        assert_eq!(
-            columns
-                .iter()
-                .map(|column| column.label.as_str())
-                .collect::<Vec<_>>(),
-            ["Name", "Size", "Date created"]
-        );
-        assert_eq!(columns[1].rect.width, 200, "its own width");
-        assert_eq!(columns[2].rect.width, 130, "the table's default");
-        assert_eq!(columns[0].rect.width, 670, "Name takes the rest");
-        assert_eq!(
-            details_sorted(&view),
-            Some((1, true)),
-            "the arrow follows its column"
-        );
-        assert_eq!(
-            details_rule_after(&view, 2).key,
-            SortKey::Created,
-            "a click sorts by the column at that place"
-        );
-        let item = Item::new(
-            ItemId(1),
-            "C:/a.txt",
-            ItemFacts {
-                size: Some(2048),
-                ..ItemFacts::default()
-            },
-        );
-        // The unit follows the locale and Windows build ("KB" or "KiB"), so
-        // compare with the shell's own formatter rather than a literal.
-        assert_eq!(
-            details_cells(&view, &item),
-            [format_kb(2048), String::new()]
-        );
-    }
-
-    #[test]
-    fn a_held_name_keeps_its_width_so_the_columns_may_pass_the_edge() {
-        let view = SpaceView::default()
-            .with_column_width(deskspace_core::Column::Modified, 400)
-            .with_name_held(Some(300));
-        let columns = details_columns(&view, 500, 0, 0, 24, 1.0);
-        assert_eq!(columns[0].rect.width, 300);
-        assert_eq!(columns[1].rect.x, 300, "its left edge stays put");
-        assert_eq!(columns[1].rect.right(), 700, "and its divider follows");
-        let released = details_columns(&view.with_name_held(None), 500, 0, 0, 24, 1.0);
-        assert_eq!(released[0].rect.width, 120, "Name takes the rest again");
-    }
-
-    #[test]
-    fn details_columns_shift_sideways_up_to_the_scroll_limit() {
-        let view = two_column_details().with_name_held(Some(300));
-        let columns = details_columns(&view, 500, 0, 0, 24, 1.0);
-        assert_eq!(
-            details_max_scroll(&columns, 500, 0),
-            200,
-            "the two columns span 700 in 500"
-        );
-
-        let shifted = details_columns(&view, 500, 0, 150, 24, 1.0);
-        assert_eq!(shifted[0].rect.x, -150);
-        assert_eq!(shifted[1].rect.x, 150);
-        assert_eq!(shifted[1].rect.right(), 550);
-
-        let clamped = details_columns(&view, 500, 0, 999, 24, 1.0);
-        assert_eq!(
-            clamped[1].rect.right(),
-            500,
-            "the last column reaches the edge"
-        );
-    }
-
-    #[test]
-    fn the_scroll_limit_leaves_the_padding_at_the_right_edge() {
-        let view = two_column_details().with_name_held(Some(300));
-        let columns = details_columns(&view, 500, 10, 0, 24, 1.0);
-        assert_eq!(details_max_scroll(&columns, 500, 10), 220);
-
-        let shifted = details_columns(&view, 500, 10, 220, 24, 1.0);
-        assert_eq!(shifted[1].rect.right(), 490, "right padding shows");
-    }
-
-    #[test]
-    fn details_scrolls_by_nothing_when_the_columns_fit() {
-        let columns = details_columns(&two_column_details(), 1000, 0, 0, 24, 1.0);
-        assert_eq!(details_max_scroll(&columns, 1000, 0), 0);
-    }
-
-    fn two_column_details() -> SpaceView {
-        use deskspace_core::{Column, ColumnSpec};
-        SpaceView {
-            columns: ColumnSpec::sanitize(vec![
-                ColumnSpec {
-                    id: Column::Name,
-                    width: None,
-                },
-                ColumnSpec {
-                    id: Column::Modified,
-                    width: Some(400),
-                },
-            ]),
-            ..SpaceView::default()
-        }
-    }
-
-    #[test]
     fn the_scene_marks_where_a_dragged_header_would_land() {
         let subject = details_space();
         let theme = Theme::default();
@@ -1776,63 +1049,6 @@ mod tests {
             Some(details.columns[3].rect.right()),
             "past the last column"
         );
-    }
-
-    #[test]
-    fn every_column_has_one_row_in_the_table() {
-        use deskspace_core::Column;
-
-        for id in Column::ALL {
-            assert_eq!(
-                crate::settings::DETAILS_COLUMNS
-                    .iter()
-                    .filter(|row| row.id == id)
-                    .count(),
-                1,
-                "{id:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn the_sorted_details_column_shows_its_arrow() {
-        let mut desktop = Desktop::new();
-        let id = crate::fixtures::create_space(&mut desktop, "Details", Rect::new(0, 0, 360, 200));
-        crate::fixtures::apply(
-            &mut desktop,
-            Command::SetSpaceView {
-                id,
-                view: deskspace_core::SpaceView {
-                    mode: ViewMode::Details,
-                    sort: SortRule {
-                        key: SortKey::Size,
-                        descending: true,
-                        folders_first: false,
-                    },
-                    ..deskspace_core::SpaceView::default()
-                },
-            },
-        );
-        let space = desktop.space(id).unwrap();
-        let layout = ViewLayout::for_space(
-            space,
-            ViewMetrics::for_view(
-                &SpaceView::default().with_mode(ViewMode::Details),
-                GridSpec::default(),
-                1.0,
-                100,
-            ),
-        );
-        let view = details_view(
-            space,
-            &layout,
-            space.content_rect().width,
-            GridSpec::default().padding,
-            1.0,
-            0,
-        )
-        .unwrap();
-        assert_eq!(view.sorted, Some((3, false)), "Size, pointing down");
     }
 
     #[test]
@@ -2000,45 +1216,6 @@ mod tests {
         );
         assert!(scene.highlight_fades);
         assert!(!ViewState::default().highlight_fades);
-    }
-
-    #[test]
-    fn status_segments_read_explorers_words() {
-        assert_eq!(status_segments(0, 0, None), ["0 items"]);
-        assert_eq!(status_segments(1, 0, None), ["1 item"]);
-        assert_eq!(status_segments(12, 0, None), ["12 items"]);
-        assert_eq!(
-            status_segments(12, 1, None),
-            ["12 items", "1 item selected"]
-        );
-        let sized = status_segments(12, 3, Some(2048));
-        assert_eq!(sized.len(), 3);
-        assert_eq!(sized[2], format_kb(2048));
-    }
-
-    #[test]
-    fn the_selected_size_shows_only_for_files_with_sizes() {
-        let file = Item::new(
-            ItemId(1),
-            "C:/missing/a.txt",
-            ItemFacts {
-                size: Some(1024),
-                ..ItemFacts::default()
-            },
-        );
-        let folder = Item::new(
-            ItemId(2),
-            "C:/missing/b",
-            ItemFacts {
-                is_folder: true,
-                ..ItemFacts::default()
-            },
-        );
-        let unknown = Item::new(ItemId(3), "C:/missing/c.txt", ItemFacts::default());
-        assert_eq!(selected_bytes(&[&file]), Some(1024));
-        assert_eq!(selected_bytes(&[&file, &folder]), None);
-        assert_eq!(selected_bytes(&[&file, &unknown]), None);
-        assert_eq!(selected_bytes(&[]), None);
     }
 
     #[test]
@@ -2242,12 +1419,6 @@ mod tests {
     }
 
     #[test]
-    fn a_title_icon_is_a_scaled_square_inside_the_bar() {
-        assert_eq!(title_icon_rect(28), Rect::new(10, 6, 16, 16));
-        assert_eq!(title_icon_rect(42), Rect::new(15, 9, 24, 24), "scaled");
-    }
-
-    #[test]
     fn a_space_and_the_layer_without_a_glyph_have_no_title_icon() {
         let theme = Theme::default();
         let palette = theme.palette(true);
@@ -2326,33 +1497,6 @@ mod tests {
     }
 
     #[test]
-    fn a_lens_title_tip_names_its_folder_and_a_normal_space_shows_none() {
-        let mut desktop = Desktop::new();
-        let lens = crate::fixtures::create_lens(
-            &mut desktop,
-            "Lens",
-            Rect::new(0, 0, 240, 120),
-            r"C:\Users\me\Downloads",
-        );
-        let lens = desktop.space(lens).unwrap();
-        let shown = Path::new(r"C:\Users\me\Downloads\Photos");
-        assert_eq!(
-            title_tip(lens, shown, false).as_deref(),
-            Some(r"C:\Users\me\Downloads\Photos"),
-            "an available lens names the folder it displays"
-        );
-        assert_eq!(
-            title_tip(lens, shown, true).as_deref(),
-            Some(concat!(
-                "Folder not available\n",
-                r"C:\Users\me\Downloads\Photos"
-            )),
-            "an unavailable lens says so first"
-        );
-        assert_eq!(title_tip(&space(), shown, false), None, "a normal space");
-    }
-
-    #[test]
     fn only_a_browsed_lens_has_a_back_button_and_its_icon_moves_past_it() {
         let theme = Theme::default();
         let palette = theme.palette(true);
@@ -2406,23 +1550,6 @@ mod tests {
         assert!(button.button);
         assert!(button.image.is_none(), "the painter draws the placeholder");
         assert!(button.hovered);
-    }
-
-    #[test]
-    fn the_title_icon_button_covers_only_the_icon() {
-        let space = space();
-        let rect = title_icon_rect_of(&space, false);
-        let origin = space.rect().origin();
-        assert!(title_icon_at(
-            &space,
-            false,
-            Point::new(origin.x + rect.x + 1, origin.y + rect.y + 1)
-        ));
-        assert!(!title_icon_at(
-            &space,
-            false,
-            Point::new(origin.x + rect.right() + 1, origin.y + rect.y)
-        ));
     }
 
     #[test]

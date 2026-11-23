@@ -41,11 +41,6 @@ const ALLOWED: &[Allowed] = &[
         task: "K10",
     },
     Allowed {
-        path: "deskspace-app/src/scene.rs",
-        why: "One concern (model to SpaceScene) built from small helpers.",
-        task: "K12",
-    },
-    Allowed {
         path: "deskspace-app/src/app/menus.rs",
         why: "The space, item, and tray menus share their builders.",
         task: "K13",
