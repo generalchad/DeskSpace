@@ -34,18 +34,11 @@ struct Allowed {
 /// Files over the limit when this test was added (2026-10-29). Delete an
 /// entry when its file drops below the limit, and name the split task when
 /// one is written.
-const ALLOWED: &[Allowed] = &[
-    Allowed {
-        path: "deskspace-platform/src/win32/folder_watch.rs",
-        why: "The watch worker, its port, and its listings share one thread.",
-        task: "K10",
-    },
-    Allowed {
-        path: "deskspace-app/src/app.rs",
-        why: "App, on_event, MenuId, and the preset tables live here by design.",
-        task: "K14",
-    },
-];
+const ALLOWED: &[Allowed] = &[Allowed {
+    path: "deskspace-app/src/app.rs",
+    why: "App, on_event, MenuId, and the preset tables live here by design.",
+    task: "K14",
+}];
 
 #[test]
 fn every_source_file_stays_within_the_size_guideline() {

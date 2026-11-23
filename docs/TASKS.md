@@ -130,6 +130,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Shortcuts from dropped shell items, custom targets | `deskspace-platform/src/win32/shortcuts.rs` |
 | The installed-apps picker and its cache, the custom shortcut dialog | `deskspace-platform/src/win32/{app_picker,app_catalog,shortcut_dialog,dialog}.rs` |
 | Desktop enumeration, icons | `deskspace-platform/src/win32/desktop_items.rs`, `win32/icons/` (`mod.rs` the cache, `load.rs` the shell reads, `worker.rs` the load worker), `icon_queue.rs` (what the worker loads next) |
+| Folder watching (lenses and Desktop) | `deskspace-platform/src/win32/folder_watch/` (`mod.rs`, `worker.rs`, `folder.rs`, `timing.rs`) |
 | Icon-set glyphs (SVG to pixels) | `deskspace-platform/src/render/glyph.rs` (the document), `render/d2d/glyph.rs` (the rasterizer), `win32/glyphs.rs` (the cache) |
 | Takeover: hide icons, watchdog | `deskspace-platform/src/win32/{desktop_icons,watchdog}.rs` |
 | CI and release | `.github/workflows/{ci,release,icons}.yml`, `crates/deskspace-app/build.rs` |
@@ -661,7 +662,7 @@ drop side is `win32/drop_target.rs` (`DragKind`, `drag_kind`, `DropPlan`,
       `settings/pages.rs` hold today's text).
   - Data first: the lens's `folder_unavailable: bool` (`scene.rs`'s view
     state) becomes the reason, an enum with Missing, Network, and Other.
-    The watch worker (`win32/folder_watch.rs`) already holds the error in
+    The watch worker (`win32/folder_watch/folder.rs`) already holds the error in
     `OpenFailure::Failed`; map it in one pure function with a test per code:
     `ERROR_FILE_NOT_FOUND` and `ERROR_PATH_NOT_FOUND` to Missing; the
     network errors (`ERROR_BAD_NETPATH`, `ERROR_BAD_NET_NAME`,
@@ -1404,21 +1405,6 @@ lines, measured 2026-11-03). Each lands alone, in any order, but read the
 at a time and rebase the other. Function names, not line numbers, say what
 moves.
 
-- [ ] **K10. Split `win32/folder_watch.rs`.** 1,278 lines. Turn it into
-  `win32/folder_watch/mod.rs` plus:
-  - `worker.rs`: `Worker` and its `impl` (from `run` to `drain_canceled`), with
-    their tests.
-  - `folder.rs`: `CanceledRead`, `Folder`, `OpenFolder`, `open_folder`,
-    `follows_to`, `OpenFailure`, `final_path`, and `is_timeout`, with their tests.
-  - `timing.rs`: `Bursts` and `Coalescer`, which are pure, with their tests, and
-    `millis`.
-  - `mod.rs` keeps the constants, `SharedListing`, `retire_listing`, `LensUpdate`,
-    `FolderWatch` and its `Drop`, `PendingWatch`, and `ActiveWatch`.
-  - This module runs a thread and an I/O completion port. A pure move changes
-    neither, but ask a senior to review: a missed `pub(super)` that makes you
-    reach for a wrapper is not a pure move any more. Stop and ask instead.
-  - Done when: `mod.rs` is under about 500 lines and the K rules above hold.
-
 - [ ] **K14. Move the ids and preset tables out of `app.rs`.**
   **[needs decision]** 1,024 lines. Its `ALLOWED` reason is "by design", because
   the recipes send you to `app.rs` for `MenuId` and the presets. Recommended:
@@ -1565,7 +1551,7 @@ Logs, tooling, readability, docs, and checks that may close a task.
 
 - [ ] **P47a. See whether a browsed lens lists too often (no code).** Part of P47.
   While a lens is browsed into a subfolder, the worker watches the lens's whole
-  folder tree (`Folder::open` in `win32/folder_watch.rs` asks for the subtree when
+  folder tree (`Folder::open` in `win32/folder_watch/folder.rs` asks for the subtree when
   `root` is set), so a change anywhere under it lists the shown subfolder again.
   - Make a throwaway lens on a copy of a Rust project, browse into a quiet
     subfolder of it (`src`), and run `cargo build` in the copy while
@@ -1731,8 +1717,7 @@ These are in the order we would take them. Each lands alone.
 
 - [ ] **P47. List a browsed lens only when its own folder changes (perf; thread).**
   P47a, in the junior list, measures whether this is needed and may delete it.
-  - [ ] **P47b.** After: P47a, and K10 (both edit `folder_watch.rs`; take K10
-    first). The notify records already name each changed path, relative to the
+  - [ ] **P47b.** After: P47a. The notify records already name each changed path, relative to the
     watched root. Before a subtree change debounces into a listing, keep it only
     when its parent is the shown folder, or when it is the shown folder itself or
     a folder on the way down to it (a rename or delete there must still reach the

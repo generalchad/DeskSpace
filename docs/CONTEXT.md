@@ -1024,7 +1024,7 @@ in `ui.rs`. What spans them:
 
 ### Desktop shell, shell items, DPI, hotkeys
 
-- `folder_watch.rs` is the one watcher: one worker on an I/O completion
+- `folder_watch/` is the one watcher: one worker on an I/O completion
   port serves every watch, lists the folder, and builds a lens's list, so
   the UI thread does no IO. Its module doc and the `FolderListing` variants
   own the debounce, the retries, the store refusal, and the D19 follow rule.
@@ -1394,7 +1394,7 @@ section numbers stable.
   something changed, so the worker lists the folder again.
 - **Debounce**: copying 200 files fires 200 changes, so the worker waits
   until a folder has been quiet for 150 ms and reacts once (`Coalescer` in
-  `win32/folder_watch.rs`, pure and tested).
+  `win32/folder_watch/timing.rs`, pure and tested).
 - **I/O completion port**: the queue every watch reports into, each folder
   under its own completion key; the UI thread posts its own packets to add a
   folder, remove one, or stop the worker
