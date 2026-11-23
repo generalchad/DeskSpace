@@ -41,11 +41,6 @@ const ALLOWED: &[Allowed] = &[
         task: "K10",
     },
     Allowed {
-        path: "deskspace-app/src/app/menus.rs",
-        why: "The space, item, and tray menus share their builders.",
-        task: "K13",
-    },
-    Allowed {
         path: "deskspace-app/src/app.rs",
         why: "App, on_event, MenuId, and the preset tables live here by design.",
         task: "K14",

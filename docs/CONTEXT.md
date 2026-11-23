@@ -1153,7 +1153,7 @@ exact steps, ranges, edge cases, and the code behind them.
 
 **Menus**
 
-- The space and tray menus are listed in README and built in `app/menus.rs`.
+- The space and tray menus are listed in README and built in `app/menus/`.
   Rules README leaves out: Undo and Redo are named for the top entry and
   greyed when empty; Fit to contents is offered only on an unlocked space
   that is resized or in an order-placed view; Delete space asks first unless

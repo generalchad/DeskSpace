@@ -105,7 +105,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Drops, delete, prune | `deskspace-app/src/app/files.rs` |
 | A normal space's item facts, read again at startup | `deskspace-app/src/app/facts.rs` (asking and applying), `deskspace-platform/src/fact_jobs.rs` (the worker's batches), `IconCache::read_item_facts` in `win32/icons/` |
 | Cut / copy / paste | `deskspace-app/src/app/clipboard.rs` |
-| Space, item, and tray menus | `deskspace-app/src/app/menus.rs` |
+| Space, item, and tray menus | `deskspace-app/src/app/menus/` (`mod.rs`, `new_space.rs`, `entries.rs`) |
 | Settings window behavior (open, preview, Apply, Cancel) | `deskspace-app/src/app/settings_session.rs` |
 | Settings pages, fields, `field::` ids (pure) | `deskspace-app/src/settings/` (`mod.rs`, `ids.rs`, `tables.rs`, `pages.rs`, `apply.rs`, `session.rs`) |
 | Show/hide, desktop verb, start with Windows | `deskspace-app/src/app/visibility.rs` |
@@ -232,10 +232,10 @@ through `theme_for(id)`, `grid_for(id)`, and `palette_for(id)`, never
 1. `app.rs`: a `MenuId` variant (next free value) and its `ALL` entry. An
    entry in a family (opacity, icon size, sort) also gets a row in its preset
    table.
-2. `app/menus.rs`: a `menu_item` in the builder (`show_space_menu`,
-   `show_tray_menu`, `show_item_menu`, or the submenu helper) and an arm for
-   the chosen id. Entries shared by the tray and the space menu go through
-   `run_common_menu`.
+2. `app/menus/`: a `menu_item` in the builder (`app/menus/entries.rs` for pure
+   entry-list and submenu helpers, `app/menus/mod.rs` for `show_space_menu`,
+   `show_tray_menu`, `show_item_menu`, and an arm for the chosen id). Entries
+   shared by the tray and the space menu go through `run_common_menu`.
 3. Update the user-facing menu list in `README.md` Controls; add a rule,
    range, or edge case to `CONTEXT.md` section 8 only if the entry has one.
 
@@ -1418,17 +1418,6 @@ moves.
     neither, but ask a senior to review: a missed `pub(super)` that makes you
     reach for a wrapper is not a pure move any more. Stop and ask instead.
   - Done when: `mod.rs` is under about 500 lines and the K rules above hold.
-
-- [ ] **K13. Split `app/menus.rs`.** 1,131 lines. Turn it into `app/menus/mod.rs`
-  plus:
-  - `new_space.rs`: the `App` methods from `create_space` to `space_rects`, and
-    the free functions `new_space_command` and `gap_at`, with their tests.
-  - `entries.rs`: the free functions that build entry lists, from `menu_item` to
-    `lens_view_after`, except the two above, with their tests. They take plain
-    data, so their tests need no `Ui`.
-  - `mod.rs` keeps the `App` methods that show menus and act on a choice.
-  - Done when: `mod.rs` is under about 700 lines and the K rules above hold, and
-    the "new menu entry" recipe above names the right file for each step.
 
 - [ ] **K14. Move the ids and preset tables out of `app.rs`.**
   **[needs decision]** 1,024 lines. Its `ALLOWED` reason is "by design", because
