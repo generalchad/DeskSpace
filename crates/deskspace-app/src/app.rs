@@ -1059,7 +1059,7 @@ fn delete_needs_confirmation(space: &Space) -> bool {
 
 /// What deleting `space`, with `stored` of its items in the space storage,
 /// does to the files. With stored files, the prompt's buttons choose where
-/// they go (`STORED_FILES_CHOICES` in `app/files.rs`), so this names both.
+/// they go (`STORED_FILES_CHOICES` in `app/files/delete.rs`), so this names both.
 fn delete_consequence(space: &Space, stored: usize) -> String {
     if let Some(view) = space.folder_view() {
         return format!(

@@ -7135,3 +7135,4 @@ takes an id listed here or used anywhere above
 - **K11.** Split `app/view.rs`.
 - **K12.** Split `scene.rs`.
 - **K13.** Split `app/menus.rs`.
+- **K15.** Split `app/files.rs`.

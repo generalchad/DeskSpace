@@ -102,7 +102,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Group names and which group an item is in (pure) | `deskspace-app/src/grouping.rs` |
 | A grouped space's display order | `deskspace-core/src/grouping.rs` (`Grouping`), read by `ViewLayout`; `App::sync_grouping` in `app/view/mod.rs` keeps it current |
 | Inline rename | `deskspace-app/src/app/rename.rs` |
-| Drops, delete, prune | `deskspace-app/src/app/files.rs` |
+| Drops, delete, prune | `deskspace-app/src/app/files/` (`mod.rs`, `delete.rs`, `shortcuts.rs`) |
 | A normal space's item facts, read again at startup | `deskspace-app/src/app/facts.rs` (asking and applying), `deskspace-platform/src/fact_jobs.rs` (the worker's batches), `IconCache::read_item_facts` in `win32/icons/` |
 | Cut / copy / paste | `deskspace-app/src/app/clipboard.rs` |
 | Space, item, and tray menus | `deskspace-app/src/app/menus/` (`mod.rs`, `new_space.rs`, `entries.rs`) |
@@ -1431,18 +1431,6 @@ moves.
     tests with it.
   - Update the file map's `app.rs` row and the menu recipe to name `app/ids.rs`.
 
-- [ ] **K15. Split `app/files.rs`.** 986 lines. Turn it into `app/files/mod.rs`
-  plus:
-  - `delete.rs`: the `App` methods from `delete_selected_items` to
-    `delete_item_question`, with their tests.
-  - `shortcuts.rs`: `add_shortcuts`, `create_shortcuts`, `write_shortcut`,
-    `is_link_file`, `link_copy_name`, `shortcut_file_name`, and `ShortcutSource`,
-    with their tests. Section L's rule holds: `add_shortcuts` stays the one way
-    to add a shortcut.
-  - `mod.rs` keeps `paths_to_transfer`, `StoredFiles`, and the drop handling.
-  - This code moves and deletes user files. A pure move is safe, but ask a senior
-    to review the diff.
-  - Done when: `mod.rs` is under about 500 lines and the K rules above hold.
 
 ## Q. Move the why next to the code (shrink `CONTEXT.md` section 6)
 

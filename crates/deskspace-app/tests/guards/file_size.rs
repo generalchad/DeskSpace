@@ -45,11 +45,6 @@ const ALLOWED: &[Allowed] = &[
         why: "App, on_event, MenuId, and the preset tables live here by design.",
         task: "K14",
     },
-    Allowed {
-        path: "deskspace-app/src/app/files.rs",
-        why: "Drops, delete, prune, and the layer sync share one file path.",
-        task: "K15",
-    },
 ];
 
 #[test]
