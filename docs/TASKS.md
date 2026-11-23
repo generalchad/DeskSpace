@@ -1787,15 +1787,42 @@ These are in the order we would take them. Each lands alone.
     taskbar dropping its topmost place for a moment, or something raising
     the layer. The 5-second taskbar repair (the "Taskbar repair" row in
     section V) never logged in that session.
-  - First, make it visible: log one debug line each time the desktop menu
-    opens, with the point, the window `WindowFromPoint` reports there, and
-    whether a `Shell_TrayWnd` contains the point. Reproduce with
-    `-Verbosity 1`, and run `scripts/zorder.ps1` right after it happens.
-  - Then fix by the finding. Candidates, cheapest first: refuse to open the
-    menu (and pass the click on) when the point is inside a taskbar's
-    rectangle; find what raises the layer and stop it; cut the taskbars'
-    rectangles out of the layer's input region. If it needs a design
-    choice, bring the evidence to the maintainer.
+  - A second way in, read from the code (2026-11-23, senior review):
+    `on_button_down` (`win32/space_window/mouse.rs`) calls `SetCapture` on
+    every press, right ones too, and `on_button_up` releases it only once
+    no button is down. For a window without the foreground, Windows sends a
+    captured window input over another thread's window only while a button
+    is down. So a capture the layer kept from a press whose release it never
+    saw takes the next right press anywhere, the taskbar's included; the
+    layer spans the screen, so the point finds no item and opens the desktop
+    menu, and that release frees the capture. `scripts/zorder.ps1`'s hit
+    test ignores capture. What leaves a capture behind is not known yet.
+  - [ ] **P55a. Make it visible (log; platform).** No behavior change.
+    - `Ui::desktop_menu` logs one `debug` line: the point, the class of the
+      window `WindowFromPoint` finds there, whether a `Shell_TrayWnd` or
+      `Shell_SecondaryTrayWnd` contains the point, and the class of the
+      window just above the layer (`GetWindow`, `GW_HWNDPREV`).
+    - `on_button_down` logs a `debug` line when the window under the press
+      belongs to another process: that press came by capture.
+    - The "inside a taskbar" test is a pure `contains_any(point, rects)`,
+      with tests.
+    - Then the maintainer reproduces with `-Verbosity 1` and runs
+      `scripts/zorder.ps1` right after; the lines say which way in it was.
+  - [ ] **P55b. A press is ours only when it is over us (fix; platform).**
+    After: P55a. Lands without waiting for the reproduction: the rule holds
+    whatever the cause. In `on_button_down`, when the window under the press
+    belongs to another process, release the capture and drop the press (no
+    `MouseDown`). Every surface, spaces included. It compares processes, not
+    windows, so a press on DeskSpace's own shadow or animation overlays
+    still counts. The decision is a pure function with tests.
+  - [ ] **P55c. If the layer was above the taskbar.** After: P55a's
+    reproduction, and only if its lines show `WindowFromPoint` finding the
+    layer over a taskbar. Find what raised the layer from the window logged
+    above it, and stop it. If that is not clear, refuse to open the desktop
+    menu at a point inside a taskbar's rectangle (`contains_any`). If it
+    needs a design choice, bring the evidence to the maintainer. If the
+    lines show capture instead and P55b fixed it, delete this part.
+  - P55's check below goes with whichever part lands last.
   - **[needs human]** check: with takeover on, right-click the taskbar on
     every monitor many times, including right after Win+D, a full-screen
     app, and a space or desktop menu closing: the taskbar's own menu shows
