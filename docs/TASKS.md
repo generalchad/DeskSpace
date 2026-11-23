@@ -1949,24 +1949,6 @@ backdrop window, never a Windows setting. A check whose branch this
 machine's settings do not select (Transparency effects on or off, a 150 %
 monitor) is reported as **not covered**, never passed.
 
-- [ ] **O5. Measure idle CPU and wake-ups (scripts).** **(junior)** M7 item 5
-  asks for idle CPU near zero, and nothing measures it.
-  - `scripts/onscreen/idle.ps1`, importing `OnScreen.psm1`: start DeskSpace on
-    a scratch config with five spaces and one lens on a quiet folder
-    (`Start-DeskSpace`, which runs the debug build with `--no-icons`; idle cost
-    does not depend on either), wait 15 s for listings to settle, then sample
-    for 60 s: the process's CPU time (`TotalProcessorTime`) and its threads'
-    context switches per second (`Get-Counter` on `\Thread(deskspace*)\Context
-    Switches/sec`). Print both, and the busiest thread.
-  - Pass under 0.1 % CPU and 5 wake-ups a second; above either, the script
-    fails and names the thread. The thresholds are named at the top of the
-    script, as a first guess to tune.
-  - Never run it while the maintainer has a build running: `Start-DeskSpace`
-    calls `dev.ps1`, which stops one.
-  - Done when: a run prints both numbers; record the first run, with the date
-    and the machine, in the commit body. A failure is a **Found while working**
-    line naming the thread, not a fix in this task.
-
 - [ ] **O6. Send keys to the desktop (scripts).** **(junior)** After: O4.
   - Why: the marked rows that change a view, undo, rename, zoom, or open a
     menu begin with a key, and the hook sees keys only while the desktop shell
@@ -2265,3 +2247,4 @@ refreshed.
 - `prune_missing` (`app/files.rs`) still reads every item of a space on the UI thread after an item action (a shell menu command, a drag out, a cut that was pasted elsewhere, a drop onto a lens), and `drag_item_out` calls `Path::exists` on the dragged items. A space that lists files on a share that has stopped answering stalls for seconds per such item then (P52's family); startup no longer does. Suggested task: send these through the icon worker as startup's check goes (`App::request_item_facts`), once it is decided that an item may stay listed for a moment after its file went.
 - An item whose drive or share cannot be reached draws like any other, with a generic icon (2026-11-16, ROADMAP D3). Suggested task: decide whether it should look offline (dimmed, or a badge), and say so in its info tip.
 - `Ui::choose` (`win32/runtime/ui_chrome.rs`) numbers its buttons from 0, but a task dialog reports Esc as `IDCANCEL`, which is 2, so Esc returns `Some(2)` rather than `None` (found 2026-11-17, while building C17, from the API's documented behavior; not seen on screen). The "Update available" prompt's third button is "Skip this version", so Esc there would skip the version. C17's prompt keeps Cancel third for now. Suggested task: give the buttons ids from 100 and map `IDCANCEL` to `None`, with a pure test of the mapping.
+- Idle wake-ups (`scripts/onscreen/idle.ps1`, O5 first run 2026-11-23): idle CPU passed at 0.0478 % (31.3 ms over 65.34 s, limit 0.1 %), while wake-ups failed at 28.17/s (limit 5/s); busiest thread was `unnamed (deskspace/12)` at 16.14/s (followed by `unnamed (deskspace/33)` at 5.81/s, `unnamed (deskspace/13)` at 2.95/s, `deskspace-icons` at 1.61/s, `deskspace-folder-watch` at 1.31/s; `main` was 0.00/s). Suggested task: inspect what wakes those threads (threadpool/DWM/COM vs. our own waits) and either cut the idle wake-ups or tune O5's threshold.

@@ -107,6 +107,27 @@ public static class DeskSpaceOnScreen {
   [DllImport("gdi32.dll", SetLastError = true)] public static extern int GetDIBits(
     IntPtr hdc, IntPtr bitmap, uint start, uint lines, IntPtr bits, ref BITMAPINFO info, uint usage);
   [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr GetModuleHandleW(string name);
+  [DllImport("kernel32.dll", SetLastError = true)] public static extern IntPtr OpenThread(uint desiredAccess, bool inheritHandle, uint threadId);
+  [DllImport("kernel32.dll", SetLastError = true)] public static extern bool CloseHandle(IntPtr handle);
+  [DllImport("kernel32.dll")] public static extern int GetThreadDescription(IntPtr thread, out IntPtr description);
+  [DllImport("kernel32.dll")] public static extern IntPtr LocalFree(IntPtr mem);
+
+  public static string ThreadDescription(uint threadId) {
+    const uint THREAD_QUERY_LIMITED_INFORMATION = 0x0800;
+    IntPtr handle = OpenThread(THREAD_QUERY_LIMITED_INFORMATION, false, threadId);
+    if (handle == IntPtr.Zero) { return ""; }
+    try {
+      IntPtr desc;
+      if (GetThreadDescription(handle, out desc) < 0 || desc == IntPtr.Zero) { return ""; }
+      try {
+        return Marshal.PtrToStringUni(desc) ?? "";
+      } finally {
+        LocalFree(desc);
+      }
+    } finally {
+      CloseHandle(handle);
+    }
+  }
   [DllImport("user32.dll")] public static extern IntPtr GetDesktopWindow();
   [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc callback, IntPtr param);
   [DllImport("user32.dll")] public static extern bool EnumChildWindows(IntPtr parent, EnumProc callback, IntPtr param);
